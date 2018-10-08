@@ -35,64 +35,11 @@ class McNiruNet(nn.Module):
         x = x.view(-1,8*28*28)
         x = nn.functional.softplus(self.linear(x.view(-1,8*28*28)))
         return x
-
- # Train definitions
-model = McNiruNet()
-model = model.to(DEVICE)
-loss_fn = torch.nn.PoissonNLLLoss()
-optimizer = torch.optim.Adam(model.parameters(),lr = 0.01)
-
-
-# Train Loop
-for epoch in range(EPOCHS):
-    epoch_train_x = torch.from_numpy(train_data.X)
-    epoch_train_y = torch.from_numpy(train_data.y)
-
-    print('Shuffling data...')
-    np.random.shuffle(epoch_train_x)
-    np.random.shuffle(epoch_train_y)
-
-    print('Shuffled')
-    epoch_length = epoch_train_x.shape[0]
-    num_batches,leftover = divmod(epoch_length, BATCH_SIZE)
-    batch_size = BATCH_SIZE
-
-    losses = []
-
-    for batch in range(num_batches):
-        sys.stdout.write('\n')
-        sys.stdout.write('Batch: %s / %s' % (batch, num_batches))
-        sys.stdout.flush()
-         
-        x = epoch_train_x[batch_size*batch:(batch_size*batch+1),:,:,:]
-        label = epoch_train_y[batch_size*batch:(batch_size*batch+1),:]
-        label = label.double()
-        label = label.to(DEVICE)
-
-        x = x.to(DEVICE)
-        y = model(x)
-        y = y.double() 
-        loss = loss_fn(y,label)
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        print("Loss: ")
-        print(loss)
-        losses.append(loss)
-        
-    savestr = str(epoch) + '_' + '1e2' + model.name + '.pickle'
-    o = open(savestr,'wb')
-    pickle.dump(losses,o)
-    o.close()
     
-model = []
-
 model = McNiruNet()
 model = model.to(DEVICE)
-loss_fn = torch.nn.PoissonNLLLoss()
-optimizer = torch.optim.Adam(model.parameters(),lr = 0.0001)
+loss_fn = torch.nn.MSELoss()
+optimizer = torch.optim.Adam(model.parameters(),lr = 0.001)
 
 
 # Train Loop
@@ -110,11 +57,10 @@ for epoch in range(EPOCHS):
     batch_size = BATCH_SIZE
 
     losses = []
+    epoch_loss = 0
+    print('Starting new batch')
 
     for batch in range(num_batches):
-        sys.stdout.write('\n')
-        sys.stdout.write('Batch: %s / %s' % (batch, num_batches))
-        sys.stdout.flush()
          
         x = epoch_train_x[batch_size*batch:(batch_size*batch+1),:,:,:]
         label = epoch_train_y[batch_size*batch:(batch_size*batch+1),:]
@@ -129,12 +75,7 @@ for epoch in range(EPOCHS):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        epoch_loss += loss
+    print('Avg Epoch Loss')
+    print(epoch_loss / num_batches)
 
-        print("Loss: ")
-        print(loss)
-        losses.append(loss)
-        
-    savestr = str(epoch) + '_' + '1e2' + model.name + '.pickle'
-    o = open(savestr,'wb')
-    pickle.dump(losses,o)
-    o.close()
