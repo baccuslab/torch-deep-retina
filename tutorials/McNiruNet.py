@@ -62,7 +62,7 @@ for epoch in range(EPOCHS):
 
     for batch in range(num_batches):
          
-        x = epoch_train_x[batch_size*batch:(batch_size*batch+1),:,:,:]
+        x = epoch_train_x[batch_size*batch:batch_size*(batch+1),:,:,:]
         label = epoch_train_y[batch_size*batch:(batch_size*batch+1),:]
         label = label.double()
         label = label.to(DEVICE)
