@@ -24,89 +24,109 @@ class BN_CNN_Net(nn.Module):
         super(BN_CNN_Net,self).__init__()
         self.name = 'BN_CNN_Net'
         self.conv1 = nn.Conv2d(40,8,kernel_size=15)
-        self.batch1 = nn.BatchNorm2d(8)
+        self.batch1 = nn.BatchNorm1d(8*36*36)
         self.conv2 = nn.Conv2d(8,8,kernel_size=9)
-        self.batch2 = nn.BatchNorm2d(8)
+        self.batch2 = nn.BatchNorm1d(8*28*28)
         self.linear = nn.Linear(8*28*28,5)
         self.batch3 = nn.BatchNorm1d(5)
         self.losses = [];
         
-    def gaussian(self, x, is_training):
-        if is_training:
-            noise = torch.autograd.Variable(x.data.new(x.size()).normal_(0, 0.05))
-            return x + noise
-        return ins
+    def gaussian(self, x):
+        noise = torch.autograd.Variable(x.data.new(x.size()).normal_(0, 0.05))
+        return x + noise
         
 
     def forward(self,x):
-        x = nn.functional.relu(self.gaussian(self.conv1(x), True))
-        x = self.batch1(x)
-        x = nn.functional.relu(self.gaussian(self.conv2(x), True))
-        x = self.batch2(x)
-        x = x.view(-1,8*28*28)
-
-        x = nn.functional.softplus(self.batch3(self.linear(x)))
+        x = self.conv1(x)
+        x = self.batch1(x.view(x.size(0), -1))
+        x = nn.functional.relu(self.gaussian(x.view(-1, 8, 36, 36)))
+        x = self.conv2(x)
+        x = self.batch2(x.view(x.size(0), -1))
+        x = nn.functional.relu(self.gaussian(x.view(-1, 8, 28, 28)))
+        x = self.linear(x.view(-1, 8*28*28))
+        x = self.batch3(x)
+        x = nn.functional.softplus(x)
         return x
 
     def inspect(self, x):
         model_dict = {}
-        model_dict['stimulus'] = x;
-        model_dict['conv2d_1'] = self.conv1(x)
-        model_dict['gaussian_noise_1'] = self.gaussian(x, False)
-        model_dict['batch_normalization_1'] = self.batch1(x)
-        model_dict['activation_1'] = nn.functional.relu(x)
-        model_dict['conv2d_2'] = self.conv2(x)
-        model_dict['gaussian_noise_2'] = self.gaussian(x, False)
-        model_dict['batch_normalization_2'] = self.batch2(x)
-        model_dict['activation_2'] = nn.functional.relu(x)
-        model_dict['dense_1'] = self.linear(x.view(-1, 8*28*28))
-        model_dict['batch_normalization_3'] = self.batch3(x)
-        model_dict['activation_3'] = nn.functional.softplus(x)
-        return model_dict
+        model_dict['stimulus'] = x
+        x = self.conv1(x);
+        model_dict['conv2d_1'] = x
+        x = x.view(x.size(0), -1)
+        model_dict['flatten_1'] = x
+        x = self.batch1(x)
+        model_dict['batch_normalization_1'] = x
+        x = self.gaussian(x.view(-1, 8, 36, 36))
+        model_dict['gaussian_1'] = x
+        x = nn.functional.relu(x)
+        model_dict['activation_1'] = x
+        x = self.conv2(x);
+        model_dict['conv2d_2'] = x
+        x = x.view(x.size(0), -1)
+        model_dict['flatten_2'] = x
+        x = self.batch2(x)
+        model_dict['batch_normalization_2'] = x
+        x = self.gaussian(x.view(-1, 8, 28, 28))
+        model_dict['gaussian_2'] = x
+        x = nn.functional.relu(x)
+        model_dict['activation_2'] = x
+        x = self.linear(x.view(-1, 8*28*28))
+        model_dict['dense'] = x
+        x = self.batch3(x)
+        model_dict['batch_normalization_3'] = x
+        x = nn.functional.softplus(x)
+        model_dict['activation_3'] = x
+
+
     
-model = BN_CNN_Net()
-model = model.to(DEVICE)
-loss_fn = torch.nn.MSELoss()
-optimizer = torch.optim.Adam(model.parameters(),lr = 0.001, weight_decay = 0.01)
+def main():
+    model = BN_CNN_Net()
+    model = model.to(DEVICE)
+    loss_fn = torch.nn.MSELoss()
+    optimizer = torch.optim.Adam(model.parameters(),lr = 0.01, weight_decay = 0.01)
 
 
-# Train Loop
-for epoch in range(EPOCHS):
-    epoch_train_x = torch.from_numpy(train_data.X)
-    epoch_train_y = torch.from_numpy(train_data.y)
+    # Train Loop
+    for epoch in range(EPOCHS):
+        epoch_train_x = torch.from_numpy(train_data.X)
+        epoch_train_y = torch.from_numpy(train_data.y)
 
-    print('Shuffling data...')
-    np.random.shuffle(epoch_train_x)
-    np.random.shuffle(epoch_train_y)
+        print('Shuffling data...')
+        np.random.shuffle(epoch_train_x)
+        np.random.shuffle(epoch_train_y)
 
-    print('Shuffled')
-    epoch_length = epoch_train_x.shape[0]
-    print("Epoch length = {0}".format(epoch_length))
-    num_batches,leftover = divmod(epoch_length, BATCH_SIZE)
-    batch_size = BATCH_SIZE
+        print('Shuffled')
+        epoch_length = epoch_train_x.shape[0]
+        print("Epoch length = {0}".format(epoch_length))
+        num_batches,leftover = divmod(epoch_length, BATCH_SIZE)
+        batch_size = BATCH_SIZE
 
-    epoch_loss = 0
-    print('Starting new batch')
+        epoch_loss = 0
+        print('Starting new batch')
 
-    for batch in range(num_batches):
-         
-        x = epoch_train_x[batch_size*batch:batch_size*(batch+1),:,:,:]
-        label = epoch_train_y[batch_size*batch:batch_size*(batch+1),:]
-        label = label.double()
-        label = label.to(DEVICE)
+        for batch in range(num_batches):
+             
+            x = epoch_train_x[batch_size*batch:batch_size*(batch+1),:,:,:]
+            label = epoch_train_y[batch_size*batch:batch_size*(batch+1),:]
+            label = label.double()
+            label = label.to(DEVICE)
 
-        x = x.to(DEVICE)
-        y = model(x)
-        y = y.double() 
-        loss = loss_fn(y,label)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        epoch_loss += loss
-    print('Avg Epoch Loss')
-    print(epoch_loss / num_batches)
-    model.losses.append(epoch_loss/num_batches)
-    if epoch_loss < 0.1: break
-print(model.losses)
-with open("bn_cnn_15_10_07", "wb") as fd:
-    pickle.dump(model, fd)
+            x = x.to(DEVICE)
+            y = model(x)
+            y = y.double() 
+            loss = loss_fn(y,label)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            epoch_loss += loss
+        print('Avg Epoch Loss')
+        print(epoch_loss / num_batches)
+        model.losses.append(epoch_loss/num_batches)
+        if epoch_loss < 0.1: break
+    print(model.losses)
+    with open("bn_cnn_15_10_07", "wb") as fd:
+        pickle.dump(model, fd)
+
+if __name__ == "__main__":
+    main();
