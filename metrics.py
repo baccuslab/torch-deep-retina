@@ -10,10 +10,10 @@ def correlation_coefficient(obs_rate, est_rate):
 	return torch.mean(x_mu* y_mu, dim = 0, keepdim = True) / (x_std * y_std)
 
 def mean_squared_error(obs_rate, est_rate):
-	return torch.mean(torch.square(est_rate - obs_rate), dim = 0, keepdim = True)
+	return torch.mean((est_rate - obs_rate) * (est_rate - obs_rate), dim = 0, keepdim = True)
 
 def fraction_of_explained_variance(obs_rate, est_rate):
-	return 1.0 - mean_squared_error(obs_rate, est_rate)/ torch.var(obs_rate, dim=0, keepdims= True)
+	return 1.0 - mean_squared_error(obs_rate, est_rate)/ torch.var(obs_rate, dim=0, keepdim= True)
 
 
 
