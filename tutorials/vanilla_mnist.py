@@ -1,6 +1,10 @@
+import time
+import sys
 import torch
 import torchvision
 import torch.nn as nn
+
+# Works extremely fast on gpu (first epoch already at 95%)
 
 BATCH_SIZE = 128 
 EPOCHS = 1
@@ -14,7 +18,7 @@ test_data_loader = torch.utils.data.DataLoader(test_dataset,batch_size=BATCH_SIZ
 print('Train Dataset Contains {} Examples'.format(len(train_dataset)))
 print('Test Dataset Contains {} Examples'.format(len(test_dataset)))
 
-device = torch.device("cuda:0")
+device = torch.device("cpu")
 
 class simpleNet(nn.Module):
     def __init__(self):
@@ -51,11 +55,15 @@ for epoch in range(EPOCHS):
         
         loss = loss_fn(out,label)
 
+
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         
-        print('LOSS: ')
-        print(loss)
-
-
+        _,idx = out.max(dim=-1)
+        num_correct = 0
+        for i in range(idx.shape[0]):
+            if idx[i] == label[i]:
+                num_correct += 1
+        print(str(num_correct) + ' / ' + str(idx.shape[0]))
+        print(num_correct / idx.shape[0])

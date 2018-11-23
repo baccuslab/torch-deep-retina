@@ -19,8 +19,8 @@ DEVICE = torch.device("cuda:0")
 
 # Hyperparams
 EPOCHS = 200
-BATCH_SIZE = 1000
-LR = 1e-2
+BATCH_SIZE = 64 
+LR = 1e-4
 
 
 # Load data using Lane and Nirui's dataloader
@@ -28,24 +28,18 @@ train_data = loadexpt('15-10-07',[0,1,2,3,4],'naturalscene','train',40,0)
 test_data = loadexpt('15-10-07',[0,1,2,3,4],'naturalscene','test',40,0)
 
 # Model definitions
-class McNiruNet(nn.Module):
+class LN(nn.Module):
     def __init__(self):
-        super(McNiruNet,self).__init__()
-        self.name = 'McNiruNet'
-        self.conv1 = nn.Conv2d(40,8,kernel_size=15)
-        self.conv2 = nn.Conv2d(8,8,kernel_size=9)
-        self.linear = nn.Linear(8*28*28,5)
-
-        
+        super(LN,self).__init__()
+        self.name = 'LN'
+        self.linear = nn.Linear(40*50*50,5)
 
     def forward(self,x):
-        x = nn.functional.relu(self.conv1(x))
-        x = nn.functional.relu(self.conv2(x))
-        x = x.view(-1,8*28*28)
-        x = nn.functional.softplus(self.linear(x.view(-1,8*28*28)))
+        x = x.view(-1,40*50*50)
+        x = nn.functional.relu(self.linear(x))
         return x
     
-model = McNiruNet()
+model = LN()
 model = model.to(DEVICE)
 loss_fn = torch.nn.MSELoss()
 optimizer = torch.optim.Adam(model.parameters(),lr = LR)
