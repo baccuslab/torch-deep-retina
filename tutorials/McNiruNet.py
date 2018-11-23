@@ -20,7 +20,7 @@ DEVICE = torch.device("cuda:0")
 # Hyperparams
 EPOCHS = 200
 BATCH_SIZE = 1000
-LR = 1e-2
+LR = 1e-4
 
 
 # Load data using Lane and Nirui's dataloader
