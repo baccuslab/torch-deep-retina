@@ -1,3 +1,5 @@
+import sys
+sys.path.append('../')
 import pickle
 import numpy as np
 import torch
