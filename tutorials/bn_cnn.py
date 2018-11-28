@@ -84,9 +84,9 @@ class BN_CNN_Net(nn.Module):
 
     
 def main():
-    train_folder = 'Trained_11_13_18'
+    train_folder = 'Trained_11_15_18'
     if not os.path.exists(train_folder):
-        mkdir(train_folder)
+        os.mkdir(train_folder)
     model = BN_CNN_Net()
     model = model.to(DEVICE)
     model.train()
@@ -117,19 +117,17 @@ def main():
         summ = [];
         for batch in range(num_batches):
              
-            x = torch.autograd.Variable(epoch_train_x[batch_size*batch:batch_size*(batch+1),:,:,:], requires_grad = True)
-            label = torch.autograd.Variable(epoch_train_y[batch_size*batch:batch_size*(batch+1),:])
+            x = epoch_train_x[batch_size*batch:batch_size*(batch+1),:,:,:]
+            label = epoch_train_y[batch_size*batch:batch_size*(batch+1),:]
             label = label.to(DEVICE)
             label = label.double()
 
             x = x.to(DEVICE)
-            x.retain_grad()
             y = model(x)
             y = y.double()
             loss = loss_fn(y,label)
             optimizer.zero_grad()
             loss.backward()
-            print(x.grad)
             optimizer.step()
             epoch_loss += loss
             summary_batch = {metric:model.metrics[metric](y, label)
