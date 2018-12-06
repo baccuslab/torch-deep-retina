@@ -46,7 +46,7 @@ loss_fn = torch.nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(),lr=0.01)
 
 for epoch in range(EPOCHS):
-    
+    print('Epoch ' + str(epoch))
     for img, label in train_data_loader:
         
         img = img.to(device)
@@ -67,3 +67,4 @@ for epoch in range(EPOCHS):
                 num_correct += 1
         print(str(num_correct) + ' / ' + str(idx.shape[0]))
         print(num_correct / idx.shape[0])
+        time.sleep(0.01)
