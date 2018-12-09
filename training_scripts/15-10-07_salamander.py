@@ -12,7 +12,7 @@ import sys
 from torch.distributions import normal
 sys.path.append('../models/')
 sys.path.append('../utils/')
-from lab import BNCNN
+from lab import BN_CNN as BNCNN
 import retio as io
 
 from deepretina.experiments import loadexpt
