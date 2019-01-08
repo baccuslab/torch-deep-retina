@@ -19,7 +19,7 @@ class BNCNN(nn.Module):
         noise = normal.Normal(torch.zeros(x.size()), sigma*torch.ones(x.size()))
         return x + noise.sample().cuda()
         
-    def forward(self,x):
+    def forward(self, x):
         x = self.conv1(x)
         x = self.batch1(x.view(x.size(0), -1))
         x = nn.functional.relu(self.gaussian(x.view(-1, 8, 36, 36), 0.05))
@@ -30,6 +30,7 @@ class BNCNN(nn.Module):
         x = self.batch3(x)
         x = nn.functional.softplus(x)
         return x
+
     def inspect(self, x):
         model_dict = {}
         model_dict['stimulus'] = x
@@ -60,3 +61,38 @@ class BNCNN(nn.Module):
         x = nn.functional.softplus(x)
         model_dict['activation_3'] = x
         return model_dict
+
+    def inject(self, x, layer, subtype, idx, idy, injection):
+        x = self.conv1(x)
+        if layer == 1:
+            x[:, subtype, idx, idy] = injection
+        x = self.batch1(x.view(x.size(0), -1))
+        x = nn.functional.relu(self.gaussian(x.view(-1, 8, 36, 36), 0.05))
+        x = self.conv2(x)
+        if layer == 2: 
+            x[:, subtype, idx, idy] = injection
+        x = self.batch2(x.view(x.size(0), -1))
+        x = nn.functional.relu(self.gaussian(x.view(-1, 8, 26, 26), 0.05))
+        x = self.linear(x.view(-1, 8*26*26))
+        x = self.batch3(x)
+        x = nn.functional.softplus(x)
+        return x
+
+    def amplify(self, x, layer, subtype, idx, idy, constant)
+        x = self.conv1(x)
+        if layer == 1:
+            injection = x[:, subtype, idx, idy]*constant
+            x[:, subtype, idx, idy] = injection
+        x = self.batch1(x.view(x.size(0), -1))
+        x = nn.functional.relu(self.gaussian(x.view(-1, 8, 36, 36), 0.05))
+        x = self.conv2(x)
+        if layer == 2: 
+            injection = x[:, subtype, idx, idy]*constant
+            x[:, subtype, idx, idy] = injection
+        x = self.batch2(x.view(x.size(0), -1))
+        x = nn.functional.relu(self.gaussian(x.view(-1, 8, 26, 26), 0.05))
+        x = self.linear(x.view(-1, 8*26*26))
+        x = self.batch3(x)
+        x = nn.functional.softplus(x)
+        return x
+
