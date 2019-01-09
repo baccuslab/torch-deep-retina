@@ -62,37 +62,4 @@ class BNCNN(nn.Module):
         model_dict['activation_3'] = x
         return model_dict
 
-    def inject(self, x, layer, subtype, idx, idy, injection):
-        x = self.conv1(x)
-        if layer == 1:
-            x[:, subtype, idx, idy] = injection
-        x = self.batch1(x.view(x.size(0), -1))
-        x = nn.functional.relu(self.gaussian(x.view(-1, 8, 36, 36), 0.05))
-        x = self.conv2(x)
-        if layer == 2: 
-            x[:, subtype, idx, idy] = injection
-        x = self.batch2(x.view(x.size(0), -1))
-        x = nn.functional.relu(self.gaussian(x.view(-1, 8, 26, 26), 0.05))
-        x = self.linear(x.view(-1, 8*26*26))
-        x = self.batch3(x)
-        x = nn.functional.softplus(x)
-        return x
-
-    def amplify(self, x, layer, subtype, idx, idy, constant)
-        x = self.conv1(x)
-        if layer == 1:
-            injection = x[:, subtype, idx, idy]*constant
-            x[:, subtype, idx, idy] = injection
-        x = self.batch1(x.view(x.size(0), -1))
-        x = nn.functional.relu(self.gaussian(x.view(-1, 8, 36, 36), 0.05))
-        x = self.conv2(x)
-        if layer == 2: 
-            injection = x[:, subtype, idx, idy]*constant
-            x[:, subtype, idx, idy] = injection
-        x = self.batch2(x.view(x.size(0), -1))
-        x = nn.functional.relu(self.gaussian(x.view(-1, 8, 26, 26), 0.05))
-        x = self.linear(x.view(-1, 8*26*26))
-        x = self.batch3(x)
-        x = nn.functional.softplus(x)
-        return x
 

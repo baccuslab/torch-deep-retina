@@ -187,10 +187,10 @@ def create_rfs(stimulus, membrane_potential, model_cell_response, filter_length,
         cell_title = "bipolar cell"
     else:
         cell_title = "amacrine cell"
-    rc_model, lags_model = pyret.filtertools.revcorr(scipy.stats.zscore(stimulus)[filter_length:], model_cell_response, nsamples_before=0, nsamples_after=filter_length)
-    rc_cell, lags_cell = pyret.filtertools.revcorr(scipy.stats.zscore(stimulus)[filter_length:], membrane_potential, nsamples_before=filter_length)
-    spatial_model, temporal_model = pyret.filtertools.decompose(rc_model)
-    spatial_cell, temporal_cell = pyret.filtertools.decompose(rc_cell)
+    rc_model, lags_model = ft.revcorr(scipy.stats.zscore(stimulus)[filter_length:], model_cell_response, nsamples_before=0, nsamples_after=filter_length)
+    rc_cell, lags_cell = ft.revcorr(scipy.stats.zscore(stimulus)[filter_length:], membrane_potential, nsamples_before=filter_length)
+    spatial_model, temporal_model = ft.decompose(rc_model)
+    spatial_cell, temporal_cell = ft.decompose(rc_cell)
     plt.subplot(2,2,1)
     img =plt.imshow(spatial_model, cmap = 'seismic', clim=[-np.max(abs(spatial_model)), np.max(abs(spatial_model))])
     plt.title(model_title)
