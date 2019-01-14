@@ -87,7 +87,7 @@ def main(model_class,epochs=200,batch_size=1000,LR=1e-4,l2_scale=0.01,l1_scale=0
             optimizer.step()
             epoch_loss += loss
         print('Loss: ' + str(epoch_loss/num_batches))
-        io.save_checkpoint(model,epoch,loss,optimizer,'~/','test')
+        io.save_checkpoint(model,epoch,epoch_loss,optimizer,'~/','test')
 
 if __name__ == "__main__":
     main(BNCNN)
