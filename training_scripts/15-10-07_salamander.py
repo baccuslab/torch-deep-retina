@@ -114,7 +114,7 @@ def hyperparameter_search(param, values):
             val_acc = train(BNCNN, LR=val, save=save)
         elif param == 'l2':
             val_acc = train(BNCNN, l2_scale=val, save=save)
-        elif param == 'l2':
+        elif param == 'l1':
             val_acc = train(BNCNN, l1_scale=val, save=save)
         if val_loss > best_val_loss:
             best_val_acc = val_acc
@@ -126,7 +126,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--epochs', default = 200)
     parser.add_argument('--batch', default = 1000)
-    parser.add_argument('--lr', default = 1e-3)
+    parser.add_argument('--lr', default = 1e-4)
     parser.add_argument('--l2', default = 0.01)
     parser.add_argument('--l1', default = 0.01)
     parser.add_argument('--shuffle', action='store_true')
