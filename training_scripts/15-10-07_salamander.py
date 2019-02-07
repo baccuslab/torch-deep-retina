@@ -28,6 +28,8 @@ test_data = loadexpt('15-10-07',[0,1,2,3,4],'naturalscene','test',40,0)
 val_split = 0.005
 
 def train(model_class,epochs=200,batch_size=1000,LR=1e-3,l2_scale=0.01,l1_scale=0.01,shuffle=False, save='~/'):
+    if not os.path.exists(save):
+        os.mkdir(save)
     LAMBDA1 = l1_scale
     LAMBDA2 = l2_scale
     EPOCHS = epochs
@@ -99,7 +101,7 @@ def train(model_class,epochs=200,batch_size=1000,LR=1e-3,l2_scale=0.01,l1_scale=
         #validate model
         val_obs = model(epoch_val_x.to(DEVICE)).cpu().detach().numpy()
         val_acc = np.sum([pearsonr(val_obs[:, i], epoch_val_y[:, i]) for i in range(epoch_val_y.shape[-1])])
-        scheduler.step(val_loss)
+        scheduler.step(val_acc)
         io.save_checkpoint(model,epoch,epoch_loss/num_batches,optimizer,save,'test')
     return val_acc
 
@@ -132,7 +134,7 @@ def main():
     parser.add_argument('--shuffle', action='store_true')
     parser.add_argument('--save', default='~/')
     args = parser.parse_args(sys.argv[1:])
-    train(BNCNN, args.epochs, args.batch, args.lr, args.l2, args.l1, args.shuffle, args.save)
+    train(BNCNN, int(args.epochs), int(args.batch), float(args.lr), float(args.l2), float(args.l1), args.shuffle, args.save)
 
 
 if __name__ == "__main__":
