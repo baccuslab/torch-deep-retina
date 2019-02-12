@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np 
 from itertools import repeat
-from . import stimuli as stim
-from . import visualizations as viz
+import stimuli as stim
+import visualizations as viz
 from tqdm import tqdm, trange
 import torch
 
@@ -196,10 +196,10 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
     """
     # moving bar stimulus and responses
     c_right, speed_right, stim_right = stim.driftingbar(velocity, width)
-    resp_right = model(torch.from_numpy(stim.concat(stim_right)).to(DEVICE)).cpu().detach().numpy()
+    resp_right = model(torch.from_numpy(stim_right).to(DEVICE)).cpu().detach().numpy()
 
-    c_left, speed_left, stim_left = stim.driftingbar(velocity, width, x=(30, -30))
-    resp_left = model(torch.from_numpy(stim.concat(stim_left)).to(DEVICE)).cpu().detach().numpy()
+    c_left, speed_left, stim_left = stim.driftingbar(-velocity, width, x=(30, -30))
+    resp_left = model(torch.from_numpy(stim_left).to(DEVICE)).cpu().detach().numpy()
 
     # flashed bar stimulus
     flash_centers = np.arange(-25, 26)
@@ -207,7 +207,7 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
                for x in flash_centers)
 
     # flash responses are a 3-D array with dimensions (centers, stimulus time, cell)
-    flash_responses = np.stack([model(stim.concat(f)) for f in tqdm(flashes)])
+    flash_responses = np.stack([model(torch.from_numpy(stim.concat(f)).to(DEVICE)).cpu().detach().numpy() for f in tqdm(flashes)])
 
     # pick off the flash responses at a particular time point (the time of the max response)
     max_resp_idx = flash_responses.mean(axis=-1).mean(axis=0).argmax()
@@ -215,8 +215,8 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
 
     # average the response from multiple cells
     avg_resp_right = resp_right.mean(axis=-1)
-    avg_resp_left = resp_left.max(axis=-1)
-    avg_resp_flash = resp_flash.max(axis=-1)
+    avg_resp_left = resp_left.mean(axis=-1)
+    avg_resp_flash = resp_flash.mean(axis=-1)
 
     # normalize the average responses (to plot on the same scale)
     avg_resp_right /= avg_resp_right.max()
