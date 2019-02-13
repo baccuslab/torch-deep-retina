@@ -9,11 +9,11 @@
 - Salamander data
 
 ### Utils
--retio: saving and loading the model
--physiology: inspection, injection using hooks
--retinal phenomena/stimuli: code to generate stimulus and responses for retinal phenomena (lifted from drone)
--intracellular: methods to compare internal units with interneuron recordings
--batch compute: batch compute a model response (if the GPU runs out of memory)
+- retio: saving and loading the model
+- physiology: inspection, injection using hooks
+- retinal phenomena/stimuli: code to generate stimulus and responses for retinal phenomena (lifted from drone)
+- intracellular: methods to compare internal units with interneuron recordings
+- batch compute: batch compute a model response (if the GPU runs out of memory)
 
 ## Setup
 After cloning the repo and copying to your @deepretina.stanford.edu account. All requirements should be already installed globally in deepretina. If not, to install a package locally:

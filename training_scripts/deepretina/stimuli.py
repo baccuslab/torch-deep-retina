@@ -11,29 +11,16 @@ that can be fed to a Keras model (for example).
 """
 
 from __future__ import absolute_import, division, print_function
-
 from itertools import repeat
-from numbers import Number
-
 import numpy as np
-from skimage.filters import gaussian
+from .experiments import rolling_window
+from .utils import tuplify
+from numbers import Number
 from skimage.transform import downscale_local_mean
-
-from deepretina.experiments import rolling_window
+from skimage.filters import gaussian
 
 __all__ = ['concat', 'white', 'contrast_steps', 'flash', 'spatialize', 'bar',
            'driftingbar', 'cmask', 'paired_flashes']
-
-
-def unroll(X):
-    """Unrolls a toeplitz stimulus"""
-    return np.vstack((X[0, :], X[:, -1]))
-
-
-def prepad(y, n=40, v=0):
-    """prepads with value"""
-    pad = v * np.ones((n, y.shape[1]))
-    return np.vstack((pad, y))
 
 
 def concat(*args, nx=50, nh=40):
@@ -168,7 +155,8 @@ def bar(center, width, height, nx=50, intensity=-1., us_factor=1, blur=0.):
 
     # downsample the blurred image back to the original size
     return downsample(frame, us_factor, blur)
-    
+
+
 def downsample(img, factor, blur):
     """Smooth and downsample the image by the given factor"""
     return downscale_local_mean(gaussian(img, blur), (factor, factor))
@@ -197,31 +185,52 @@ def driftingbar(velocity, width, intensity=-1., x=(-30, 30)):
     stim : array_like
         The spatiotemporal drifting bar movie
     """
-    npts = 1 + int((x[1] - x[0]) / velocity)
-    centers = np.linspace(x[0], x[1], npts)
-    return centers, velocity, concat(np.stack(map(lambda x: bar((x, 0), width, np.Inf, us_factor=5, blur=0.), centers)))
+    npts = 1 + int((x[1] - x[0]) / np.abs(velocity))
+    centers = np.sign(velocity) * np.linspace(x[0], x[1], npts)
+    return centers, concat(np.stack(map(lambda x: bar((x, 0), width, np.Inf, us_factor=5, blur=2.), centers)))
 
 
 def cmask(center, radius, array):
     """Generates a mask covering a central circular region"""
     a, b = center
     nx, ny = array.shape
-    y, x = np.ogrid[-a:nx - a, -b:ny - b]
+    y, x = np.ogrid[-a:nx-a, -b:ny-b]
     return x ** 2 + y ** 2 <= radius ** 2
 
 
-def paired_flashes(ifi, duration, intensity, total_length, delay):
-    """Paired flash stimulus"""
+def paired_flashes(ifi, duration, intensity, padding):
+    """Example of a paired flash stimulus
+
+    Parameters
+    ----------
+    ifi : int
+        Inter-flash interval, in samples (number of samples between the end of the first
+        flash and the beginning of the second)
+
+    duration : int or tuple
+        The duration (in samples) of each flash. If an int is given, then each flash has
+        the same duration, otherwise, you can specify two different durations in a tuple
+
+    intensity : float or tuple
+        The intensity (luminance) of each flash. If a number is given, then each flash has
+        the same intensity, otherwise, you can specify two different values in a tuple
+
+    padding : int or tuple
+        Padding (in samples) before the first and last flashes. If an int is given,
+        then both the first and last pads have the same number of samples, otherwise,
+        you can specify two different padding lengths in a tuple
+    """
     # Convert numbers to tuples
     duration = tuplify(duration, 2)
     intensity = tuplify(intensity, 2)
+    padding = tuplify(padding, 2)
 
     # generate the flashes
-    f0 = flash(duration[0], delay, total_length, intensity[0])
-    f1 = flash(duration[1], delay + duration[0] + ifi, total_length, intensity[1])
+    f0 = flash(duration[0], padding[0], padding[0] + duration[0] + ifi, intensity[0])
+    f1 = flash(duration[1], 0, duration[1] + padding[1], intensity[1])
 
     # return the concatenated pair
-    return concat(f0 + f1)
+    return concat(f0, f1)
 
 
 def square(halfperiod, nsamples, phase=0., intensity=1.0):
@@ -272,8 +281,8 @@ def grating(barsize=(5, 0), phase=(0., 0.), nx=50, intensity=(1., 1.), us_factor
         Amount of blur to applied to the upsampled image (before downsampling), (default: 0.)
     """
     # generate a square wave along each axis
-    x = square(barsize[0], nx * us_factor, phase[0], intensity[0])
-    y = square(barsize[1], nx * us_factor, phase[1], intensity[1])
+    x = square(barsize[0], nx * us_factor, phase[0] % 1., intensity[0])
+    y = square(barsize[1], nx * us_factor, phase[1] % 1, intensity[1])
 
     # generate the grating frame and downsample
     return downsample(np.outer(y, x), us_factor, blur)
@@ -361,7 +370,7 @@ def get_grating_movie(grating_width=1, switch_every=10, movie_duration=100, mask
     polarity_count = 0
     for frame in range(movie_duration):
         polarity_count += 1
-        if int(polarity_count / switch_every) % 2 == 0:
+        if int(polarity_count/switch_every) % 2 == 0:
             grating_movie[frame] = grating_frame
         else:
             grating_movie[frame] = -1 * grating_frame
@@ -372,18 +381,3 @@ def get_grating_movie(grating_width=1, switch_every=10, movie_duration=100, mask
         return full_movies
     else:
         return grating_movie
-
-
-def tuplify(x, n):
-    """Converts a number into a tuple with that number repeating
-
-    Usage
-    -----
-    >>> tuplify(3, 5)
-    (3, 3, 3, 3, 3)
-    >>> tuplify((1,2), 5)
-    (1, 2)
-    """
-    if isinstance(x, Number):
-        x = tuple(repeat(x, n))
-    return x

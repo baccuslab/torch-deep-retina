@@ -13,6 +13,8 @@ class BNCNN(nn.Module):
         self.linear = nn.Linear(8*26*26,5, bias=False)
         self.batch3 = nn.BatchNorm1d(5, eps=1e-3, momentum=.99)
         self.losses = []
+        self.actgrad1=[]
+        self.actgrad2=[]
         
     def gaussian(self, x, sigma):
         noise = normal.Normal(torch.zeros(x.size()), sigma*torch.ones(x.size()))
@@ -31,6 +33,12 @@ class BNCNN(nn.Module):
         x = self.batch3(x)
         x = nn.functional.softplus(x)
         return x
+    
+    def record_grad1(self,grad):
+        self.actgrad1=grad.clone()
+        
+    def record_grad2(self,grad):
+        self.actgrad2=grad.clone()
 
     def inspect(self, x):
         model_dict = {}
@@ -45,6 +53,7 @@ class BNCNN(nn.Module):
         model_dict['gaussian_1'] = x
         x = nn.functional.relu(x)
         model_dict['activation_1'] = x
+        model_dict['activation_1'].register_hook(self.record_grad1)
         x = self.conv2(x);
         model_dict['conv2d_2'] = x
         x = x.view(x.size(0), -1)
@@ -55,6 +64,7 @@ class BNCNN(nn.Module):
         model_dict['gaussian_2'] = x
         x = nn.functional.relu(x)
         model_dict['activation_2'] = x
+        model_dict['activation_2'].register_hook(self.record_grad2)
         x = self.linear(x.view(-1, 8*26*26))
         model_dict['dense'] = x
         x = self.batch3(x)

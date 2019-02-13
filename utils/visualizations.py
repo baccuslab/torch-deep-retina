@@ -49,7 +49,7 @@ def gif(filename, array, fps=10, scale=1.0):
     Usage
     -----
     >>> X = randn(100, 64, 64)
-    >>> gif('test.gif', X)
+    >>> gif('test.gif, X)
     Parameters
     ----------
     filename : string
@@ -415,7 +415,7 @@ def savemov(movies, subplots, filename, cmaps, T=None, clim=None, fps=15, figsiz
     def animate(t):
         for X, img, ax in zip(xs, imgs, axs):
             i = np.mod(int(t / dt), T)
-            ax.set_title(f't={i*0.01:2.2f} s')
+            ax.set_title('t={i*0.01:2.2f} s')
             img.set_data(X[i])
         return mplfig_to_npimage(fig)
 
