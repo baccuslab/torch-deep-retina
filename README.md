@@ -2,7 +2,7 @@
 
 ## Summary
 
-### Current Models
+### Current Models 
 - BatchNorm CNN (Lane and Niru)
 
 ### Current Training Scripts
