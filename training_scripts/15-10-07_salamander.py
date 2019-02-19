@@ -10,6 +10,8 @@ import h5py as h5
 import os.path as path
 import sys
 from torch.distributions import normal
+import gc
+import resource
 sys.path.append('../models/')
 sys.path.append('../utils/')
 from BN_CNN import BNCNN
@@ -18,16 +20,21 @@ import argparse
 
 from deepretina.experiments import loadexpt
 
+# Helper function (used instead of .to(DEVICE) for memory leak debugging)
+def cuda_if(tensor):
+	if torch.cuda.is_available():
+		return tensor.cuda()
+	return tensor
+
 # Constants
 DEVICE = torch.device("cuda:0")
-
 
 # Load data using Lane and Nirui's dataloader
 train_data = loadexpt('15-10-07',[0,1,2,3,4],'naturalscene','train',40,0)
 test_data = loadexpt('15-10-07',[0,1,2,3,4],'naturalscene','test',40,0)
 val_split = 0.005
 
-def train(model_class,epochs=200,batch_size=1000,LR=1e-3,l2_scale=0.01,l1_scale=0.01,shuffle=False, save='~/'):
+def train(model_class,epochs=200,batch_size=1000,LR=1e-3,l2_scale=0.01,l1_scale=0.01,shuffle=False, save='./save_folder'):
     if not os.path.exists(save):
         os.mkdir(save)
     LAMBDA1 = l1_scale
@@ -36,42 +43,49 @@ def train(model_class,epochs=200,batch_size=1000,LR=1e-3,l2_scale=0.01,l1_scale=
     BATCH_SIZE = batch_size
 
     model = BNCNN()
-    model = model.to(DEVICE)
+    model = cuda_if(model)
 
     loss_fn = torch.nn.PoissonNLLLoss()
     optimizer = torch.optim.Adam(model.parameters(),lr = LR, weight_decay = LAMBDA2)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.2)
 
+    # train data
+    epoch_tv_x = torch.FloatTensor(train_data.X)
+    epoch_tv_y = torch.FloatTensor(train_data.y)
+    if shuffle:
+        print('shuffling data...')
+        np.random.shuffle(epoch_tv_x)
+        np.random.shuffle(epoch_tv_y)
+        print('data shuffled!')
+    # train/val split
+    num_val = 2000
+    epoch_train_x = epoch_tv_x[num_val:]
+    epoch_val_x = epoch_tv_x[:num_val]
+    epoch_train_y = epoch_tv_y[num_val:]
+    epoch_val_y = epoch_tv_y[:num_val]
+    epoch_length = epoch_train_x.shape[0]
+    num_batches,leftover = divmod(epoch_length, BATCH_SIZE)
+    batch_size = BATCH_SIZE
+
+    # test data
+    test_x = torch.from_numpy(test_data.X)
+    test_x = test_x[:500]
 
     # Train Loop
     for epoch in range(EPOCHS):
-        epoch_tv_x = torch.from_numpy(train_data.X)
-        epoch_tv_y = torch.from_numpy(train_data.y)
-
         if shuffle:
             print('shuffling data...')
-            np.random.shuffle(epoch_tv_x)
-            np.random.shuffle(epoch_tv_y)
+            np.random.shuffle(epoch_train_x)
+            np.random.shuffle(epoch_train_y)
             print('data shuffled!')
-
-        # train/val split
-        num_val = 2000
-        epoch_train_x = epoch_tv_x[num_val:]
-        epoch_val_x = epoch_tv_x[:num_val]
-        epoch_train_y = epoch_tv_y[num_val:]
-        epoch_val_y = epoch_tv_y[:num_val]
-        epoch_length = epoch_train_x.shape[0]
-        num_batches,leftover = divmod(epoch_length, BATCH_SIZE)
-        batch_size = BATCH_SIZE
 
         losses = []
         epoch_loss = 0
         print('Epoch ' + str(epoch))  
         
-        test_x = torch.from_numpy(test_data.X)
-        test_x = test_x.to(DEVICE)[:500]
-
-        test_obs = model(test_x).cpu().detach().numpy()
+        model.eval()
+        test_obs = model(cuda_if(test_x)).cpu().detach().numpy()
+        model.train(mode=True)
 
         for cell in range(test_obs.shape[-1]):
             obs = test_obs[:500,cell]
@@ -80,23 +94,27 @@ def train(model_class,epochs=200,batch_size=1000,LR=1e-3,l2_scale=0.01,l1_scale=
             print('Cell ' + str(cell) + ': ')
             print('-----> pearsonr: ' + str(r))
 
-        for batch in tqdm(range(num_batches),ascii=True,desc='batches'):
-            x = epoch_train_x[batch_size*batch:batch_size*(batch+1),:,:,:]
-            label = epoch_train_y[batch_size*batch:batch_size*(batch+1),:]
+        for batch in range(num_batches):
+            optimizer.zero_grad()
+            x = epoch_train_x[batch_size*batch:batch_size*(batch+1)]
+            label = epoch_train_y[batch_size*batch:batch_size*(batch+1)]
             label = label.double()
-            label = label.to(DEVICE)
+            label = cuda_if(label)
 
-            x = x.to(DEVICE)
+            x = cuda_if(x)
             y = model(x)
             y = y.double() 
 
-            all_linear1_params = torch.cat([x.view(-1) for x in model.linear.parameters()])
-            loss = loss_fn(y,label) + LAMBDA1 * torch.norm(all_linear1_params, 1).double()
-            optimizer.zero_grad()
+            #all_linear1_params = torch.cat([p.view(-1) for p in model.linear.parameters()])
+            loss = loss_fn(y,label) # + LAMBDA1 * torch.norm(all_linear1_params, 1).double()
             loss.backward()
             optimizer.step()
-            epoch_loss += loss
+            epoch_loss += loss.item()
+            print("Loss:", loss.item(), " | ", round(batch/num_batches, 2), "% complete", end='               \r')
         print('Loss: ' + str(epoch_loss/num_batches))
+        gc.collect()
+        max_mem_used = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        print("Memory Used: {:.2f} memory\n".format(max_mem_used / 1024))
 
         #validate model
         val_obs = model(epoch_val_x.to(DEVICE)).cpu().detach().numpy()
@@ -132,7 +150,7 @@ def main():
     parser.add_argument('--l2', default = 0.01)
     parser.add_argument('--l1', default = 0.01)
     parser.add_argument('--shuffle', action='store_true')
-    parser.add_argument('--save', default='~/')
+    parser.add_argument('--save', default='./checkpoints')
     args = parser.parse_args(sys.argv[1:])
     train(BNCNN, int(args.epochs), int(args.batch), float(args.lr), float(args.l2), float(args.l1), args.shuffle, args.save)
 

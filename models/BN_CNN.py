@@ -7,19 +7,20 @@ class BNCNN(nn.Module):
         super(BNCNN,self).__init__()
         self.name = 'McNiruNet'
         self.conv1 = nn.Conv2d(40,8,kernel_size=15)
-        self.batch1 = nn.BatchNorm1d(8*36*36)
+        self.batch1 = nn.BatchNorm1d(8*36*36, eps=1e-3, momentum=.99)
         self.conv2 = nn.Conv2d(8,8,kernel_size=11)
-        self.batch2 = nn.BatchNorm1d(8*26*26)
+        self.batch2 = nn.BatchNorm1d(8*26*26, eps=1e-3, momentum=.99)
         self.linear = nn.Linear(8*26*26,5, bias=False)
-        self.batch3 = nn.BatchNorm1d(5)
+        self.batch3 = nn.BatchNorm1d(5, eps=1e-3, momentum=.99)
         self.losses = []
         self.actgrad1=[]
         self.actgrad2=[]
         
     def gaussian(self, x, sigma):
-
         noise = normal.Normal(torch.zeros(x.size()), sigma*torch.ones(x.size()))
-        return x + noise.sample().cuda()
+        if x.is_cuda:
+            return x + noise.sample().cuda()
+        return x + noise.sample()
         
     def forward(self, x):
         x = self.conv1(x)
