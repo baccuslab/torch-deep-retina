@@ -13,6 +13,11 @@ class Physio:
 		def hook(module, inp, out):
 			self.dict[name] = out.cpu().detach().numpy()
 		return hook
+    
+	def layer_grad(self, name):
+		def hook(module, inp, out):
+			self.dict[name+'_grad'] = out[0].cpu().detach().numpy()
+		return hook
 
 	def injection(self, subtype, constant):
 		def hook(module, inp, out):
@@ -25,8 +30,9 @@ class Physio:
 		if(not self.inspect_hooks):
 			for name, module in self.net.named_modules():
 				module.register_forward_hook(self.layer_activity(name))
+				module.register_backward_hook(self.layer_grad(name))
 			self.inspect_hooks = True
-		self.dict['output'] = self.net(stim).cpu().detach().numpy()
+		self.dict['output'] = self.net(stim)
 		return self.dict
 
 	# phys.inject('conv1', 1, 2)
