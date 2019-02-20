@@ -1,5 +1,5 @@
 import matplotlib
-from plotting import adjust_spines
+from .plotting import adjust_spines
 from scipy.stats import sem, pearsonr
 from tqdm import tqdm
 import os
