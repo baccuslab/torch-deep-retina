@@ -98,19 +98,19 @@ def train(model_class,epochs=200,batch_size=1000,LR=1e-3,l2_scale=0.01,l1_scale=
             optimizer.zero_grad()
             x = epoch_train_x[batch_size*batch:batch_size*(batch+1)]
             label = epoch_train_y[batch_size*batch:batch_size*(batch+1)]
-            label = label.double()
+            label = label.float()
             label = cuda_if(label)
 
             x = cuda_if(x)
             y = model(x)
-            y = y.double() 
+            y = y.float() 
 
-            #all_linear1_params = torch.cat([p.view(-1) for p in model.linear.parameters()])
-            loss = loss_fn(y,label) # + LAMBDA1 * torch.norm(all_linear1_params, 1).double()
+            activity_l1 = LAMBDA1 * torch.norm(y, 1).float()
+            loss = loss_fn(y,label) + activity_l1
             loss.backward()
             optimizer.step()
             epoch_loss += loss.item()
-            print("Loss:", loss.item(), " | ", round(batch/num_batches, 2), "% complete", end='               \r')
+            print("Loss:", loss.item(), " | ", round(batch/num_batches, 2)*100, "% complete", end='               \r')
         print('Loss: ' + str(epoch_loss/num_batches))
         gc.collect()
         max_mem_used = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
