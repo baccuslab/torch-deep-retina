@@ -70,7 +70,7 @@ def paired_flash(model, ifis=(2, 20), duration=1, intensity=-2.0, total=100, del
         x = stim.paired_flashes(ifi, duration, intensity, total, delay)
         stimuli.append(stim.unroll(x)[:, 0, 0])
         x_torch = torch.from_numpy(x).to(DEVICE)
-       # responses.append(stim.prepad(model(x).cpu().detach().numpy()))
+        responses.append(stim.prepad(model(x).cpu().detach().numpy()))
 
     return map(np.stack, (s1, r1, s2, r2, stimuli, responses))
 
