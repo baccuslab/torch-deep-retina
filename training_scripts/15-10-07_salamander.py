@@ -56,12 +56,12 @@ def train(model_class,epochs=250,batch_size=5000,LR=1e-3,l2_scale=0.01,l1_scale=
     # train data
     epoch_tv_x = torch.FloatTensor(train_data.X)
     epoch_tv_y = torch.FloatTensor(train_data.y)
-    if shuffle:
-        starttime = time.time()
-        print("Shuffling")
-        np.random.shuffle(epoch_tv_x)
-        np.random.shuffle(epoch_tv_y)
-        print("Finished shuffling - exec time:", time.time()-starttime)
+    #if shuffle:
+    #    starttime = time.time()
+    #    print("Shuffling")
+    #    np.random.shuffle(epoch_tv_x)
+    #    np.random.shuffle(epoch_tv_y)
+    #    print("Finished shuffling - exec time:", time.time()-starttime)
 
     # train/val split
     num_val = int(epoch_tv_x.shape[0]*val_splt)
@@ -159,7 +159,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--epochs', default = 250)
     parser.add_argument('--batch', default = 5000)
-    parser.add_argument('--lr', default = 1e-3)
+    parser.add_argument('--lr', default = 1e-4)
     parser.add_argument('--l2', default = 0.01)
     parser.add_argument('--l1', default = 1e-7)
     parser.add_argument('--shuffle', default=True)
