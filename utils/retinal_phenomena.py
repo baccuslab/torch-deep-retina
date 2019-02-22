@@ -9,7 +9,27 @@ import torch
 DEVICE = torch.device("cuda:0")
 
 def step_response(model, duration=100, delay=50, nsamples=200, intensity=-1.):
-    """Step response"""
+    """Generates step responses (using utils.stimuli.flash)
+
+    Parameters
+    ----------
+    duration : int
+        The duration (in samples) of the flash
+    delay : int
+        The delay (in samples) before the flash starts
+    nsamples : int
+        The total number of samples in the array
+    intensity : float or array_like, optional
+        The flash intensity. If a number is given, the flash is a full-field
+        flash. Otherwise, if it is a 2D array, then that image is flashed. (default: 1.0)
+
+    Returns
+    -------
+    figs : matplotlib.figure.Figure
+        Matplotlib Figure object into which step response is plotted    	
+    X : array_like of shape (nsamples - 40, 40, 50, 50)
+    resp : torch.tensor of size (nsamples - 40, number of cells)
+    """
     X = stim.concat(stim.flash(duration, delay, nsamples, intensity=intensity))
     X_torch = torch.from_numpy(X).to(DEVICE)
     resp = model(X_torch)
