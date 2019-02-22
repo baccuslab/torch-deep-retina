@@ -56,12 +56,6 @@ def train(model_class,epochs=250,batch_size=5000,LR=1e-3,l2_scale=0.01,l1_scale=
     # train data
     epoch_tv_x = torch.FloatTensor(train_data.X)
     epoch_tv_y = torch.FloatTensor(train_data.y)
-    #if shuffle:
-    #    starttime = time.time()
-    #    print("Shuffling")
-    #    np.random.shuffle(epoch_tv_x)
-    #    np.random.shuffle(epoch_tv_y)
-    #    print("Finished shuffling - exec time:", time.time()-starttime)
 
     # train/val split
     num_val = int(epoch_tv_x.shape[0]*val_splt)
