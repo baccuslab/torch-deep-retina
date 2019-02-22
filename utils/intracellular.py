@@ -94,6 +94,7 @@ def sorted_correlation(membrane_potential, model_layer):
     else:
         return sorted(
             [pearsonr(membrane_potential, model_layer[:,c])[0] for c in range(model_layer.shape[1])])
+
 def max_correlation_all_layers(membrane_potential, model_response):
     '''
     Takes a 1d membrane potential and computes the maximum correlation over the 2 conv layers within a model.
