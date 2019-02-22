@@ -1,4 +1,3 @@
-from tqdm import tqdm
 from scipy.stats import pearsonr
 import os
 import sys
@@ -21,7 +20,7 @@ import time
 
 from deepretina.experiments import loadexpt
 
-# Helper function (used instead of .to(DEVICE) for memory leak debugging)
+# Helper function (used for memory leak debugging)
 def cuda_if(tensor):
     if torch.cuda.is_available():
         return tensor.cuda()
@@ -30,12 +29,16 @@ def cuda_if(tensor):
 # Constants
 DEVICE = torch.device("cuda:0")
 
+# Seeds (5 is arbitrary)
+np.random.seed(5)
+torch.manual_seed(5)
+
 # Load data using Lane and Nirui's dataloader
 train_data = loadexpt('15-10-07',[0,1,2,3,4],'naturalscene','train',40,0)
 test_data = loadexpt('15-10-07',[0,1,2,3,4],'naturalscene','test',40,0)
 val_split = 0.005
 
-def train(model_class,epochs=250,batch_size=5000,LR=1e-3,l2_scale=0.01,l1_scale=5e-6, shuffle=True, save='./save_folder', val_splt=0.02):
+def train(model_class,epochs=250,batch_size=5000,LR=1e-3,l2_scale=0.01,l1_scale=5e-6, shuffle=True, save='./checkpoints', val_splt=0.02):
     if not os.path.exists(save):
         os.mkdir(save)
     LAMBDA1 = l1_scale
@@ -59,6 +62,7 @@ def train(model_class,epochs=250,batch_size=5000,LR=1e-3,l2_scale=0.01,l1_scale=
         np.random.shuffle(epoch_tv_x)
         np.random.shuffle(epoch_tv_y)
         print("Finished shuffling - exec time:", time.time()-starttime)
+
     # train/val split
     num_val = int(epoch_tv_x.shape[0]*val_splt)
     epoch_train_x = epoch_tv_x[num_val:]
@@ -117,9 +121,9 @@ def train(model_class,epochs=250,batch_size=5000,LR=1e-3,l2_scale=0.01,l1_scale=
             epoch_loss += loss.item()
             print("Loss:", loss.item()," - error:", error.item(), " - l1:", activity_l1.item(), " | ", int(round(batch/num_batches, 2)*100), "% done", end='               \r')
         print('\nAvg Loss: ' + str(epoch_loss/num_batches), " - exec time:", time.time() - starttime)
-        gc.collect()
-        max_mem_used = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        print("Memory Used: {:.2f} memory\n".format(max_mem_used / 1024))
+        #gc.collect()
+        #max_mem_used = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        #print("Memory Used: {:.2f} memory".format(max_mem_used / 1024))
 
         #validate model
         del x
@@ -127,6 +131,7 @@ def train(model_class,epochs=250,batch_size=5000,LR=1e-3,l2_scale=0.01,l1_scale=
         del label
         val_obs = model(epoch_val_x.to(DEVICE)).cpu().detach().numpy()
         val_acc = np.sum([pearsonr(val_obs[:, i], epoch_val_y[:, i]) for i in range(epoch_val_y.shape[-1])])
+        print("Val Acc:", val_acc, end="\n")
         scheduler.step(val_acc)
         io.save_checkpoint(model,epoch,epoch_loss/num_batches,optimizer,save,'test')
     return val_acc
@@ -154,13 +159,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--epochs', default = 250)
     parser.add_argument('--batch', default = 5000)
-    parser.add_argument('--lr', default = 1e-4)
+    parser.add_argument('--lr', default = 1e-3)
     parser.add_argument('--l2', default = 0.01)
-    parser.add_argument('--l1', default = 1e-6)
-    parser.add_argument('--shuffle', action='store_true')
+    parser.add_argument('--l1', default = 1e-7)
+    parser.add_argument('--shuffle', default=True)
     parser.add_argument('--save', default='./checkpoints')
     args = parser.parse_args(sys.argv[1:])
-    train(BNCNN, int(args.epochs), int(args.batch), float(args.lr), float(args.l2), float(args.l1), True, args.save)
+    train(BNCNN, int(args.epochs), int(args.batch), float(args.lr), float(args.l2), float(args.l1), args.shuffle, args.save)
 
 
 if __name__ == "__main__":
