@@ -41,18 +41,21 @@ def batch_compute_model_response(stimulus, model, batch_size):
     phys = Physio(model)
     stim = torch.from_numpy(stim)
     model_response = phys.inspect(stim.to(DEVICE)).copy()
+    model_response['output'] = model_response['output'].cpu().detach().numpy()
     start = batch_size
     stop = 2*batch_size
     while stop < stimulus.shape[0]:
         stim = stimulus[start:stop, :, :]
         stim = torch.from_numpy(stim)
         temp = phys.inspect(stim.to(DEVICE)).copy()
+        temp['output'] = temp['output'].cpu().detach().numpy()
         for key in model_response.keys():
             model_response[key] = np.append(model_response[key], temp[key], axis=0)
         start = stop
         stop = start + batch_size
     stim = torch.from_numpy(stimulus[start:,:,:])
     temp = phys.inspect(stim.to(DEVICE)).copy()
+    temp['output'] = temp['output'].cpu().detach().numpy()
     for key in model_response.keys():
          model_response[key] = np.append(model_response[key], temp[key], axis=0)
     return model_response
