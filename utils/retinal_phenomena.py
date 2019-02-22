@@ -14,14 +14,14 @@ def step_response(model, duration=100, delay=50, nsamples=200, intensity=-1.):
     Parameters
     ----------
     duration : int
-        The duration (in samples) of the flash
+        The duration (in samples) of the flash (default: 100)
     delay : int
-        The delay (in samples) before the flash starts
+        The delay (in samples) before the flash starts (default: 50)
     nsamples : int
-        The total number of samples in the array
+        The total number of samples in the array (default: 200)
     intensity : float or array_like, optional
         The flash intensity. If a number is given, the flash is a full-field
-        flash. Otherwise, if it is a 2D array, then that image is flashed. (default: 1.0)
+        flash. Otherwise, if it is a 2D array, then that image is flashed. (default: -1.0)
 
     Returns
     -------
@@ -62,15 +62,15 @@ def paired_flash(model, ifis=(2, 20), duration=1, intensity=-2.0, total=100, del
         r1.append(stim.prepad(model(x1_torch).cpu().detach().numpy()))
 
         x2 = stim.paired_flashes(ifi, duration, (0, intensity), total, delay)
+        s2.append(stim.unroll(x2)[:, 0, 0])        
         x2_torch = torch.from_numpy(x2).to(DEVICE)
-        s2.append(stim.unroll(x2)[:, 0, 0])
         r2.append(stim.prepad(model(x2_torch).cpu().detach().numpy()))
 
         # pair
         x = stim.paired_flashes(ifi, duration, intensity, total, delay)
-        x_torch = torch.from_numpy(x).to(DEVICE)
         stimuli.append(stim.unroll(x)[:, 0, 0])
-        responses.append(stim.prepad(model(x).cpu().detach().numpy()))
+        x_torch = torch.from_numpy(x).to(DEVICE)
+       # responses.append(stim.prepad(model(x).cpu().detach().numpy()))
 
     return map(np.stack, (s1, r1, s2, r2, stimuli, responses))
 
