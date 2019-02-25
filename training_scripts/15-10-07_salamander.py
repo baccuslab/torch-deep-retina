@@ -29,7 +29,7 @@ def cuda_if(tensor):
 # Constants
 DEVICE = torch.device("cuda:0")
 
-# Seeds (5 is arbitrary)
+# Random Seeds (5 is arbitrary)
 np.random.seed(5)
 torch.manual_seed(5)
 
@@ -125,7 +125,7 @@ def train(model_class,epochs=250,batch_size=5000,LR=1e-3,l2_scale=0.01,l1_scale=
         del label
         val_obs = model(epoch_val_x.to(DEVICE)).cpu().detach().numpy()
         val_acc = np.sum([pearsonr(val_obs[:, i], epoch_val_y[:, i]) for i in range(epoch_val_y.shape[-1])])
-        print("Val Acc:", val_acc, end="\n")
+        print("Val Acc:", val_acc, "\n")
         scheduler.step(val_acc)
         io.save_checkpoint(model,epoch,epoch_loss/num_batches,optimizer,save,'test')
     return val_acc
