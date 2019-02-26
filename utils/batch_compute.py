@@ -29,7 +29,8 @@ def pad_to_edge(stim):
 
 def batch_compute_model_response(stimulus, model, batch_size):
     '''
-    Computes a model response in batches in pytorch.
+    Computes a model response in batches in pytorch. Returns a dict of lists 
+    where each list is the sequence of batch responses.
     Args:
         stimulus: 3-d checkerboard stimulus in (time, space, space)
         model: the model
@@ -39,21 +40,22 @@ def batch_compute_model_response(stimulus, model, batch_size):
         stimulus = pad_to_edge(stimulus)
     stim = stimulus[:batch_size, :, :]
     phys = Physio(model)
-    stim = torch.from_numpy(stim)
+    stim = torch.FloatTensor(stim)
     model_response = phys.inspect(stim.to(DEVICE)).copy()
     model_response['output'] = model_response['output'].cpu().detach().numpy()
     start = batch_size
     stop = 2*batch_size
+    # Cylce through stimulus data in batches appending responses into model_response dict
     while stop < stimulus.shape[0]:
         stim = stimulus[start:stop, :, :]
-        stim = torch.from_numpy(stim)
+        stim = torch.FloatTensor(stim)
         temp = phys.inspect(stim.to(DEVICE)).copy()
         temp['output'] = temp['output'].cpu().detach().numpy()
         for key in model_response.keys():
             model_response[key] = np.append(model_response[key], temp[key], axis=0)
         start = stop
         stop = start + batch_size
-    stim = torch.from_numpy(stimulus[start:,:,:])
+    stim = torch.FloatTensor(stimulus[start:,:,:])
     temp = phys.inspect(stim.to(DEVICE)).copy()
     temp['output'] = temp['output'].cpu().detach().numpy()
     for key in model_response.keys():
