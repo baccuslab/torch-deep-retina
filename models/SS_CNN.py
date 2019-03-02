@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.nn.functional import relu
 from models.torch_utils import GaussianNoise, ScaleShift
 
 class SSCNN(nn.Module):
@@ -22,10 +23,13 @@ class SSCNN(nn.Module):
         
     def forward(self, x):
         x = self.conv1(x)
-        x = nn.functional.relu(self.gaussian(x.view(-1, 8, 36, 36)))
+        x = relu(self.gaussian(x))
+        x = self.ss1(x)
         x = self.conv2(x)
-        x = nn.functional.relu(self.gaussian(x.view(-1, 8, 26, 26)))
+        x = self.ss2(x)
+        x = relu(self.gaussian(x))
         x = self.linear(x.view(-1, 8*26*26))
+        x = self.ss3(x)
         x = nn.functional.softplus(x)
         return x
     

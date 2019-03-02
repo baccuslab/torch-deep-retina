@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.nn.functional import relu
 from models.torch_utils import GaussianNoise
 
 class CNN(nn.Module):
@@ -16,9 +17,9 @@ class CNN(nn.Module):
         
     def forward(self, x):
         x = self.conv1(x)
-        x = nn.functional.relu(self.gaussian(x.view(-1, 8, 36, 36)))
+        x = relu(self.gaussian(x))
         x = self.conv2(x)
-        x = nn.functional.relu(self.gaussian(x.view(-1, 8, 26, 26)))
+        x = relu(self.gaussian(x))
         x = self.linear(x.view(-1, 8*26*26))
         x = nn.functional.softplus(x)
         return x
