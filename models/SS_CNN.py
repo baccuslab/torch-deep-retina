@@ -1,31 +1,35 @@
 import torch
 import torch.nn as nn
-from torch.distributions import normal
+from torch.nn.functional import relu
+from models.torch_utils import GaussianNoise, ScaleShift
 
-class BNCNN(nn.Module):
+class SSCNN(nn.Module):
     def __init__(self):
-        super(BNCNN,self).__init__()
+        super(SSCNN,self).__init__()
         self.name = 'McNiruNet'
+        shift = True
+        scale = True
+        gauss_std = 0.05
         self.conv1 = nn.Conv2d(40,8,kernel_size=15)
-        self.batch1 = nn.BatchNorm1d(8*36*36, eps=1e-3, momentum=.99)
+        self.ss1 = ScaleShift((8,36,36), shift=shift, scale=scale)
         self.conv2 = nn.Conv2d(8,8,kernel_size=11)
-        self.batch2 = nn.BatchNorm1d(8*26*26, eps=1e-3, momentum=.99)
+        self.ss2 = ScaleShift((8,26,26), shift=shift, scale=scale)
         self.linear = nn.Linear(8*26*26,5, bias=False)
-        self.batch3 = nn.BatchNorm1d(5, eps=1e-3, momentum=.99)
-        self.gaussian = GaussianNoise(0.05)
+        self.ss3 = ScaleShift(5, shift=shift, scale=scale)
+        self.gaussian = GaussianNoise(std=gauss_std)
         self.losses = []
         self.actgrad1=[]
         self.actgrad2=[]
         
     def forward(self, x):
         x = self.conv1(x)
-        x = self.batch1(x.view(x.size(0), -1))
-        x = nn.functional.relu(self.gaussian(x.view(-1, 8, 36, 36)))
+        x = relu(self.gaussian(x))
+        x = self.ss1(x)
         x = self.conv2(x)
-        x = self.batch2(x.view(x.size(0), -1))
-        x = nn.functional.relu(self.gaussian(x.view(-1, 8, 26, 26)))
+        x = self.ss2(x)
+        x = relu(self.gaussian(x))
         x = self.linear(x.view(-1, 8*26*26))
-        x = self.batch3(x)
+        x = self.ss3(x)
         x = nn.functional.softplus(x)
         return x
     
@@ -69,16 +73,3 @@ class BNCNN(nn.Module):
         return model_dict
 
 
-class GaussianNoise(nn.Module):
-    def __init__(self, std=0.05):
-        super(GaussianNoise, self).__init__()
-        self.cuda_param = nn.Parameter(torch.zeros(1), requires_grad=False)
-        self.std = std
-    
-    def forward(self, x):
-        if not self.training:
-            return x
-        noise = self.std * torch.randn(x.size())
-        if next(self.parameters()).is_cuda:
-            noise = noise.cuda()
-        return x + noise

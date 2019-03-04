@@ -11,9 +11,11 @@ import sys
 from torch.distributions import normal
 import gc
 import resource
-sys.path.append('../models/')
+sys.path.append('../')
 sys.path.append('../utils/')
-from BN_CNN import BNCNN
+from models.BN_CNN import BNCNN
+from models.CNN import CNN
+from models.SS_CNN import SSCNN
 import retio as io
 import argparse
 import time
@@ -47,7 +49,8 @@ def train(model_class,epochs=250,batch_size=5000,LR=1e-3,l2_scale=0.01,l1_scale=
     EPOCHS = epochs
     BATCH_SIZE = batch_size
 
-    model = BNCNN()
+    #model = BNCNN()
+    model = SSCNN()
     model = model.to(DEVICE)
 
     loss_fn = torch.nn.PoissonNLLLoss()
@@ -97,6 +100,7 @@ def train(model_class,epochs=250,batch_size=5000,LR=1e-3,l2_scale=0.01,l1_scale=
             print('-----> pearsonr: ' + str(r))
         
         starttime = time.time()
+        activity_l1 = torch.zeros(1).to(DEVICE)
         for batch in range(num_batches):
             optimizer.zero_grad()
             idxs = indices[batch_size*batch:batch_size*(batch+1)]
@@ -108,10 +112,10 @@ def train(model_class,epochs=250,batch_size=5000,LR=1e-3,l2_scale=0.01,l1_scale=
             y = model(x.to(DEVICE))
             y = y.float() 
 
-            #activity_l1 = LAMBDA1 * torch.norm(y, 1).float()
-            #error = loss_fn(y,label)
-            #loss = error + activity_l1
-            loss = loss_fn(y,label)
+            if LAMBDA1 > 0:
+                activity_l1 = LAMBDA1 * torch.norm(y, 1).float()
+            error = loss_fn(y,label)
+            loss = error + activity_l1
             loss.backward()
             optimizer.step()
             epoch_loss += loss.item()
@@ -126,10 +130,11 @@ def train(model_class,epochs=250,batch_size=5000,LR=1e-3,l2_scale=0.01,l1_scale=
         del y
         del label
         val_obs = model(epoch_val_x.to(DEVICE)).cpu().detach().numpy()
-        val_acc = np.sum([pearsonr(val_obs[:, i], epoch_val_y[:, i]) for i in range(epoch_val_y.shape[-1])])
-        print("Val Acc:", val_acc, "\n")
+        val_acc = np.mean([pearsonr(val_obs[:, i], epoch_val_y[:, i]) for i in range(epoch_val_y.shape[-1])])
+        print("Val Acc:", val_acc, " | SaveFolder:", save)
         scheduler.step(val_acc)
         io.save_checkpoint(model,epoch,epoch_loss/num_batches,optimizer,save,'test')
+        print()
     return val_acc
 
 def hyperparameter_search(param, values):
