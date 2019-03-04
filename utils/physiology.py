@@ -32,9 +32,7 @@ class Physio:
 				module.register_forward_hook(self.layer_activity(name))
 				module.register_backward_hook(self.layer_grad(name))
 			self.inspect_hooks = True
-        self.net.eval()
 		self.dict['output'] = self.net(stim)
-        self.net.train()
 		return self.dict
 
 	# phys.inject('conv1', 1, 2)
