@@ -4,17 +4,14 @@ from torch.nn.functional import relu
 from models.torch_utils import GaussianNoise, ScaleShift
 
 class SSCNN(nn.Module):
-    def __init__(self):
+    def __init__(self, scale=True, shift=False, bias=False, gauss_std=0.05):
         super(SSCNN,self).__init__()
         self.name = 'McNiruNet'
-        shift = True
-        scale = True
-        gauss_std = 0.05
         self.conv1 = nn.Conv2d(40,8,kernel_size=15)
         self.ss1 = ScaleShift((8,36,36), shift=shift, scale=scale)
         self.conv2 = nn.Conv2d(8,8,kernel_size=11)
         self.ss2 = ScaleShift((8,26,26), shift=shift, scale=scale)
-        self.linear = nn.Linear(8*26*26,5, bias=False)
+        self.linear = nn.Linear(8*26*26,5, bias=bias)
         self.ss3 = ScaleShift(5, shift=shift, scale=scale)
         self.gaussian = GaussianNoise(std=gauss_std)
         self.losses = []

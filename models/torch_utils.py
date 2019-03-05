@@ -15,11 +15,20 @@ class GaussianNoise(nn.Module):
             noise = noise.cuda()
         return x + noise
 
+    def extra_repr(self):
+        return 'std={}'.format(self.std)
+
 class ScaleShift(nn.Module):
-    def __init__(self, x_shape, scale=True, shift=True):
+    def __init__(self, shape, scale=True, shift=True):
         super(ScaleShift, self).__init__()
-        self.scale = nn.Parameter(torch.ones(x_shape).float(), requires_grad=scale)
-        self.shift = nn.Parameter(torch.zeros(x_shape).float(), requires_grad=shift)
+        self.shape = shape
+        self.scale = scale
+        self.shift = shift
+        self.scale_param = nn.Parameter(torch.ones(shape).float(), requires_grad=scale)
+        self.shift_param= nn.Parameter(torch.zeros(shape).float(), requires_grad=shift)
 
     def forward(self, x):
-        return x*self.scale + self.shift
+        return x*self.scale_param + self.shift_param
+
+    def extra_repr(self):
+        return 'shape={}, scale={}, shift={}'.format(self.shape, self.scale, self.shift)
