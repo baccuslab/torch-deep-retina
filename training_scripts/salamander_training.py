@@ -36,12 +36,13 @@ seed = 3
 np.random.seed(seed)
 torch.manual_seed(seed)
 
+
 # Load data using Lane and Nirui's dataloader
 train_data = loadexpt('15-10-07',[0,1,2,3,4],'naturalscene','train',40,0)
 test_data = loadexpt('15-10-07',[0,1,2,3,4],'naturalscene','test',40,0)
 val_split = 0.005
 
-def train(model_class,epochs=250,batch_size=5000,LR=1e-3,l2_scale=0.01,l1_scale=5e-6, shuffle=True, save='./checkpoints', val_splt=0.02):
+def train(epochs=250,batch_size=5000,LR=1e-3,l1_scale=1e-4,l2_scale=1e-2, shuffle=True, save='./checkpoints', val_splt=0.02):
     if not os.path.exists(save):
         os.mkdir(save)
     LAMBDA1 = l1_scale
@@ -49,8 +50,11 @@ def train(model_class,epochs=250,batch_size=5000,LR=1e-3,l2_scale=0.01,l1_scale=
     EPOCHS = epochs
     BATCH_SIZE = batch_size
 
-    #model = BNCNN()
-    model = SSCNN()
+    # Model
+    #model = model_class()
+    #model = CNN(bias=False)
+    model = SSCNN(shift=True, scale=True, bias=False)
+    print(model)
     model = model.to(DEVICE)
 
     loss_fn = torch.nn.PoissonNLLLoss()
@@ -72,6 +76,7 @@ def train(model_class,epochs=250,batch_size=5000,LR=1e-3,l2_scale=0.01,l1_scale=
     batch_size = BATCH_SIZE
     print("Train size:", len(epoch_train_x))
     print("Val size:", len(epoch_val_x))
+    print("N Batches:", num_batches, "  Leftover:", leftover)
 
     # test data
     test_x = torch.from_numpy(test_data.X)
@@ -156,18 +161,36 @@ def hyperparameter_search(param, values):
     print("The best valuation loss achieved was {0} with a {1} value of {2}".format(best_val_loss, param, best_val))
 
 
-def main():
+def parseargs():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--epochs', default = 250)
+    parser.add_argument('--epochs', default = 200)
     parser.add_argument('--batch', default = 1028)
     parser.add_argument('--lr', default = 1e-4)
     parser.add_argument('--l2', default = 0.01)
     parser.add_argument('--l1', default = 1e-7)
     parser.add_argument('--shuffle', default=True)
     parser.add_argument('--save', default='./checkpoints')
-    args = parser.parse_args(sys.argv[1:])
-    train(BNCNN, int(args.epochs), int(args.batch), float(args.lr), float(args.l2), float(args.l1), args.shuffle, args.save)
+    return parser.parse_args(sys.argv[1:])
 
 
 if __name__ == "__main__":
-    main()
+    #args = parseargs()
+    #train(int(args.epochs), int(args.batch), float(args.lr), float(args.l1), float(args.l2), args.shuffle, args.save)
+    #train(50, 512, 1e-4, 0, .01, True, "delete_me")
+    savebase = 'chckpts_'
+    n_epochs = 75
+    batch_size = 512
+    shuffle = True
+    lrs = [1e-3, 1e-5]
+    l1s = [1e-4, 1e-5, 1e-6]
+    l2s = [1e-2, 1e-3]
+    exp_num = 6
+    for lr in lrs:
+        for l1 in l1s:
+            for l2 in l2s:
+                save_folder = savebase + str(exp_num) + "_lr"+str(lr) + "_" + "l1" + str(l1) + "_" + "l2" + str(l2)
+                train(n_epochs, batch_size, lr, l1, l2, shuffle, save_folder)
+                exp_num += 1
+
+
+
