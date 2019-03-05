@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np 
 from itertools import repeat
-import stimuli as stim
-import visualizations as viz
+import utils.stimuli as stim
+import utils.visualizations as viz
 from tqdm import tqdm, trange
 import torch
 
