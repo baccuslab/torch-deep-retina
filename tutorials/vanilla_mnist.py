@@ -4,22 +4,24 @@ import torch
 import torchvision
 import torch.nn as nn
 
-# Works extremely fast on gpu (first epoch already at 95%)
-
+# 1. Hyperparamters
 BATCH_SIZE = 128 
 EPOCHS = 1
 
-train_dataset = torchvision.datasets.MNIST(root='~',train = True,transform=torchvision.transforms.ToTensor())
+# 2. Data loading
+train_dataset = torchvision.datasets.MNIST(root='~',train = True,transform=torchvision.transforms.ToTensor(),download=True)
 train_data_loader = torch.utils.data.DataLoader(train_dataset,batch_size=BATCH_SIZE,shuffle=True,num_workers=1)
 
-test_dataset = torchvision.datasets.MNIST(root='~',train=True,transform = torchvision.transforms.ToTensor())
+test_dataset = torchvision.datasets.MNIST(root='~',train=True,transform = torchvision.transforms.ToTensor(),download=True)
 test_data_loader = torch.utils.data.DataLoader(test_dataset,batch_size=BATCH_SIZE,shuffle=True,num_workers=1)
 
 print('Train Dataset Contains {} Examples'.format(len(train_dataset)))
 print('Test Dataset Contains {} Examples'.format(len(test_dataset)))
 
+# 3. Device Definition
 device = torch.device("cpu")
 
+# 4. Model Architecture
 class simpleNet(nn.Module):
     def __init__(self):
         super(simpleNet,self).__init__()
@@ -39,11 +41,16 @@ class simpleNet(nn.Module):
         return x
 
 
-
+# 5. Instantiates of 
+    # a. model
+    # b. loss fxn
+    # c. optimizer
 
 model = simpleNet().to(device)
 loss_fn = torch.nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(),lr=0.01)
+
+# 6. Train loop
 
 for epoch in range(EPOCHS):
     print('Epoch ' + str(epoch))
@@ -51,15 +58,23 @@ for epoch in range(EPOCHS):
         
         img = img.to(device)
         label = label.to(device)
+
+        # Forward pass of inputs to outputs
         out = model(img)
-        
+       
+        # Calculate loss
         loss = loss_fn(out,label)
-
-
+        
+        # Clear all the gradients
         optimizer.zero_grad()
+
+        # Calculate new gradients
         loss.backward()
+        
+        # Take a step down the gradient
         optimizer.step()
         
+        # Calculation
         _,idx = out.max(dim=-1)
         num_correct = 0
         for i in range(idx.shape[0]):
@@ -67,4 +82,5 @@ for epoch in range(EPOCHS):
                 num_correct += 1
         print(str(num_correct) + ' / ' + str(idx.shape[0]))
         print(num_correct / idx.shape[0])
-        time.sleep(0.01)
+
+

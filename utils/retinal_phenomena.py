@@ -1,35 +1,15 @@
 import matplotlib.pyplot as plt
 import numpy as np 
 from itertools import repeat
-import utils.stimuli as stim
-import utils.visualizations as viz
+import stimuli as stim
+import visualizations as viz
 from tqdm import tqdm, trange
 import torch
 
 DEVICE = torch.device("cuda:0")
 
 def step_response(model, duration=100, delay=50, nsamples=200, intensity=-1.):
-    """Generates step responses (using utils.stimuli.flash)
-
-    Parameters
-    ----------
-    duration : int
-        The duration (in samples) of the flash (default: 100)
-    delay : int
-        The delay (in samples) before the flash starts (default: 50)
-    nsamples : int
-        The total number of samples in the array (default: 200)
-    intensity : float or array_like, optional
-        The flash intensity. If a number is given, the flash is a full-field
-        flash. Otherwise, if it is a 2D array, then that image is flashed. (default: -1.0)
-
-    Returns
-    -------
-    figs : matplotlib.figure.Figure
-        Matplotlib Figure object into which step response is plotted    	
-    X : array_like of shape (nsamples - 40, 40, 50, 50)
-    resp : torch.tensor of size (nsamples - 40, number of cells)
-    """
+    """Step response"""
     X = stim.concat(stim.flash(duration, delay, nsamples, intensity=intensity))
     X_torch = torch.from_numpy(X).to(DEVICE)
     resp = model(X_torch)
@@ -62,14 +42,14 @@ def paired_flash(model, ifis=(2, 20), duration=1, intensity=-2.0, total=100, del
         r1.append(stim.prepad(model(x1_torch).cpu().detach().numpy()))
 
         x2 = stim.paired_flashes(ifi, duration, (0, intensity), total, delay)
-        s2.append(stim.unroll(x2)[:, 0, 0])        
         x2_torch = torch.from_numpy(x2).to(DEVICE)
+        s2.append(stim.unroll(x2)[:, 0, 0])
         r2.append(stim.prepad(model(x2_torch).cpu().detach().numpy()))
 
         # pair
         x = stim.paired_flashes(ifi, duration, intensity, total, delay)
-        stimuli.append(stim.unroll(x)[:, 0, 0])
         x_torch = torch.from_numpy(x).to(DEVICE)
+        stimuli.append(stim.unroll(x)[:, 0, 0])
         responses.append(stim.prepad(model(x).cpu().detach().numpy()))
 
     return map(np.stack, (s1, r1, s2, r2, stimuli, responses))
