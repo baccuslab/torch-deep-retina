@@ -53,7 +53,7 @@ def train(epochs=250,batch_size=5000,LR=1e-3,l1_scale=1e-4,l2_scale=1e-2, shuffl
     # Model
     #model = model_class()
     #model = CNN(bias=False)
-    model = SSCNN(shift=True, scale=True, bias=False)
+    model = SSCNN(scale=True, shift=False, bias=True)
     print(model)
     model = model.to(DEVICE)
 
@@ -137,7 +137,7 @@ def train(epochs=250,batch_size=5000,LR=1e-3,l1_scale=1e-4,l2_scale=1e-2, shuffl
         val_obs = model(epoch_val_x.to(DEVICE)).cpu().detach().numpy()
         val_acc = np.mean([pearsonr(val_obs[:, i], epoch_val_y[:, i]) for i in range(epoch_val_y.shape[-1])])
         print("Val Acc:", val_acc, " | SaveFolder:", save)
-        scheduler.step(val_acc)
+        scheduler.step(error)
         io.save_checkpoint(model,epoch,epoch_loss/num_batches,optimizer,save,'test')
         print()
     return val_acc
@@ -177,14 +177,14 @@ if __name__ == "__main__":
     #args = parseargs()
     #train(int(args.epochs), int(args.batch), float(args.lr), float(args.l1), float(args.l2), args.shuffle, args.save)
     #train(50, 512, 1e-4, 0, .01, True, "delete_me")
-    savebase = 'chckpts_'
-    n_epochs = 75
+    savebase = 'biasnoshift_'
+    n_epochs = 100
     batch_size = 512
     shuffle = True
-    lrs = [1e-3, 1e-5]
-    l1s = [1e-4, 1e-5, 1e-6]
+    lrs = [1e-4]
+    l1s = [0, 1e-5, 1e-6]
     l2s = [1e-2, 1e-3]
-    exp_num = 6
+    exp_num = 0
     for lr in lrs:
         for l1 in l1s:
             for l2 in l2s:
