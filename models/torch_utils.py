@@ -47,7 +47,7 @@ class DaleActivations(nn.Module):
         self.mask = nn.Parameter(mask, requires_grad=False)
 
     def forward(self, x):
-        x = x.permute(0,2,3,1)
+        x = x.permute(0,2,3,1).abs()
         x = x*self.mask
         return x.permute(0,3,1,2)
 
