@@ -54,10 +54,11 @@ class DaleActivations(nn.Module):
 class AbsConv2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
         super(AbsConv2d, self).__init__()
+        self.bias = bias
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
 
     def forward(self, x):
-        if bias:
+        if self.bias:
             return nn.functional.conv2d(x, self.conv.weight.abs(), self.conv.bias.abs(), 
                                                     self.conv.stride, self.conv.padding, 
                                                     self.conv.dilation, self.conv.groups)
@@ -69,10 +70,11 @@ class AbsConv2d(nn.Module):
 class AbsLinear(nn.Module):
     def __init__(self, in_features, out_features, bias=True):
         super(AbsLinear, self).__init__()
+        self.bias = bias
         self.linear = nn.Linear(in_features, out_features, bias=bias)
 
     def forward(self, x):
-        if bias:
+        if self.bias:
             return nn.functional.linear(x, self.linear.weight.abs(), 
                                             self.linear.bias.abs())
         else:
