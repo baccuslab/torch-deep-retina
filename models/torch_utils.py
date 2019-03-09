@@ -32,3 +32,49 @@ class ScaleShift(nn.Module):
 
     def extra_repr(self):
         return 'shape={}, scale={}, shift={}'.format(self.shape, self.scale, self.shift)
+
+class DaleActivations(nn.Module):
+    """
+    For the full Dale effect, will also need to use AbsConv2d and AbsLinear layers.
+    """
+    def __init__(self, n_chan, neg_p=.33):
+        super(Dale, self).__init__()
+        self.n_chan = n_chan
+        self.neg_p = neg_p
+        n_neg_chan = int(neg_p * n_chan)
+        mask = torch.ones(n_chan).float()
+        mask[:n_neg_chan] = mask[:n_neg_chan]*-1
+        self.mask = nn.Parameter(mask, requires_grad=False)
+
+    def forward(self, x):
+        x = x.permute(0,2,3,1)
+        x = x*self.mask
+        return x.permute(0,3,1,2)
+
+class AbsConv2d(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
+        super(AbsConv2d, self).__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
+
+    def forward(self, x):
+        if bias:
+            return nn.functional.conv2d(x, self.conv.weight.abs(), self.conv.bias.abs(), 
+                                                    self.conv.stride, self.conv.padding, 
+                                                    self.conv.dilation, self.conv.groups)
+        else:
+            return nn.functional.conv2d(x, self.conv.weight.abs(), self.conv.bias, 
+                                                self.conv.stride, self.conv.padding, 
+                                                self.conv.dilation, self.conv.groups)
+
+class AbsLinear(nn.Module):
+    def __init__(self, in_features, out_features, bias=True):
+        super(AbsLinear, self).__init__()
+        self.linear = nn.Linear(in_features, out_features, bias=bias)
+
+    def forward(self, x):
+        if bias:
+            return nn.functional.linear(x, self.linear.weight.abs(), 
+                                            self.linear.bias.abs())
+        else:
+            return nn.functional.linear(x, self.linear.weight.abs(), 
+                                                    self.linear.bias)
