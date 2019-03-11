@@ -6,7 +6,7 @@ import torch
 import numpy as np
 import torch.nn as nn
 
-def save_checkpoint(model,epoch, loss, optimizer, path, exp_id, state_dict=True):
+def save_checkpoint(model,epoch, loss, optimizer, path, exp_id, state_dict=True, hyps=None):
     path = os.path.join(path,exp_id + '_epoch_' + str(epoch)) + '.pth'
     path = os.path.abspath(os.path.expanduser(path))
     torch.save({
@@ -14,7 +14,8 @@ def save_checkpoint(model,epoch, loss, optimizer, path, exp_id, state_dict=True)
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': loss,
-                'model': model
+                'model': model,
+                'hyps': hyps
                 }, path)
     print('Saved!')
 
@@ -24,6 +25,7 @@ def load_checkpoint(exp_id,epoch,folder,eval=True,return_ckpt=False):
 
     checkpoint = torch.load(path)
     model = checkpoint['model']
+    model.load_state_dict(checkpoint['model_state_dict'])
     if return_ckpt:
         return model, checkpoint
     else:

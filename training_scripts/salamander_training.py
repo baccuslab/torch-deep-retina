@@ -13,6 +13,7 @@ import gc
 import resource
 sys.path.append('../')
 sys.path.append('../utils/')
+from utils.hyperparams import HyperParams
 from models.BN_CNN import BNCNN
 from models.CNN import CNN
 from models.SS_CNN import SSCNN
@@ -181,19 +182,25 @@ if __name__ == "__main__":
     #args = parseargs()
     #train(int(args.epochs), int(args.batch), float(args.lr), float(args.l1), float(args.l2), args.shuffle, args.save)
     #train(50, 512, 1e-4, 0, .01, True, "delete_me")
-    savebase = 'dalesSS_'
-    n_epochs = 30
-    batch_size = 512
-    shuffle = True
-    lrs = [1e-5, 1e-6, 1e-7]
+    hp = HyperParams()
+    hyps = hp.hyps
+    hyps['exp_name'] = 'dalesSS'
+    hyps['n_epochs'] = 30
+    hyps['batch_size'] = 512
+    hyps['shuffle'] = True
+    lrs = [1e-6, 1e-7, 1e-8]
     l1s = [0]
     l2s = [1e-2]
     exp_num = 0
     for lr in lrs:
+        hyps['lr'] = lr
         for l1 in l1s:
+            hyps['l1'] = l1
             for l2 in l2s:
-                save_folder = savebase + str(exp_num) + "_lr"+str(lr) + "_" + "l1" + str(l1) + "_" + "l2" + str(l2)
-                train(n_epochs, batch_size, lr, l1, l2, shuffle, save_folder)
+                hyps['l2'] = l2
+                hyps['save_folder'] = hyps['exp_name'] +"_"+ str(exp_num) + "_lr"+str(lr) + "_" + "l1" + str(l1) + "_" + "l2" + str(l2)
+                hp.print()            
+                train(hyps['n_epochs'], hyps['batch_size'], lr, l1, l2, hyps['shuffle'], hyps['save_folder'])
                 exp_num += 1
 
 
