@@ -3,15 +3,17 @@ import torch.nn as nn
 from models.torch_utils import GaussianNoise, ScaleShift, AbsConv2d, AbsLinear, DaleActivations
 
 class DalesCNN(nn.Module):
-    def __init__(self, bias=True, gauss_std=0.05):
+    def __init__(self, bias=True, gauss_std=0.05, neg_p=.5):
         super(DalesCNN,self).__init__()
         self.name = 'DaleNet'
-        self.conv1 = AbsConv2d(40,8,kernel_size=15, bias=bias)
+        self.conv0 = AbsConv2d(40,8,kernel_size=15, bias=bias)
         self.gaussian0 = GaussianNoise(std=gauss_std)
         self.relu0 = nn.ReLU()
-        self.conv2 = AbsConv2d(8,8,kernel_size=11, bias=bias)
+        self.dale0 = DaleActivations(8, neg_p)
+        self.conv1 = AbsConv2d(8,8,kernel_size=11, bias=bias)
         self.gaussian1 = GaussianNoise(std=gauss_std)
         self.relu1 = nn.ReLU()
+        self.dale1 = DaleActivations(8, neg_p)
         self.linear = AbsLinear(8*26*26,5, bias=bias)
         self.softplus = nn.Softplus()
         self.losses = []
@@ -19,13 +21,15 @@ class DalesCNN(nn.Module):
         self.actgrad2=[]
         
     def forward(self, x):
-        x = self.conv1(x)
+        x = self.conv0(x)
         x = self.gaussian0(x)
         x = self.relu0(x)
-        x = self.conv2(x)
+        x = self.dale0(x)
+        x = self.conv1(x)
         x = self.gaussian1(x)
         x = self.relu1(x)
-        x = self.linear(x.view(x.shape[0], -1))
+        x = self.dale1(x)
+        x = self.linear(x.view(x.size(0), -1))
         x = self.softplus(x)
         return x
     
@@ -38,7 +42,7 @@ class DalesCNN(nn.Module):
     def inspect(self, x):
         model_dict = {}
         model_dict['stimulus'] = x
-        x = self.conv1(x);
+        x = self.conv0(x);
         model_dict['conv2d_1'] = x
         x = x.view(x.size(0), -1)
         model_dict['flatten_1'] = x
@@ -49,7 +53,7 @@ class DalesCNN(nn.Module):
         x = nn.functional.relu(x)
         model_dict['activation_1'] = x
         model_dict['activation_1'].register_hook(self.record_grad1)
-        x = self.conv2(x);
+        x = self.conv1(x);
         model_dict['conv2d_2'] = x
         x = x.view(x.size(0), -1)
         model_dict['flatten_2'] = x
