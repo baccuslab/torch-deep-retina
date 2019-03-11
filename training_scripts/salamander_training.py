@@ -16,6 +16,9 @@ sys.path.append('../utils/')
 from models.BN_CNN import BNCNN
 from models.CNN import CNN
 from models.SS_CNN import SSCNN
+from models.Dales_BN_CNN import DalesBNCNN
+from models.Dales_SS_CNN import DalesSSCNN
+from models.Dales_CNN import DalesCNN
 import retio as io
 import argparse
 import time
@@ -53,7 +56,8 @@ def train(epochs=250,batch_size=5000,LR=1e-3,l1_scale=1e-4,l2_scale=1e-2, shuffl
     # Model
     #model = model_class()
     #model = CNN(bias=False)
-    model = SSCNN(scale=True, shift=False, bias=True)
+    #model = SSCNN(scale=True, shift=False, bias=True)
+    model = DalesSSCNN(bias=True, neg_p=.5)
     print(model)
     model = model.to(DEVICE)
 
@@ -177,13 +181,13 @@ if __name__ == "__main__":
     #args = parseargs()
     #train(int(args.epochs), int(args.batch), float(args.lr), float(args.l1), float(args.l2), args.shuffle, args.save)
     #train(50, 512, 1e-4, 0, .01, True, "delete_me")
-    savebase = 'biasnoshift_'
-    n_epochs = 100
+    savebase = 'dalesSS_'
+    n_epochs = 30
     batch_size = 512
     shuffle = True
-    lrs = [1e-4]
-    l1s = [0, 1e-5, 1e-6]
-    l2s = [1e-2, 1e-3]
+    lrs = [1e-5, 1e-6, 1e-7]
+    l1s = [0]
+    l2s = [1e-2]
     exp_num = 0
     for lr in lrs:
         for l1 in l1s:
