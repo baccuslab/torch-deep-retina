@@ -38,18 +38,21 @@ class DaleActivations(nn.Module):
     For the full Dale effect, will also need to use AbsConv2d and AbsLinear layers.
     """
     def __init__(self, n_chan, neg_p=.33):
-        super(Dale, self).__init__()
+        super(DaleActivations, self).__init__()
         self.n_chan = n_chan
         self.neg_p = neg_p
-        n_neg_chan = int(neg_p * n_chan)
+        self.n_neg_chan = int(neg_p * n_chan)
         mask = torch.ones(n_chan).float()
-        mask[:n_neg_chan] = mask[:n_neg_chan]*-1
+        mask[:self.n_neg_chan] = mask[:self.n_neg_chan]*-1
         self.mask = nn.Parameter(mask, requires_grad=False)
 
     def forward(self, x):
         x = x.permute(0,2,3,1).abs()
         x = x*self.mask
-        return x.permute(0,3,1,2)
+        return x.permute(0,3,1,2).contiguous()
+
+    def extra_repr(self):
+        return 'n_chan={}, neg_p={}, n_neg_chan={}'.format(self.n_chan, self.neg_p, self.n_neg_chan)
 
 class AbsConv2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
@@ -63,7 +66,7 @@ class AbsConv2d(nn.Module):
                                                     self.conv.stride, self.conv.padding, 
                                                     self.conv.dilation, self.conv.groups)
         else:
-            return nn.functional.conv2d(x, self.conv.weight.abs(), self.conv.bias, 
+            return nn.functional.conv2d(x, self.conv.weight.abs(), None, 
                                                 self.conv.stride, self.conv.padding, 
                                                 self.conv.dilation, self.conv.groups)
 
