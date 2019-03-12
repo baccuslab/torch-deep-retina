@@ -32,8 +32,8 @@ class DalesBNCNN(nn.Module):
         x = self.batch2(x.view(x.size(0), -1))
         x = self.gaussian(x)
         x = self.relu(x)
-        x = self.dale2(x)
-        x = self.linear(x)
+        x = self.dale2(x.view(-1, 8, 26, 26))
+        x = self.linear(x.view(x.size(0), -1))
         x = self.batch3(x)
         x = self.softplus(x)
         return x
