@@ -46,7 +46,7 @@ train_data = loadexpt('15-10-07',[0,1,2,3,4],'naturalscene','train',40,0)
 test_data = loadexpt('15-10-07',[0,1,2,3,4],'naturalscene','test',40,0)
 val_split = 0.005
 
-def train(epochs=250,batch_size=5000,LR=1e-3,l1_scale=1e-4,l2_scale=1e-2, shuffle=True, save='./checkpoints', val_splt=0.02):
+def train(hyps, epochs=250, batch_size=5000, LR=1e-3, l1_scale=1e-4, l2_scale=1e-2, shuffle=True, save='./checkpoints', val_splt=0.02):
     if not os.path.exists(save):
         os.mkdir(save)
     LAMBDA1 = l1_scale
@@ -61,6 +61,11 @@ def train(epochs=250,batch_size=5000,LR=1e-3,l1_scale=1e-4,l2_scale=1e-2, shuffl
     model = DalesBNCNN(bias=True, neg_p=.5)
     print(model)
     model = model.to(DEVICE)
+
+    with open(save + "/hyperparams.txt",'w') as f:
+        f.write(str(model)+'\n')
+        for k in sorted(hyps.keys()):
+            f.write(str(k) + ": " + str(hyps[k]) + "\n")
 
     loss_fn = torch.nn.PoissonNLLLoss()
     optimizer = torch.optim.Adam(model.parameters(),lr = LR, weight_decay = LAMBDA2)
@@ -185,13 +190,13 @@ if __name__ == "__main__":
     hp = HyperParams()
     hyps = hp.hyps
     hyps['exp_name'] = 'dalesBN'
-    hyps['n_epochs'] = 30
+    hyps['n_epochs'] = 60
     hyps['batch_size'] = 512
     hyps['shuffle'] = True
-    lrs = [1e-6, 1e-7, 1e-8]
+    lrs = [2.5e-4, 7.5e-4]
     l1s = [0]
     l2s = [1e-2]
-    exp_num = 0
+    exp_num = 3
     for lr in lrs:
         hyps['lr'] = lr
         for l1 in l1s:
@@ -200,7 +205,7 @@ if __name__ == "__main__":
                 hyps['l2'] = l2
                 hyps['save_folder'] = hyps['exp_name'] +"_"+ str(exp_num) + "_lr"+str(lr) + "_" + "l1" + str(l1) + "_" + "l2" + str(l2)
                 hp.print()            
-                train(hyps['n_epochs'], hyps['batch_size'], lr, l1, l2, hyps['shuffle'], hyps['save_folder'])
+                train(hyps, hyps['n_epochs'], hyps['batch_size'], lr, l1, l2, hyps['shuffle'], hyps['save_folder'])
                 exp_num += 1
 
 
