@@ -14,7 +14,7 @@ import resource
 sys.path.append('../models/')
 sys.path.append('../utils/')
 
-from mouse_bn_cnn import BNCNN
+from BN_CNN import BNCNN
 import retio as io
 import argparse
 import time
@@ -36,7 +36,7 @@ np.random.seed(seed)
 torch.manual_seed(seed)
 
 # Load data using Lane and Nirui's dataloader
-train_data = loadexpt('19-02-26',[0,1],'naturalmovie','train',40,0)
+train_data = loadexpt('19-02-26',[1],'naturalmovie','train',40,0)
 val_split = 0.005
 
 def train(model_class,epochs=250,batch_size=5000,LR=1e-3,l2_scale=0.01,l1_scale=5e-6, shuffle=True, save='./checkpoints', val_splt=0.02,savename='train'):
@@ -47,7 +47,7 @@ def train(model_class,epochs=250,batch_size=5000,LR=1e-3,l2_scale=0.01,l1_scale=
     EPOCHS = epochs
     BATCH_SIZE = batch_size
 
-    model = BNCNN()
+    model = BNCNN(1)
     model = model.to(DEVICE)
 
     loss_fn = torch.nn.PoissonNLLLoss()
@@ -152,7 +152,7 @@ def main():
     parser.add_argument('--save', default='./checkpoints')
     parser.add_argument('--savename',default='train')
     args = parser.parse_args(sys.argv[1:])
-    train(BNCNN, int(args.epochs), int(args.batch), float(args.lr), float(args.l2), float(args.l1), args.shuffle, args.save,savename=args.savename)
+    train(BNCNN(1), int(args.epochs), int(args.batch), float(args.lr), float(args.l2), float(args.l1), args.shuffle, args.save,savename=args.savename)
 
 
 if __name__ == "__main__":

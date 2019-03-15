@@ -15,11 +15,6 @@ sys.path.append('../')
 sys.path.append('../utils/')
 from utils.hyperparams import HyperParams
 from models.BN_CNN import BNCNN
-from models.CNN import CNN
-from models.SS_CNN import SSCNN
-from models.Dales_BN_CNN import DalesBNCNN
-from models.Dales_SS_CNN import DalesSSCNN
-from models.Dales_CNN import DalesCNN
 import retio as io
 import argparse
 import time
@@ -40,180 +35,147 @@ seed = 3
 np.random.seed(seed)
 torch.manual_seed(seed)
 
-
-# Load data using Lane and Nirui's dataloader
-#test_data = loadexpt('15-10-07',[0,1,2,3,4],'naturalscene','test',40,0)
-#val_split = 0.005
+# Load data using Lane and Niru's dataloader
+train_data = loadexpt('19-02-26',[1],'naturalmovie','train',40,0)
 
 def train(epochs=250,batch_size=5000,LR=1e-3,l1_scale=1e-4,l2_scale=1e-2, shuffle=True, save='./checkpoints'):
     if not os.path.exists(save):
         os.mkdir(save)
-    train_data = loadexpt('19-02-26',[0,1],'naturalmovie','train',40,0)
+    
+    # I <3 definitions that are redundant
     LAMBDA1 = l1_scale
     LAMBDA2 = l2_scale
     EPOCHS = epochs
     BATCH_SIZE = batch_size
 
     # Model
-    #model = model_class()
-    output_units = 2
-    model = BNCNN(2)
-    #model = CNN(bias=False)
-    #model = SSCNN(scale=True, shift=False, bias=True)
-    #model = DalesBNCNN(bias=True, neg_p=.5)
-    print(model)
+    output_units = 1
+    model = BNCNN(output_units)
     model = model.to(DEVICE)
 
+
+    # init the actual optimization machinery
     loss_fn = torch.nn.PoissonNLLLoss()
     optimizer = torch.optim.Adam(model.parameters(),lr = LR, weight_decay = LAMBDA2)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.2)
+    
 
-    # train/val split
-    val_p = .015
-    n_samples = train_data.X.shape[0]
-    n_val = int(n_samples*val_p)
-    val_chunk = n_val//3
-    val_idxs = np.concatenate([np.arange(0,val_chunk), 
-                               np.arange(n_samples//2, n_samples//2+val_chunk), 
-                               np.arange(n_samples-val_chunk, n_samples)], 0).astype(np.int)
-    print("Validxs:", val_idxs[:10]) 
-    test_x = train_data.X[val_idxs]
-    test_y = train_data.y[val_idxs]
-    del val_idxs
-    train_idxs = np.concatenate([np.arange(val_chunk, n_samples//2), 
-                                np.arange(n_samples//2+val_chunk, n_samples-val_chunk)], 0).astype(np.int)
-    epoch_train_x = train_data.X[train_idxs]
-    epoch_train_y = train_data.y[train_idxs]
-    del train_data
-    del train_idxs
-    epoch_train_x = torch.FloatTensor(epoch_train_x)
-    epoch_train_y = torch.FloatTensor(epoch_train_y)
+
+    # train data
+    epoch_tv_x = torch.FloatTensor(train_data.X)
+    epoch_tv_y = torch.FloatTensor(train_data.y)
+
+    #train/val split
+    val_split = 0.007
+    num_val = int(epoch_tv_x.shape[0]*val_split)
+    num_test = num_val / 2
+    print('Validating on Beginning and End with {} Samples'.format(num_val*2))
+    print('Saving {} Samples from Middle for test'.format(num_test))
+
+    epoch_train_x = epoch_tv_x[(2*num_val):-num_val]
+    epoch_val_x_beginning = epoch_tv_x[:num_val]
+    epoch_val_x_end = epoch_tv_x[-num_val:]
+
+    # WONT VALIDATE SO WE CAN TEST ON IT
+    TEST_X = epoch_tv_x[num_val:(2*num_val)]
+    TEST_Y = epoch_tv_y[num_val:(2*num_val)]
+    
+    epoch_train_y = epoch_tv_y[(2*num_val):-num_val]
+    epoch_val_y_beginning = epoch_tv_y[:num_val]
+    epoch_val_y_end = epoch_tv_y[-num_val:]
+
+    
+    # print some useful meta statistics
     epoch_length = epoch_train_x.shape[0]
     num_batches,leftover = divmod(epoch_length, BATCH_SIZE)
     batch_size = BATCH_SIZE
     print("Train size:", len(epoch_train_x))
-    print("Val size:", len(epoch_val_x))
     print("N Batches:", num_batches, "  Leftover:", leftover)
 
-    # test data
-    #test_x = torch.from_numpy(test_data.X)
-    #test_x = test_x[:500]
-
-    # Train Loop
+    # train loop
     for epoch in range(EPOCHS):
-        if shuffle:
-            indices = torch.randperm(epoch_train_x.shape[0]).long()
-        else:
-            indices = torch.arange(0, epoch_train_x.shape[0]).long()
-
         losses = []
         epoch_loss = 0
         print('Epoch ' + str(epoch))  
-        
-        model.eval()
-        test_obs = model(test_x.to(DEVICE)).cpu().detach().numpy()
+       
         model.train(mode=True)
-
-        for cell in range(test_obs.shape[-1]):
-            obs = test_obs[:500,cell]
-            lab = test_y[:500,cell]
-            r,p = pearsonr(obs,lab)
-            print('Cell ' + str(cell) + ': ')
-            print('-----> pearsonr: ' + str(r))
         
+        if shuffle:
+            indices = np.random.permutation(epoch_train_x.shape[0]).astype('int')
+        else:
+            indices = np.arange(0,epoch_train_x.shape[0]).astype('int')
+            
         starttime = time.time()
+
         activity_l1 = torch.zeros(1).to(DEVICE)
         for batch in range(num_batches):
             optimizer.zero_grad()
             idxs = indices[batch_size*batch:batch_size*(batch+1)]
-            x = epoch_train_x[idxs]
-            label = epoch_train_y[idxs]
-            label = label.float()
+
+            x = torch.FloatTensor(epoch_train_x[idxs])
+            label = torch.FloatTensor(epoch_train_y[idxs])
             label = label.to(DEVICE)
 
             y = model(x.to(DEVICE))
-            y = y.float() 
 
             if LAMBDA1 > 0:
-                activity_l1 = LAMBDA1 * torch.norm(y, 1).float()
+                activity_l1 = LAMBDA1 * torch.norm(y, 1)
+
             error = loss_fn(y,label)
             loss = error + activity_l1
             loss.backward()
+
             optimizer.step()
+
             epoch_loss += loss.item()
             print("Loss:", loss.item()," - error:", error.item(), " - l1:", activity_l1.item(), " | ", int(round(batch/num_batches, 2)*100), "% done", end='               \r')
         print('\nAvg Loss: ' + str(epoch_loss/num_batches), " - exec time:", time.time() - starttime)
-        #gc.collect()
-        #max_mem_used = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        #print("Memory Used: {:.2f} memory".format(max_mem_used / 1024))
 
         #validate model
         del x
         del y
         del label
-        #val_obs = model(epoch_val_x.to(DEVICE)).cpu().detach().numpy()
-        #val_acc = np.mean([pearsonr(val_obs[:, i], epoch_val_y[:, i]) for i in range(epoch_val_y.shape[-1])])
         print("SaveFolder:", save)
         scheduler.step(error)
-        io.save_checkpoint(model,epoch,epoch_loss/num_batches,optimizer,save,'test')
-        print()
+        io.save_checkpoint(model,epoch,epoch_loss/num_batches,optimizer,save,'one_cell')
+        
+        model.eval()
+
+        val_obs_1 = model(epoch_val_x_beginning.to(DEVICE)).cpu().detach().numpy()
+        val_obs_2 = model(epoch_val_x_end.to(DEVICE)).cpu().detach().numpy()
+
+        val_1_acc = pearsonr(epoch_val_y_beginning,val_obs_1)[0]
+        val_2_acc = pearsonr(epoch_val_y_end,val_obs_2)[0]
+        
+        print('Beginning Val: {} End Val: {} CALCULATE YOUR OWN DAMNED AVERAGE'.format(val_1_acc,val_2_acc))
+
     return
 
-def hyperparameter_search(param, values):
-    best_val_acc = 0
-    best_val = None
-    for val in values:
-        save = '~/julia/torch-deepretina/Trained_1/29/18_{0}_{1}'.format(param, val)
-        if param == 'batch_size':
-            val_acc = train(BNCNN, batch_size=val, save=save)
-        elif param == 'lr':
-            val_acc = train(BNCNN, LR=val, save=save)
-        elif param == 'l2':
-            val_acc = train(BNCNN, l2_scale=val, save=save)
-        elif param == 'l1':
-            val_acc = train(BNCNN, l1_scale=val, save=save)
-        if val_loss > best_val_loss:
-            best_val_acc = val_acc
-            best_val = val
-    print("The best valuation loss achieved was {0} with a {1} value of {2}".format(best_val_loss, param, best_val))
-
-
-def parseargs():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--epochs', default = 200)
-    parser.add_argument('--batch', default = 1028)
-    parser.add_argument('--lr', default = 1e-4)
-    parser.add_argument('--l2', default = 0.01)
-    parser.add_argument('--l1', default = 1e-7)
-    parser.add_argument('--shuffle', default=True)
-    parser.add_argument('--save', default='./checkpoints')
-    return parser.parse_args(sys.argv[1:])
 
 
 if __name__ == "__main__":
-    #args = parseargs()
-    #train(int(args.epochs), int(args.batch), float(args.lr), float(args.l1), float(args.l2), args.shuffle, args.save)
-    #train(50, 512, 1e-4, 0, .01, True, "delete_me")
     hp = HyperParams()
     hyps = hp.hyps
-    hyps['exp_name'] = 'mouseBN'
-    hyps['n_epochs'] = 35
-    hyps['batch_size'] = 512
+    hyps['exp_name'] = 'mouseBNN'
+    hyps['n_epochs'] = 50
     hyps['shuffle'] = True
-    lrs = [1e-3, 1e-4, 1e-5, 1e-1, 1e-2, 1e-6]
-    l1s = [0]
-    l2s = [1e-2]
+    lrs = [1e-3, 1e-2]
+    l1s = [1e-3, 1e-2]
+    l2s = [1e-2, 1e-3]
+    batchsizes = [512,5000]
     exp_num = 0
-    for lr in lrs:
-        hyps['lr'] = lr
-        for l1 in l1s:
-            hyps['l1'] = l1
-            for l2 in l2s:
-                hyps['l2'] = l2
-                hyps['save_folder'] = hyps['exp_name'] +"_"+ str(exp_num) + "_lr"+str(lr) + "_" + "l1" + str(l1) + "_" + "l2" + str(l2)
-                hp.print()            
-                train(hyps['n_epochs'], hyps['batch_size'], lr, l1, l2, hyps['shuffle'], hyps['save_folder'])
-                exp_num += 1
+
+    for bs in batchsizes:
+        for lr in lrs:
+            hyps['lr'] = lr
+            for l1 in l1s:
+                hyps['l1'] = l1
+                for l2 in l2s:
+                    hyps['l2'] = l2
+                    hyps['save_folder'] = hyps['exp_name'] +"_"+ str(exp_num) + "_lr"+str(lr) + "_" + "l1" + str(l1) + "_" + "l2" + str(l2) + " " + "bs" + str(bs)
+                    hp.print()            
+                    train(hyps['n_epochs'], bs, lr, l1, l2, hyps['shuffle'], hyps['save_folder'])
+                    exp_num += 1
 
 
 
