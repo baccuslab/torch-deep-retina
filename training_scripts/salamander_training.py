@@ -43,6 +43,7 @@ torch.manual_seed(seed)
 
 # Load data using Lane and Nirui's dataloader
 train_data = loadexpt('15-10-07',[0,1,2,3,4],'naturalscene','train',40,0)
+print("train_data shape",train_data.X.shape)
 test_data = loadexpt('15-10-07',[0,1,2,3,4],'naturalscene','test',40,0)
 val_split = 0.005
 
