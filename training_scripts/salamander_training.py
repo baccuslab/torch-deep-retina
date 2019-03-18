@@ -20,17 +20,14 @@ from models.SS_CNN import SSCNN
 from models.Dales_BN_CNN import DalesBNCNN
 from models.Dales_SS_CNN import DalesSSCNN
 from models.Dales_CNN import DalesCNN
+from models.Dales_Hybrid import DalesHybrid
+from models.practical_BN_CNN import PracticalBNCNN
 import retio as io
 import argparse
 import time
+from tqdm import tqdm
 
 from deepretina.experiments import loadexpt
-
-# Helper function (used for memory leak debugging)
-def cuda_if(tensor):
-    if torch.cuda.is_available():
-        return tensor.cuda()
-    return tensor
 
 # Constants
 DEVICE = torch.device("cuda:0")
@@ -46,7 +43,7 @@ train_data = loadexpt('15-10-07',[0,1,2,3,4],'naturalscene','train',40,0)
 test_data = loadexpt('15-10-07',[0,1,2,3,4],'naturalscene','test',40,0)
 val_split = 0.005
 
-def train(epochs=250,batch_size=5000,LR=1e-3,l1_scale=1e-4,l2_scale=1e-2, shuffle=True, save='./checkpoints', val_splt=0.02):
+def train(hyps, epochs=250, batch_size=5000, LR=1e-3, l1_scale=1e-4, l2_scale=1e-2, shuffle=True, save='./checkpoints', noise_std=.1):
     if not os.path.exists(save):
         os.mkdir(save)
     LAMBDA1 = l1_scale
@@ -58,7 +55,8 @@ def train(epochs=250,batch_size=5000,LR=1e-3,l1_scale=1e-4,l2_scale=1e-2, shuffl
     #model = model_class()
     #model = CNN(bias=False)
     #model = SSCNN(scale=True, shift=False, bias=True)
-    model = DalesBNCNN(bias=True, neg_p=.5)
+    #model = DalesHybrid(bias=True, neg_p=hyps['neg_p'], gauss_std=gauss_std)
+    model = PracticalBNCNN(5, noise_std=noise_std) # Uses dropout
     print(model)
     model = model.to(DEVICE)
 
@@ -71,11 +69,11 @@ def train(epochs=250,batch_size=5000,LR=1e-3,l1_scale=1e-4,l2_scale=1e-2, shuffl
     epoch_tv_y = torch.FloatTensor(train_data.y)
 
     # train/val split
-    num_val = int(epoch_tv_x.shape[0]*val_splt)
-    epoch_train_x = epoch_tv_x[num_val:]
-    epoch_val_x = epoch_tv_x[:num_val]
-    epoch_train_y = epoch_tv_y[num_val:]
-    epoch_val_y = epoch_tv_y[:num_val]
+    num_val = 30000
+    epoch_train_x = epoch_tv_x[num_val//2:-num_val//2]
+    epoch_train_y = epoch_tv_y[num_val//2:-num_val//2]
+    epoch_val_x = torch.cat([epoch_tv_x[:num_val//2], epoch_tv_x[-num_val//2:]], dim=0)
+    epoch_val_y = torch.cat([epoch_tv_y[:num_val//2], epoch_tv_y[-num_val//2:]], dim=0)
     epoch_length = epoch_train_x.shape[0]
     num_batches,leftover = divmod(epoch_length, BATCH_SIZE)
     batch_size = BATCH_SIZE
@@ -130,7 +128,8 @@ def train(epochs=250,batch_size=5000,LR=1e-3,l1_scale=1e-4,l2_scale=1e-2, shuffl
             optimizer.step()
             epoch_loss += loss.item()
             print("Loss:", loss.item()," - error:", error.item(), " - l1:", activity_l1.item(), " | ", int(round(batch/num_batches, 2)*100), "% done", end='               \r')
-        print('\nAvg Loss: ' + str(epoch_loss/num_batches), " - exec time:", time.time() - starttime)
+        avg_loss = epoch_loss/num_batches
+        print('\nAvg Loss: ' + str(avg_loss), " - exec time:", time.time() - starttime)
         #gc.collect()
         #max_mem_used = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         #print("Memory Used: {:.2f} memory".format(max_mem_used / 1024))
@@ -139,12 +138,35 @@ def train(epochs=250,batch_size=5000,LR=1e-3,l1_scale=1e-4,l2_scale=1e-2, shuffl
         del x
         del y
         del label
-        val_obs = model(epoch_val_x.to(DEVICE)).cpu().detach().numpy()
-        val_acc = np.mean([pearsonr(val_obs[:, i], epoch_val_y[:, i]) for i in range(epoch_val_y.shape[-1])])
-        print("Val Acc:", val_acc, " | SaveFolder:", save)
-        scheduler.step(error)
-        io.save_checkpoint(model,epoch,epoch_loss/num_batches,optimizer,save,'test')
+        model.eval()
+        val_obs = []
+        val_loss = 0
+        step_size = 10000
+        n_loops = epoch_val_x.shape[0]//step_size
+        for v in tqdm(range(0, n_loops*step_size, step_size)):
+            temp = model(epoch_val_x[v:v+step_size].to(DEVICE)).detach()
+            val_loss += loss_fn(temp, epoch_val_y[v:v+step_size].to(DEVICE)).item()
+            val_obs.append(temp.cpu().numpy())
+        val_loss = val_loss/n_loops
+        val_obs = np.concatenate(val_obs, axis=0)
+        val_acc = np.mean([pearsonr(val_obs[:, i], epoch_val_y[:val_obs.shape[0], i].numpy()) for i in range(epoch_val_y.shape[-1])])
+        print("Val Acc:", val_acc, " -- Val Loss:", val_loss, " | SaveFolder:", save)
+        scheduler.step(val_loss)
+        save_dict = {
+            "model": model,
+            "model_state_dict":model.state_dict(),
+            "optim_state_dict":optimizer.state_dict(),
+            "loss": avg_loss,
+            "epoch":epoch,
+            "val_loss":val_loss,
+            "vall_acc":val_acc,
+        }
+        io.save_checkpoint_dict(save_dict,save,'test')
+        del val_obs
+        del temp
         print()
+    with open(save + "/hyperparams.txt",'a') as f:
+        f.write("\nFinal Loss:"+str(epoch_loss/num_batches)+" ValLoss:"+str(val_loss/n_loops)+" ValAcc:"+str(val_acc)+"\n")
     return val_acc
 
 def hyperparameter_search(param, values):
@@ -184,24 +206,27 @@ if __name__ == "__main__":
     #train(50, 512, 1e-4, 0, .01, True, "delete_me")
     hp = HyperParams()
     hyps = hp.hyps
-    hyps['exp_name'] = 'dalesBN'
-    hyps['n_epochs'] = 30
+    hyps['exp_name'] = 'practicalBN'
+    hyps['n_epochs'] = 60
     hyps['batch_size'] = 512
     hyps['shuffle'] = True
-    lrs = [1e-6, 1e-7, 1e-8]
-    l1s = [0]
+    lrs = [1e-2, 1e-3, 1e-4, 1e-5]
+    l1s = [1e-5]
     l2s = [1e-2]
+    noises = [.4, .3, .2]
     exp_num = 0
-    for lr in lrs:
-        hyps['lr'] = lr
-        for l1 in l1s:
-            hyps['l1'] = l1
-            for l2 in l2s:
-                hyps['l2'] = l2
-                hyps['save_folder'] = hyps['exp_name'] +"_"+ str(exp_num) + "_lr"+str(lr) + "_" + "l1" + str(l1) + "_" + "l2" + str(l2)
-                hp.print()            
-                train(hyps['n_epochs'], hyps['batch_size'], lr, l1, l2, hyps['shuffle'], hyps['save_folder'])
-                exp_num += 1
+    for noise in noises:
+        hyps['noise_std'] = noise
+        for lr in lrs:
+            hyps['lr'] = lr
+            for l1 in l1s:
+                hyps['l1'] = l1
+                for l2 in l2s:
+                    hyps['l2'] = l2
+                    hyps['save_folder'] = hyps['exp_name'] +"_"+ str(exp_num) + "_lr"+str(lr) + "_" + "l1" + str(l1) + "_" + "l2" + str(l2) + "_noise"+str(noise)
+                    hp.print()            
+                    train(hyps, hyps['n_epochs'], hyps['batch_size'], lr, l1, l2, hyps['shuffle'], hyps['save_folder'], hyps['noise_std'])
+                    exp_num += 1
 
 
 
