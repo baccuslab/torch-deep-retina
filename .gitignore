@@ -109,3 +109,4 @@ venv.bak/
 *.p
 */hyperparams.txt
 */description.txt
+training_scripts/*/
