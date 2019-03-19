@@ -1,33 +1,34 @@
 import torch
 import torch.nn as nn
-from torch.nn.functional import relu
 from models.torch_utils import GaussianNoise, ScaleShift
 
 class SSCNN(nn.Module):
-    def __init__(self, scale=True, shift=False, bias=False, gauss_std=0.05):
+    def __init__(self, scale=True, shift=False, bias=True, noise=0.05):
         super(SSCNN,self).__init__()
         self.name = 'McNiruNet'
-        self.conv1 = nn.Conv2d(40,8,kernel_size=15)
+        self.conv1 = nn.Conv2d(40,8,kernel_size=15, bias=bias)
         self.ss1 = ScaleShift((8,36,36), shift=shift, scale=scale)
-        self.conv2 = nn.Conv2d(8,8,kernel_size=11)
+        self.conv2 = nn.Conv2d(8,8,kernel_size=11, bias=bias)
         self.ss2 = ScaleShift((8,26,26), shift=shift, scale=scale)
         self.linear = nn.Linear(8*26*26,5, bias=bias)
         self.ss3 = ScaleShift(5, shift=shift, scale=scale)
-        self.gaussian = GaussianNoise(std=gauss_std)
+        self.gaussian = GaussianNoise(std=noise)
+        self.relu = nn.ReLU()
+        self.softplus = nn.Softplus()
         self.losses = []
         self.actgrad1=[]
         self.actgrad2=[]
         
     def forward(self, x):
         x = self.conv1(x)
-        x = relu(self.gaussian(x))
         x = self.ss1(x)
+        x = self.relu(self.gaussian(x))
         x = self.conv2(x)
         x = self.ss2(x)
-        x = relu(self.gaussian(x))
+        x = self.relu(self.gaussian(x))
         x = self.linear(x.view(-1, 8*26*26))
         x = self.ss3(x)
-        x = nn.functional.softplus(x)
+        x = self.softplus(x)
         return x
     
     def record_grad1(self,grad):

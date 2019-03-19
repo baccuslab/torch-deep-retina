@@ -3,16 +3,16 @@ import torch.nn as nn
 from models.torch_utils import GaussianNoise, ScaleShift, AbsConv2d, AbsLinear, DaleActivations
 
 class DalesHybrid(nn.Module):
-    def __init__(self, output_units=5, bias=True, gauss_std=0.1, neg_p=0.5):
+    def __init__(self, output_units=5, bias=True, noise=0.1, neg_p=0.5):
         super(DalesHybrid,self).__init__()
         self.name = 'DaleNet'
         self.conv1 = nn.Conv2d(40,8,kernel_size=15, bias=bias)
         self.batch1 = nn.BatchNorm1d(8*36*36, eps=1e-3, momentum=.99)
-        self.gaussian1 = GaussianNoise(std=gauss_std)
+        self.gaussian1 = GaussianNoise(std=noise)
         self.relu1 = nn.ReLU()
         self.dale1 = DaleActivations(8, neg_p)
         self.conv2 = AbsConv2d(8,8,kernel_size=11, bias=bias)
-        self.gaussian2 = GaussianNoise(std=gauss_std)
+        self.gaussian2 = GaussianNoise(std=noise)
         self.batch2 = nn.BatchNorm1d(8*26*26, eps=1e-3, momentum=.99)
         self.relu2 = nn.ReLU()
         self.dale2 = DaleActivations(8, neg_p)

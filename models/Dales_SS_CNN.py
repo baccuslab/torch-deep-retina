@@ -3,7 +3,7 @@ import torch.nn as nn
 from models.torch_utils import GaussianNoise, ScaleShift, AbsConv2d, AbsLinear, DaleActivations
 
 class DalesSSCNN(nn.Module):
-    def __init__(self, scale=True, shift=True, bias=True, gauss_std=0.05, neg_p=.5):
+    def __init__(self, scale=True, shift=True, bias=True, noise=0.05, neg_p=.5):
         super(DalesSSCNN,self).__init__()
         self.name = 'DaleNet'
         self.conv1 = AbsConv2d(40,8,kernel_size=15, bias=bias)
@@ -16,7 +16,7 @@ class DalesSSCNN(nn.Module):
         self.dale2 = DaleActivations(8, neg_p)
         self.linear = AbsLinear(8*26*26,5, bias=bias)
         self.ss3 = ScaleShift(5, scale=scale, shift=shift)
-        self.gaussian = GaussianNoise(std=gauss_std)
+        self.gaussian = GaussianNoise(std=noise)
         self.softplus = nn.Softplus()
         self.losses = []
         self.actgrad1=[]
