@@ -1,19 +1,23 @@
 import torch
 import torch.nn as nn
-from models.torch_utils import GaussianNoise, ScaleShift
+from models.torch_utils import GaussianNoise, ScaleShift, AbsConv2d, AbsLinear, DaleActivations
 
-class SSCNN(nn.Module):
-    def __init__(self, scale=True, shift=False, bias=True, gauss_std=0.05):
-        super(SSCNN,self).__init__()
-        self.name = 'McNiruNet'
+class DalesHybrid(nn.Module):
+    def __init__(self, output_units=5, bias=True, noise=0.1, neg_p=0.5):
+        super(DalesHybrid,self).__init__()
+        self.name = 'DaleNet'
         self.conv1 = nn.Conv2d(40,8,kernel_size=15, bias=bias)
-        self.ss1 = ScaleShift((8,36,36), shift=shift, scale=scale)
-        self.conv2 = nn.Conv2d(8,8,kernel_size=11, bias=bias)
-        self.ss2 = ScaleShift((8,26,26), shift=shift, scale=scale)
-        self.linear = nn.Linear(8*26*26,5, bias=bias)
-        self.ss3 = ScaleShift(5, shift=shift, scale=scale)
-        self.gaussian = GaussianNoise(std=gauss_std)
-        self.relu = nn.ReLU()
+        self.batch1 = nn.BatchNorm1d(8*36*36, eps=1e-3, momentum=.99)
+        self.gaussian1 = GaussianNoise(std=noise)
+        self.relu1 = nn.ReLU()
+        self.dale1 = DaleActivations(8, neg_p)
+        self.conv2 = AbsConv2d(8,8,kernel_size=11, bias=bias)
+        self.gaussian2 = GaussianNoise(std=noise)
+        self.batch2 = nn.BatchNorm1d(8*26*26, eps=1e-3, momentum=.99)
+        self.relu2 = nn.ReLU()
+        self.dale2 = DaleActivations(8, neg_p)
+        self.linear = AbsLinear(8*26*26,output_units, bias=bias)
+        self.ss = ScaleShift(output_units, eps=1e-3, momentum=.99)
         self.softplus = nn.Softplus()
         self.losses = []
         self.actgrad1=[]
@@ -21,13 +25,18 @@ class SSCNN(nn.Module):
         
     def forward(self, x):
         x = self.conv1(x)
-        x = self.ss1(x)
-        x = self.relu(self.gaussian(x))
+        x = self.batch1(x.view(x.size(0), -1))
+        x = self.gaussian1(x)
+        x = self.relu1(x)
+        x = x.view(-1, 8, 36, 36)
+        x = self.dale1(x)
         x = self.conv2(x)
-        x = self.ss2(x)
-        x = self.relu(self.gaussian(x))
-        x = self.linear(x.view(-1, 8*26*26))
-        x = self.ss3(x)
+        x = self.batch2(x.view(x.size(0), -1))
+        x = self.gaussian(x)
+        x = self.relu(x)
+        x = self.dale2(x.view(-1, 8, 26, 26))
+        x = self.linear(x.view(x.size(0), -1))
+        x = self.ss(x)
         x = self.softplus(x)
         return x
     

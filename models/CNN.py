@@ -4,13 +4,13 @@ from torch.nn.functional import relu
 from models.torch_utils import GaussianNoise
 
 class CNN(nn.Module):
-    def __init__(self, bias=False, gauss_std=0.05):
+    def __init__(self, bias=False, noise=0.05):
         super(CNN,self).__init__()
         self.name = 'McNiruNet'
         self.conv1 = nn.Conv2d(40,8,kernel_size=15)
         self.conv2 = nn.Conv2d(8,8,kernel_size=11)
         self.linear = nn.Linear(8*26*26,5, bias=bias)
-        self.gaussian = GaussianNoise(std=gauss_std)
+        self.gaussian = GaussianNoise(std=noise)
         self.losses = []
         self.actgrad1=[]
         self.actgrad2=[]

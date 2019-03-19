@@ -31,6 +31,7 @@ class HyperParams:
                     "momentum_high":float(.9),
                     "momentum_low": float(.9),
                     "max_norm":.5,
+                    "noise":.1,
                     }
         hyp_dict['bool_hyps'] = {
                     "resume":False,
