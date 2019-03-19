@@ -13,15 +13,9 @@ import gc
 import resource
 sys.path.append('../')
 sys.path.append('../utils/')
+from utils.miscellaneous import parallel_shuffle
 from utils.hyperparams import HyperParams
-from models.BN_CNN import BNCNN
-from models.CNN import CNN
-from models.SS_CNN import SSCNN
-from models.Dales_BN_CNN import DalesBNCNN
-from models.Dales_SS_CNN import DalesSSCNN
-from models.Dales_CNN import DalesCNN
-from models.Dales_Hybrid import DalesHybrid
-from models.practical_BN_CNN import PracticalBNCNN
+from models import BNCNN, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesCNN, DalesHybrid, PracticalBNCNN
 import retio as io
 import argparse
 import time
@@ -29,36 +23,40 @@ from tqdm import tqdm
 
 from deepretina.experiments import loadexpt
 
-# Constants
-DEVICE = torch.device("cuda:0")
-
 # Random Seeds (5 is arbitrary)
 seed = 3
 np.random.seed(seed)
 torch.manual_seed(seed)
 
-
 # Load data using Lane and Nirui's dataloader
-train_data = loadexpt('15-10-07',[0,1,2,3,4],'naturalscene','train',40,0)
-test_data = loadexpt('15-10-07',[0,1,2,3,4],'naturalscene','test',40,0)
-val_split = 0.005
+cells = [0,1,2,3,4]
+dataset = '15-10-07'
+train_data = loadexpt(dataset,cells,'naturalscene','train',40,0)
+parallel_shuffle([train_data.X, train_data.y])
+print("train_data shape",train_data.X.shape)
+test_data = loadexpt(dataset,cells,'naturalscene','test',40,0)
 
-def train(hyps, epochs=250, batch_size=5000, LR=1e-3, l1_scale=1e-4, l2_scale=1e-2, shuffle=True, save='./checkpoints', noise=.1):
+def train(hyps, save='./checkpoints'):
     if not os.path.exists(save):
         os.mkdir(save)
-    LAMBDA1 = l1_scale
-    LAMBDA2 = l2_scale
-    EPOCHS = epochs
-    BATCH_SIZE = batch_size
+    LR = hyps['lr']
+    LAMBDA1 = hyps['l1']
+    LAMBDA2 = hyps['l2']
+    EPOCHS = hyps['n_epochs']
+    BATCH_SIZE = hyps['batch_size']
+    NOISE = hyps['noise']
+    MODEL_TYPE = hyps['model_type']
+    DEVICE = torch.device("cuda:0")
 
     # Model
-    #model = model_class()
-    #model = CNN(bias=False)
-    #model = SSCNN(scale=True, shift=False, bias=True)
-    #model = DalesHybrid(bias=True, neg_p=hyps['neg_p'], noise=noise)
-    model = PracticalBNCNN(5, noise=noise) # Uses dropout
+    model = MODEL_TYPE(len(cells), noise=NOISE) # Uses dropout
     print(model)
     model = model.to(DEVICE)
+
+    with open(save + "/hyperparams.txt",'w') as f:
+        f.write(str(model)+'\n')
+        for k in sorted(hyps.keys()):
+            f.write(str(k) + ": " + str(hyps[k]) + "\n")
 
     loss_fn = torch.nn.PoissonNLLLoss()
     optimizer = torch.optim.Adam(model.parameters(),lr = LR, weight_decay = LAMBDA2)
@@ -70,10 +68,10 @@ def train(hyps, epochs=250, batch_size=5000, LR=1e-3, l1_scale=1e-4, l2_scale=1e
 
     # train/val split
     num_val = 30000
-    epoch_train_x = epoch_tv_x[num_val//2:-num_val//2]
-    epoch_train_y = epoch_tv_y[num_val//2:-num_val//2]
-    epoch_val_x = torch.cat([epoch_tv_x[:num_val//2], epoch_tv_x[-num_val//2:]], dim=0)
-    epoch_val_y = torch.cat([epoch_tv_y[:num_val//2], epoch_tv_y[-num_val//2:]], dim=0)
+    epoch_train_x = epoch_tv_x[:-num_val]
+    epoch_train_y = epoch_tv_y[:-num_val]
+    epoch_val_x = epoch_tv_x[-num_val:]
+    epoch_val_y = epoch_tv_y[-num_val:]
     epoch_length = epoch_train_x.shape[0]
     num_batches,leftover = divmod(epoch_length, BATCH_SIZE)
     batch_size = BATCH_SIZE
@@ -87,11 +85,7 @@ def train(hyps, epochs=250, batch_size=5000, LR=1e-3, l1_scale=1e-4, l2_scale=1e
 
     # Train Loop
     for epoch in range(EPOCHS):
-        if shuffle:
-            indices = torch.randperm(epoch_train_x.shape[0]).long()
-        else:
-            indices = torch.arange(0, epoch_train_x.shape[0]).long()
-
+        indices = torch.randperm(epoch_train_x.shape[0]).long()
         losses = []
         epoch_loss = 0
         print('Epoch ' + str(epoch))  
@@ -206,6 +200,7 @@ if __name__ == "__main__":
     #train(50, 512, 1e-4, 0, .01, True, "delete_me")
     hp = HyperParams()
     hyps = hp.hyps
+    hyps['model_type'] = PracticalBNCNN
     hyps['exp_name'] = 'bndropout_practicalBN'
     hyps['n_epochs'] = 60
     hyps['batch_size'] = 512
@@ -225,7 +220,7 @@ if __name__ == "__main__":
                     hyps['l2'] = l2
                     hyps['save_folder'] = hyps['exp_name'] +"_"+ str(exp_num) + "_lr"+str(lr) + "_" + "l1" + str(l1) + "_" + "l2" + str(l2) + "_noise"+str(noise)
                     hp.print()            
-                    train(hyps, hyps['n_epochs'], hyps['batch_size'], lr, l1, l2, hyps['shuffle'], hyps['save_folder'], hyps['noise'])
+                    train(hyps, hyps['save_folder'])
                     exp_num += 1
 
 
