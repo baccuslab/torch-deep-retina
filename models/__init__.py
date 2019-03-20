@@ -4,6 +4,6 @@ from models.BN_CNN import BNCNN
 from models.SS_CNN import SSCNN
 from models.Dales_BN_CNN import DalesBNCNN
 from models.Dales_SS_CNN import DalesSSCNN
-from models.Dales_CNN import DalesCNN
 from models.Dales_Hybrid import DalesHybrid
 from models.practical_BN_CNN import PracticalBNCNN
+from models.stacked_BN_CNN import StackedBNCNN

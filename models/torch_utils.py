@@ -2,14 +2,18 @@ import torch
 import torch.nn as nn
 
 class GaussianNoise(nn.Module):
-    def __init__(self, std=0.05):
+    def __init__(self, std=0.1, set_at_runtime=False):
         super(GaussianNoise, self).__init__()
         self.cuda_param = nn.Parameter(torch.zeros(1), requires_grad=False)
         self.std = std
+        self.set_at_runtime = set_at_runtime
     
     def forward(self, x):
         if not self.training:
             return x
+        if self.set_at_runtime is True:
+            self.set_at_runtime = False
+            self.std = x.std()*self.std
         noise = self.std * torch.randn(x.size())
         if next(self.parameters()).is_cuda:
             noise = noise.cuda()
@@ -83,5 +87,44 @@ class AbsLinear(nn.Module):
         else:
             return nn.functional.linear(x, self.linear.weight.abs(), 
                                                     self.linear.bias)
+
+class StackedConv2d(nn.Module):
+    '''
+    Builds the main kernel out of multiple 3x3 kernels
+    '''
+    def __init__(self, in_channels, out_channels, kernel_size, bias=True):
+        super(StackedConv2d, self).__init__()
+        self.bias = bias
+        n_filters = int((kernel_size-1)/2)
+        if n_filters > 1:
+            convs = [nn.Conv2d(in_channels, out_channels, 3, bias=False), nn.BatchNorm2d(out_channels), nn.ReLU()]
+            for i in range(n_filters-1):
+                if i == n_filters-2:
+                    convs.append(nn.Conv2d(out_channels, out_channels, 3, bias=bias))
+                else:
+                    convs.append(nn.Conv2d(out_channels, out_channels, 3, bias=False))
+                convs.append(nn.ReLU())
+                convs.append(nn.BatchNorm2d(out_channels))
+        else:
+            convs = [nn.Conv2d(in_channels, out_channels, 3, bias=bias), nn.BatchNorm2d(out_channels), nn.ReLU()]
+        self.convs = nn.Sequential(*convs)
+
+    def forward(self, x):
+        return self.convs(x)
+
+class Flatten(nn.Module):
+    def __init__(self):
+        super(Flatten, self).__init__()
+
+    def forward(self, x):
+        return x.view(x.shape[0], -1)
+
+class Reshape(nn.Module):
+    def __init__(self, shape):
+        super(Reshape, self).__init__()
+        self.shape = shape
+
+    def forward(self, x):
+        return x.view(self.shape)
 
 
