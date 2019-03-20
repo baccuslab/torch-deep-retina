@@ -1,6 +1,10 @@
 import torch
 import torch.nn as nn
+<<<<<<< HEAD
 from models.torch_utils import GaussianNoise, ScaleShift, AbsConv2d, AbsLinear, DaleActivations, Flatten, Reshape
+=======
+from models.torch_utils import GaussianNoise, ScaleShift, AbsConv2d, AbsLinear, DaleActivations
+>>>>>>> 9615d40cb6f684e0da52181988b9dad935127b52
 import numpy as np
 
 class DalesHybrid(nn.Module):

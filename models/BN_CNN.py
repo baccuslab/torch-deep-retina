@@ -26,4 +26,3 @@ class BNCNN(nn.Module):
     def forward(self, x):
         return self.sequential(x)
 
-
