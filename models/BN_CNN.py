@@ -7,6 +7,7 @@ class BNCNN(nn.Module):
     def __init__(self, n_output_units=5, noise=.05):
         super(BNCNN,self).__init__()
         self.name = 'McNiruNet'
+        modules = []
         modules.append(nn.Conv2d(40,8,kernel_size=15, bias=bias))
         modules.append(Flatten())
         modules.append(nn.BatchNorm1d(8*36*36, eps=1e-3))

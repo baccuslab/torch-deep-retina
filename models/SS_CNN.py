@@ -6,6 +6,7 @@ class SSCNN(nn.Module):
     def __init__(self, scale=True, shift=False, bias=True, noise=0.05):
         super(SSCNN,self).__init__()
         self.name = 'McNiruNet'
+        modules = []
         modules.append(nn.Conv2d(40,8,kernel_size=15, bias=bias))
         modules.append(ScaleShift((8,36,36)))
         modules.append(GaussianNoise(std=noise))

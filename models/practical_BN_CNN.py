@@ -6,6 +6,7 @@ class PracticalBNCNN(nn.Module):
     def __init__(self, n_output_units=5, noise=.1):
         super(PracticalBNCNN,self).__init__()
         self.name = 'McNiruNet'
+        modules = []
         modules.append(nn.Conv2d(40,8,kernel_size=15, bias=bias))
         modules.append(nn.Dropout(p=noise/2))
         modules.append(nn.ReLU())
