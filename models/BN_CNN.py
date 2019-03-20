@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.distributions import normal
-from models.torch_utils import GaussianNoise, ScaleShift
+from models.torch_utils import GaussianNoise, ScaleShift, Flatten, Reshape
 
 class BNCNN(nn.Module):
     def __init__(self, output_units=5, noise=.05):

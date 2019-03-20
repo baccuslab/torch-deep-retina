@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.distributions import normal
+from models.torch_utils import Flatten, Reshape
 
 class PracticalBNCNN(nn.Module):
     def __init__(self, output_units=5, noise=.1):

@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from models.torch_utils import GaussianNoise, ScaleShift
+from models.torch_utils import GaussianNoise, ScaleShift, Flatten
 
 class SSCNN(nn.Module):
     def __init__(self, output_units, scale=True, shift=False, bias=True, noise=0.05):
@@ -15,6 +15,7 @@ class SSCNN(nn.Module):
         modules.append(GaussianNoise(std=noise))
         modules.append(ScaleShift((8,26,26)))
         modules.append(nn.ReLU())
+        modules.append(Flatten())
         modules.append(nn.Linear(8*26*26,output_units, bias=bias))
         modules.append(ScaleShift(output_units))
         modules.append(nn.Softplus())
