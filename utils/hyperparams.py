@@ -80,3 +80,23 @@ class HyperParams:
         print("HyperParameter Dict:")
         for k in sorted(self.hyps.keys()):
             print(k,"-", self.hyps[k])
+
+
+def make_hyper_range(low, high, range_len, method="log"):
+    if method.lower() == "random":
+        param_vals = np.random.random(low, high+1e-5, size=range_len)
+    elif method.lower() == "uniform":
+        step = (high-low)/(range_len-1)
+        pos_step = (step > 0)
+        range_high = high+(1e-5)*pos_step-(1e-5)*pos_step
+        param_vals = np.arange(low, range_high, step=step)
+    else:
+        range_low = np.log(low)/np.log(10)
+        range_high = np.log(high)/np.log(10)
+        step = (range_high-range_low)/(range_len-1)
+        arange = np.arange(range_low, range_high, step=step)
+        if len(arange) < range_len:
+            arange = np.append(arange, [range_high])
+        param_vals = 10**arange
+    param_vals = [float(param_val) for param_val in param_vals]
+    return param_vals
