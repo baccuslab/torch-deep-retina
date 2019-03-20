@@ -208,18 +208,18 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
 
 if __name__ == "__main__":
     hyps = {}
-    hyps['model_type'] = DalesSSCNN
-    hyps['exp_name'] = 'absdalesSS'
-    hyps['n_epochs'] = 60
+    hyps['model_type'] = SSCNN
+    hyps['exp_name'] = 'sscnn'
+    hyps['n_epochs'] = 100
     hyps['batch_size'] = 512
     hyps['shuffle'] = True
     hyps['n_output_units'] = len(cells)
     hyps = HyperParams(hyps).hyps
     hyp_ranges = {
-        'lr':[1e-3, 1e-4],
-        'l1':[1e-6],
-        'l2':[1e-4],
-        'noise':[.05],
+        'lr':[1e-3, 1e-4, 1e-5],
+        'l1':[1e-3, 1e-5],
+        'l2':[1e-2],
+        'noise':[.07],
     }
     keys = ['noise', 'lr', 'l1', 'l2']
     hyper_search(hyps, hyp_ranges, keys, train)
