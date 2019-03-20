@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch.distributions import normal
 
 class PracticalBNCNN(nn.Module):
-    def __init__(self, n_output_units=5, noise=.1):
+    def __init__(self, output_units=5, noise=.1):
         super(PracticalBNCNN,self).__init__()
         self.name = 'McNiruNet'
         modules = []

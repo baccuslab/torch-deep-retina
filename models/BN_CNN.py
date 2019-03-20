@@ -4,7 +4,7 @@ from torch.distributions import normal
 from models.torch_utils import GaussianNoise, ScaleShift
 
 class BNCNN(nn.Module):
-    def __init__(self, n_output_units=5, noise=.05):
+    def __init__(self, output_units=5, noise=.05):
         super(BNCNN,self).__init__()
         self.name = 'McNiruNet'
         modules = []

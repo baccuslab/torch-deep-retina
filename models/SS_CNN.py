@@ -3,7 +3,7 @@ import torch.nn as nn
 from models.torch_utils import GaussianNoise, ScaleShift
 
 class SSCNN(nn.Module):
-    def __init__(self, scale=True, shift=False, bias=True, noise=0.05):
+    def __init__(self, output_units, scale=True, shift=False, bias=True, noise=0.05):
         super(SSCNN,self).__init__()
         self.name = 'McNiruNet'
         modules = []
