@@ -4,7 +4,7 @@ from torch.distributions import normal
 from models.torch_utils import GaussianNoise, ScaleShift, Flatten, Reshape, StackedConv2d
 
 class StackedBNCNN(nn.Module):
-    def __init__(self, output_units=5, noise=.05):
+    def __init__(self, output_units=5, noise=.05, bias=True):
         super(StackedBNCNN,self).__init__()
         self.name = 'StackedNet'
         module_list = []

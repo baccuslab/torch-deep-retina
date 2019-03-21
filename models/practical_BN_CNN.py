@@ -4,7 +4,7 @@ from torch.distributions import normal
 from models.torch_utils import Flatten, Reshape
 
 class PracticalBNCNN(nn.Module):
-    def __init__(self, output_units=5, noise=.1):
+    def __init__(self, output_units=5, noise=.1, bias=True):
         super(PracticalBNCNN,self).__init__()
         self.name = 'McNiruNet'
         modules = []

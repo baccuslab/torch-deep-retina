@@ -127,4 +127,25 @@ class Reshape(nn.Module):
     def forward(self, x):
         return x.view(self.shape)
 
+class WeightNorm(nn.Module):
+    def __init__(self, torch_module):
+        super(WeightNorm, self).__init__()
+        self.torch_module = torch_module
+        torch.nn.utils.weight_norm(self.torch_module, 'weight')
 
+    def forward(self, x):
+        return self.torch_module(x)
+
+class MeanOnlyBatchNorm(nn.Module):
+    def __init__(self, shape, momentum=.1):
+        super(MeanOnlyBatchNorm, self).__init__()
+        self.running_mean = 0
+        self.momentum = momentum
+        self.scale = nn.Parameter(torch.ones(shape).float())
+        self.shift = nn.Parameter(torch.zeros(shape).float())
+
+    def forward(self, x):
+        mean = x.mean(0)
+        x = x - mean
+        self.running_mean = (1-self.momentum)*self.running_mean + self.momentum*mean
+        return x*self.scale + self.shift

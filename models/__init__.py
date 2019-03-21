@@ -7,3 +7,4 @@ from models.Dales_SS_CNN import DalesSSCNN
 from models.Dales_Hybrid import DalesHybrid
 from models.practical_BN_CNN import PracticalBNCNN
 from models.stacked_BN_CNN import StackedBNCNN
+from models.Normed_BN_CNN import NormedBNCNN
