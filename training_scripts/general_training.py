@@ -13,9 +13,8 @@ import gc
 import resource
 sys.path.append('../')
 sys.path.append('../utils/')
-from utils.miscellaneous import parallel_shuffle
 from utils.hyperparams import HyperParams
-from models import BNCNN, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN
+from models import BNCNN, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN
 import retio as io
 import argparse
 import time
@@ -25,21 +24,14 @@ from deepretina.experiments import loadexpt
 
 DEVICE = torch.device("cuda:0")
 
-# Random Seeds (5 is arbitrary)
+# Random Seeds
 seed = 3
 np.random.seed(seed)
 torch.manual_seed(seed)
 
-# Load data using Lane and Nirui's dataloader
-cells = [0,1,2,3,4]
-dataset = '15-10-07'
-train_data = loadexpt(dataset,cells,'naturalscene','train',40,0)
-print("Shuffling...")
-parallel_shuffle([train_data.X, train_data.y], set_seed=seed)
-print("train_data shape",train_data.X.shape)
-test_data = loadexpt(dataset,cells,'naturalscene','test',40,0)
-
-def train(hyps, model):
+def train(hyps, model, data):
+    train_data = data[0]
+    test_data = data[1]
     SAVE = hyps['save_folder']
     if not os.path.exists(SAVE):
         os.mkdir(SAVE)
@@ -47,31 +39,32 @@ def train(hyps, model):
     LAMBDA1 = hyps['l1']
     LAMBDA2 = hyps['l2']
     EPOCHS = hyps['n_epochs']
-    BATCH_SIZE = hyps['batch_size']
+    batch_size = hyps['batch_size']
 
     with open(SAVE + "/hyperparams.txt",'w') as f:
         f.write(str(model)+'\n')
         for k in sorted(hyps.keys()):
             f.write(str(k) + ": " + str(hyps[k]) + "\n")
 
+    print(model)
     model = model.to(DEVICE)
+
     loss_fn = torch.nn.PoissonNLLLoss()
     optimizer = torch.optim.Adam(model.parameters(),lr = LR, weight_decay = LAMBDA2)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.2)
 
-    # train data
-    epoch_tv_x = torch.FloatTensor(train_data.X)
-    epoch_tv_y = torch.FloatTensor(train_data.y)
+    ## train data
+    #epoch_tv_x = torch.FloatTensor(train_data.X)
+    #epoch_tv_y = torch.FloatTensor(train_data.y)
 
     # train/val split
     num_val = 30000
-    epoch_train_x = epoch_tv_x[:-num_val]
-    epoch_train_y = epoch_tv_y[:-num_val]
-    epoch_val_x = epoch_tv_x[-num_val:]
-    epoch_val_y = epoch_tv_y[-num_val:]
+    epoch_train_x = torch.FloatTensor(train_data['X'][:-num_val])
+    epoch_train_y = torch.FloatTensor(train_data['y'][:-num_val])
+    epoch_val_x = torch.FloatTensor(train_data['X'][-num_val:])
+    epoch_val_y = torch.FloatTensor(train_data['y'][-num_val:])
     epoch_length = epoch_train_x.shape[0]
-    num_batches,leftover = divmod(epoch_length, BATCH_SIZE)
-    batch_size = BATCH_SIZE
+    num_batches,leftover = divmod(epoch_length, batch_size)
     print("Train size:", len(epoch_train_x))
     print("Val size:", len(epoch_val_x))
     print("N Batches:", num_batches, "  Leftover:", leftover)
@@ -83,6 +76,7 @@ def train(hyps, model):
     # Train Loop
     for epoch in range(EPOCHS):
         indices = torch.randperm(epoch_train_x.shape[0]).long()
+
         losses = []
         epoch_loss = 0
         print('Epoch ' + str(epoch))  
@@ -121,11 +115,10 @@ def train(hyps, model):
             print("Loss:", loss.item()," - error:", error.item(), " - l1:", activity_l1.item(), " | ", int(round(batch/num_batches, 2)*100), "% done", end='               \r')
         avg_loss = epoch_loss/num_batches
         print('\nAvg Loss: ' + str(avg_loss), " - exec time:", time.time() - starttime)
-        #gc.collect()
-        #max_mem_used = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        #print("Memory Used: {:.2f} memory".format(max_mem_used / 1024))
 
         #validate model
+        del x
+        del y
         del label
         model.eval()
         val_obs = []
@@ -133,14 +126,13 @@ def train(hyps, model):
         step_size = 5000
         n_loops = epoch_val_x.shape[0]//step_size
         for v in tqdm(range(0, n_loops*step_size, step_size)):
-            x = epoch_val_x[v:v+step_size]
-            y = epoch_val_y[v:v+step_size]
-            temp = model(x.to(DEVICE)).detach()
-            val_loss += loss_fn(temp, y.to(DEVICE)).item()
+            temp = model(epoch_val_x[v:v+step_size].to(DEVICE)).detach()
+            val_loss += loss_fn(temp, epoch_val_y[v:v+step_size].to(DEVICE)).item()
             val_obs.append(temp.cpu().numpy())
         val_loss = val_loss/n_loops
         val_obs = np.concatenate(val_obs, axis=0)
         val_acc = np.mean([pearsonr(val_obs[:, i], epoch_val_y[:val_obs.shape[0], i].numpy()) for i in range(epoch_val_y.shape[-1])])
+        model.train(mode=True)
         print("Val Acc:", val_acc, " -- Val Loss:", val_loss, " | SaveFolder:", SAVE)
         scheduler.step(val_loss)
         save_dict = {
@@ -162,7 +154,7 @@ def train(hyps, model):
         f.write("\n" + " ".join([k+":"+str(results[k]) for k in sorted(results.keys())]) + '\n')
     return results
 
-def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
+def hyper_search(hyps, hyp_ranges, keys, train, data, idx=0):
     """
     Recursive function to loop through each of the hyperparameter combinations
 
@@ -177,6 +169,7 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
     keys - keys of the hyperparameters to be searched over. Used to
             specify order of keys to search
     train - method that handles training of model. Should return a dict of results.
+    data - tuple of train_data and test_data
     idx - the index of the current key to be searched over
     """
     # Base call, runs the training and saves the result
@@ -190,7 +183,7 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
         for k in keys:
             hyps['save_folder'] += "_" + str(k)+str(hyps[k])
         model = hyps['model_type'](hyps['n_output_units'], noise=hyps['noise'])
-        results = train(hyps, model)
+        results = train(hyps, model, data)
         with open(hyps['results_file'],'a') as f:
             if hyps['exp_num'] == 0:
                 f.write(str(model)+'\n\n')
@@ -203,24 +196,34 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
         key = keys[idx]
         for param in hyp_ranges[key]:
             hyps[key] = param
-            hyper_search(hyps, hyp_ranges, keys, train, idx+1)
+            hyper_search(hyps, hyp_ranges, keys, train, data, idx+1)
     return
 
 if __name__ == "__main__":
+    # Load data using Lane and Nirui's dataloader
+    cells = [0,1,2,3,4]
+    dataset = '15-10-07'
+    train_data = loadexpt(dataset,cells,'naturalscene','train',40,0)
+    train_dict_dict = dict()
+    train_data_dict['X'] = train_data.X
+    train_data_dict['y'] = train_data.y
+    test_data = loadexpt(dataset,cells,'naturalscene','test',40,0)
+    #print("Shuffling...")
+    #parallel_shuffle(train_data_dict['X'], train_data_dict['y']) # Shuffle is down for maintainence
     hyps = {}
-    hyps['model_type'] = SSCNN
-    hyps['exp_name'] = 'sscnn'
+    hyps['exp_name'] = 'normedcomp2'
     hyps['n_epochs'] = 100
     hyps['batch_size'] = 512
+    hyps['l1'] = 1e-5
+    hyps['l2'] = 0.01
+    hyps['noise'] = .05
     hyps['shuffle'] = True
     hyps['n_output_units'] = len(cells)
     hyps = HyperParams(hyps).hyps
     hyp_ranges = {
         'lr':[1e-3, 1e-4, 1e-5],
-        'l1':[1e-3, 1e-5],
-        'l2':[1e-2],
-        'noise':[.07],
+        'model_type':[BNCNN, NormedBNCNN]
     }
-    keys = ['noise', 'lr', 'l1', 'l2']
-    hyper_search(hyps, hyp_ranges, keys, train)
+    keys = ['lr', 'model_type']
+    hyper_search(hyps, hyp_ranges, keys, train, [train_data_dict, test_data], 0)
 
