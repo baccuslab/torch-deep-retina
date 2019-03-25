@@ -20,6 +20,7 @@ import argparse
 import time
 from tqdm import tqdm
 import json
+import math
 
 from deepretina.experiments import loadexpt
 
@@ -144,6 +145,9 @@ def train(hyps, model, data):
         del val_obs
         del temp
         print()
+        # If loss is nan, training is futile
+        if math.isnan(avg_loss) or math.isinf(avg_loss):
+            break
     
     results = {"Loss":avg_loss, "ValAcc":val_acc, "ValLoss":val_loss}
     with open(SAVE + "/hyperparams.txt",'a') as f:
@@ -218,13 +222,6 @@ def set_model_type(model_str):
     return None
 
 def load_data(dataset, cells):
-    # Load data using Lane and Nirui's dataloader
-    train_data = loadexpt(dataset,cells,'naturalscene','train',40,0)
-    del train_data.spkhist
-    test_data = loadexpt(dataset,cells,'naturalscene','test',40,0)
-    test_data.X = test_data.X[:500]
-    test_data.y = test_data.y[:500]
-    del test_data.spkhist
     return train_data, test_data
 
 def load_json(file_name):
@@ -249,6 +246,14 @@ if __name__ == "__main__":
     hyps['n_output_units'] = len(cells)
     keys = list(hyp_ranges.keys())
     print("Searching over:", keys)
-    train_data, test_data = load_data(dataset, cells)
+
+    # Load data using Lane and Nirui's dataloader
+    train_data = loadexpt(dataset,cells,'naturalscene','train',40,0)
+    del train_data.spkhist
+    test_data = loadexpt(dataset,cells,'naturalscene','test',40,0)
+    test_data.X = test_data.X[:500]
+    test_data.y = test_data.y[:500]
+    del test_data.spkhist
+
     hyper_search(hyps, hyp_ranges, keys, train, [train_data, test_data], 0)
 
