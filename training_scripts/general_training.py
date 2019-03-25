@@ -19,6 +19,7 @@ import retio as io
 import argparse
 import time
 from tqdm import tqdm
+import json
 
 from deepretina.experiments import loadexpt
 
@@ -53,16 +54,12 @@ def train(hyps, model, data):
     optimizer = torch.optim.Adam(model.parameters(),lr = LR, weight_decay = LAMBDA2)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.2)
 
-    ## train data
-    #epoch_tv_x = torch.FloatTensor(train_data.X)
-    #epoch_tv_y = torch.FloatTensor(train_data.y)
-
     # train/val split
-    num_val = 30000
-    epoch_train_x = torch.FloatTensor(train_data['X'][:-num_val])
-    epoch_train_y = torch.FloatTensor(train_data['y'][:-num_val])
-    epoch_val_x = torch.FloatTensor(train_data['X'][-num_val:])
-    epoch_val_y = torch.FloatTensor(train_data['y'][-num_val:])
+    num_val = 20000
+    epoch_train_x = torch.FloatTensor(train_data.X[num_val//2:-num_val//2])
+    epoch_train_y = torch.FloatTensor(train_data.y[num_val//2:-num_val//2])
+    epoch_val_x = torch.FloatTensor(np.concatenate([train_data.X[:num_val//2], train_data.X[-num_val//2:]], axis=0))
+    epoch_val_y = torch.FloatTensor(np.concatenate([train_data.y[:num_val//2], train_data.y[-num_val//2:]], axis=0))
     epoch_length = epoch_train_x.shape[0]
     num_batches,leftover = divmod(epoch_length, batch_size)
     print("Train size:", len(epoch_train_x))
@@ -71,7 +68,6 @@ def train(hyps, model, data):
 
     # test data
     test_x = torch.from_numpy(test_data.X)
-    test_x = test_x[:500]
 
     # Train Loop
     for epoch in range(EPOCHS):
@@ -86,8 +82,8 @@ def train(hyps, model, data):
         model.train(mode=True)
 
         for cell in range(test_obs.shape[-1]):
-            obs = test_obs[:500,cell]
-            lab = test_data.y[:500,cell]
+            obs = test_obs[:,cell]
+            lab = test_data.y[:,cell]
             r,p = pearsonr(obs,lab)
             print('Cell ' + str(cell) + ': ')
             print('-----> pearsonr: ' + str(r))
@@ -123,7 +119,7 @@ def train(hyps, model, data):
         model.eval()
         val_obs = []
         val_loss = 0
-        step_size = 5000
+        step_size = 2500
         n_loops = epoch_val_x.shape[0]//step_size
         for v in tqdm(range(0, n_loops*step_size, step_size)):
             temp = model(epoch_val_x[v:v+step_size].to(DEVICE)).detach()
@@ -199,31 +195,60 @@ def hyper_search(hyps, hyp_ranges, keys, train, data, idx=0):
             hyper_search(hyps, hyp_ranges, keys, train, data, idx+1)
     return
 
-if __name__ == "__main__":
+def set_model_type(model_str):
+    if model_str == "BNCNN":
+        return BNCNN
+    if model_str == "SSCNN":
+        return SSCNN
+    if model_str == "CNN":
+        return CNN
+    if model_str == "NormedBNCNN":
+        return NormedBNCNN
+    if model_str == "DalesBNCNN":
+        return DalesBNCNN
+    if model_str == "DalesSSCNN":
+        return DalesSSCNN
+    if model_str == "DalesHybrid":
+        return DalesHybrid
+    if model_str == "PracticalBNCNN":
+        return PracticalBNCNN
+    if model_str == "StackedBNCNN":
+        return StackedBNCNN
+    print("Invalid model type!")
+    return None
+
+def load_data(dataset, cells):
     # Load data using Lane and Nirui's dataloader
+    train_data = loadexpt(dataset,cells,'naturalscene','train',40,0)
+    del train_data.spkhist
+    test_data = loadexpt(dataset,cells,'naturalscene','test',40,0)
+    test_data.X = test_data.X[:500]
+    test_data.y = test_data.y[:500]
+    del test_data.spkhist
+    return train_data, test_data
+
+def load_json(file_name):
+    with open(file_name) as f:
+        s = f.read()
+        j = json.loads(s)
+    return j
+
+if __name__ == "__main__":
     cells = [0,1,2,3,4]
     dataset = '15-10-07'
-    train_data = loadexpt(dataset,cells,'naturalscene','train',40,0)
-    train_dict_dict = dict()
-    train_data_dict['X'] = train_data.X
-    train_data_dict['y'] = train_data.y
-    test_data = loadexpt(dataset,cells,'naturalscene','test',40,0)
-    #print("Shuffling...")
-    #parallel_shuffle(train_data_dict['X'], train_data_dict['y']) # Shuffle is down for maintainence
-    hyps = {}
-    hyps['exp_name'] = 'normedcomp2'
-    hyps['n_epochs'] = 100
-    hyps['batch_size'] = 512
-    hyps['l1'] = 1e-5
-    hyps['l2'] = 0.01
-    hyps['noise'] = .05
-    hyps['shuffle'] = True
+    hyperparams_file = "hyperparams.json"
+    hyperranges_file = 'hyperranges.json'
+    hyps = load_json(hyperparams_file)
+    inp = input("Last chance to change the experiment name "+hyps['exp_name']+": ")
+    inp = inp.strip()
+    if inp is not None and inp != "":
+        hyps['exp_name'] = inp
+    hyp_ranges = load_json(hyperranges_file)
+    print("Model type:", hyps['model_type'])
+    hyps['model_type'] = set_model_type(hyps['model_type'])
     hyps['n_output_units'] = len(cells)
-    hyps = HyperParams(hyps).hyps
-    hyp_ranges = {
-        'lr':[1e-3, 1e-4, 1e-5],
-        'model_type':[BNCNN, NormedBNCNN]
-    }
-    keys = ['lr', 'model_type']
-    hyper_search(hyps, hyp_ranges, keys, train, [train_data_dict, test_data], 0)
+    keys = list(hyp_ranges.keys())
+    print("Searching over:", keys)
+    train_data, test_data = load_data(dataset, cells)
+    hyper_search(hyps, hyp_ranges, keys, train, [train_data, test_data], 0)
 
