@@ -1,4 +1,5 @@
 import numpy as np
+import copy
 
 def parallel_shuffle(arrays, set_seed=-1):
     """
@@ -12,3 +13,13 @@ def parallel_shuffle(arrays, set_seed=-1):
     for arr in arrays:
         rstate = np.random.RandomState(seed)
         rstate.shuffle(arr)
+
+def multi_shuffle(arrays):
+    for i in reversed(range(len(arrays[0]))):
+        idx = np.random.randint(0, i+1)
+        for j in range(len(arrays)):
+            temp = copy.deepcopy(arrays[j][i:i+1])
+            arrays[j][i:i+1] = copy.deepcopy(arrays[j][idx:idx+1])
+            arrays[j][idx:idx+1] = temp
+            del temp
+    return arrays
