@@ -95,32 +95,32 @@ def sorted_correlation(membrane_potential, model_layer):
         return sorted(
             [pearsonr(membrane_potential, model_layer[:,c])[0] for c in range(model_layer.shape[1])])
 
-def max_correlation_all_layers(membrane_potential, model_response):
+def max_correlation_all_layers(membrane_potential, model_response, layer_keys=['conv1', 'conv2']):
     '''
     Takes a 1d membrane potential and computes the maximum correlation over the 2 conv layers within a model.
     Args: 
         membrane_potential: 1-d numpy array
         model_response: a dict of layer activities
     '''
-    return max(max_correlation(membrane_potential, model_response['conv1']), 
-               max_correlation(membrane_potential, model_response['conv2']))
+    return max(max_correlation(membrane_potential, model_response[layer_keys[0]]), 
+               max_correlation(membrane_potential, model_response[layer_keys[1]]))
 
-def argmax_correlation_all_layers(membrane_potential, model_response):
+def argmax_correlation_all_layers(membrane_potential, model_response, layer_keys=['conv1', 'conv2']):
     '''
     Takes a 1d membrane potential and computes the maximum correlation over the 2 conv layers within a model.
     Args: 
         membrane_potential: 1-d numpy array
         model_response: a dict of layer activities
     '''
-    if max_correlation(membrane_potential, model_response['conv1']) == max_correlation_all_layers(membrane_potential, model_response):
-        layer = 'conv1'
+    if max_correlation(membrane_potential, model_response[layer_keys[0]]) == max_correlation_all_layers(membrane_potential, model_response, layer_keys=layer_keys):
+        layer = layer_keys[0]
     else:
-        layer = 'conv2'
+        layer = layer_keys[1]
     cell_type = argmax_correlation(membrane_potential, model_response[layer])[0]
     # an example return: ('conv1', 8, (10, 5)) 
     return (layer, cell_type, argmax_correlation(membrane_potential, model_response[layer])[1][cell_type])
 
-def classify(membrane_potential, model_response, time):
+def classify(membrane_potential, model_response, time, layer_keys=['conv1', 'conv2']):
     '''
     Finds the most correlated cell in a model to a membrane potential.
     Args:
@@ -131,12 +131,12 @@ def classify(membrane_potential, model_response, time):
         a tuple with the layer, celltype, spatial indices, and the correlation value
     '''
     model_response_time = {}
-    model_response_time['conv1'] = model_response['conv1'][:time]
-    model_response_time['conv2'] = model_response['conv2'][:time]
-    best_cell = argmax_correlation_all_layers(membrane_potential[:time], model_response_time)
-    return best_cell[0], best_cell[1], best_cell[2], max_correlation_all_layers(membrane_potential[:time], model_response_time)
+    model_response_time[layer_keys[0]] = model_response[layer_keys[0]][:time]
+    model_response_time[layer_keys[1]] = model_response[layer_keys[1]][:time]
+    best_cell = argmax_correlation_all_layers(membrane_potential[:time], model_response_time, layer_keys=layer_keys)
+    return best_cell[0], best_cell[1], best_cell[2], max_correlation_all_layers(membrane_potential[:time], model_response_time, layer_keys=layer_keys)
 
-def classify_subtypes(membrane_potential, model_response, time):
+def classify_subtypes(membrane_potential, model_response, time, layer_keys=['conv1', 'conv2']):
     '''
     Finds the highest correlation for each subtype in each layer.
     Args:
@@ -146,8 +146,8 @@ def classify_subtypes(membrane_potential, model_response, time):
     Returns:
         the correlations as an array
     '''
-    correlations = [np.max(correlation_map(membrane_potential[:time], model_response['conv1'][:time,c])) for c in range(model_response['conv1'].shape[1])]
-    correlations.extend([np.max(correlation_map(membrane_potential[:time], model_response['conv2'][:time,c])) for c in range(model_response['conv2'].shape[1])])
+    correlations = [np.max(correlation_map(membrane_potential[:time], model_response[layer_keys[0]][:time,c])) for c in range(model_response[layer_keys[0]].shape[1])]
+    correlations.extend([np.max(correlation_map(membrane_potential[:time], model_response[layer_keys[1]][:time,c])) for c in range(model_response[layer_keys[1]].shape[1])])
     return correlations
 
 def plot_max_correlations(membrane_potential, model_response):
