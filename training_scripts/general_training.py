@@ -110,6 +110,8 @@ def train(hyps, model, data):
             optimizer.step()
             epoch_loss += loss.item()
             print("Loss:", loss.item()," - error:", error.item(), " - l1:", activity_l1.item(), " | ", int(round(batch/num_batches, 2)*100), "% done", end='               \r')
+            if math.isnan(epoch_loss) or math.isinf(epoch_loss):
+                break
         avg_loss = epoch_loss/num_batches
         print('\nAvg Loss: ' + str(avg_loss), " - exec time:", time.time() - starttime)
 
@@ -230,6 +232,11 @@ def load_json(file_name):
         j = json.loads(s)
     return j
 
+class DataContainer():
+    def __init__(self, data):
+        self.X = data.X
+        self.y = data.y
+
 if __name__ == "__main__":
     cells = [0,1,2,3,4]
     dataset = '15-10-07'
@@ -248,12 +255,10 @@ if __name__ == "__main__":
     print("Searching over:", keys)
 
     # Load data using Lane and Nirui's dataloader
-    train_data = loadexpt(dataset,cells,'naturalscene','train',40,0)
-    del train_data.spkhist
-    test_data = loadexpt(dataset,cells,'naturalscene','test',40,0)
+    train_data = DataContainer(loadexpt(dataset,cells,'naturalscene','train',40,0))
+    test_data = DataContainer(loadexpt(dataset,cells,'naturalscene','test',40,0))
     test_data.X = test_data.X[:500]
     test_data.y = test_data.y[:500]
-    del test_data.spkhist
 
     hyper_search(hyps, hyp_ranges, keys, train, [train_data, test_data], 0)
 
