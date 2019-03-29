@@ -90,7 +90,7 @@ class AbsLinear(nn.Module):
 
 class StackedConv2d(nn.Module):
     '''
-    Builds the main kernel out of multiple 3x3 kernels
+    Builds argued kernel out of multiple 3x3 kernels.
     '''
     def __init__(self, in_channels, out_channels, kernel_size, bias=True):
         super(StackedConv2d, self).__init__()
@@ -146,6 +146,47 @@ class MeanOnlyBatchNorm(nn.Module):
 
     def forward(self, x):
         mean = x.mean(0)
-        x = x - mean
-        self.running_mean = (1-self.momentum)*self.running_mean + self.momentum*mean
+        if self.train:
+            x = x - mean
+            self.running_mean = (1-self.momentum)*self.running_mean + self.momentum*mean
+        else:
+            x = x - self.running_mean
         return x*self.scale + self.shift
+
+class SplitConv2d(nn.Module):
+    """
+    Performs parallel convolutional operations on the input.
+    Must have each convolution layer return the same shaped
+    output.
+    """
+    def __init__(self, conv_param_tuples, ret_stacked=True):
+        self.convs = nn.ModuleList([])
+        self.ret_stacked = ret_stacked
+        for tup in conv_param_tuples:
+            convs.append(nn.Conv2d(*tup))
+
+    def forward(self, x):
+        fxs = []
+        for conv in self.convs:
+            fxs.append(conv(x))
+        if self.ret_stacked:
+            return torch.cat(fxs, dim=1) # Concat on channel axis
+        else:
+            cumu_sum = fxs[0]
+            for fx in fxs[1:]:
+                cumu_sum = cumu_sum + fx
+            return cumu_sum
+        
+    def extra_repr(self):
+        return 'ret_stacked={}'.format(self.ret_stacked)
+
+
+
+
+
+
+
+
+
+
+
