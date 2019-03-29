@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+DEVICE = torch.device("cuda:0")
+
 class GaussianNoise(nn.Module):
     def __init__(self, std=0.1, set_at_runtime=False):
         super(GaussianNoise, self).__init__()
@@ -16,7 +18,7 @@ class GaussianNoise(nn.Module):
             self.std = x.std()*self.std
         noise = self.std * torch.randn(x.size())
         if next(self.parameters()).is_cuda:
-            noise = noise.cuda()
+            noise = noise.to(next(self.parameters()).get_device())
         return x + noise
 
     def extra_repr(self):

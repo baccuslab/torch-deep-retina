@@ -65,7 +65,7 @@ def max_correlation(membrane_potential, model_layer):
         return np.max(
             [pearsonr(membrane_potential, model_layer[:,c])[0] for c in range(model_layer.shape[1])])
 
-def argmax_correlation(membrane_potential, model_layer):
+def argmax_correlation(membrane_potential, model_layer, ret_max_cor=False):
     '''
     Takes a 1d membrane potential and computes the correlation with every tiled unit in model_layer.
     
@@ -73,11 +73,21 @@ def argmax_correlation(membrane_potential, model_layer):
         membrane_potential: 1-d numpy array
         model_layer: (time, celltype, space, space) layer of activities
     '''
-    if len(model_layer.shape) > 2:
-        space_idx = [np.unravel_index(np.argmax(correlation_map(membrane_potential, model_layer[:,c])), (model_layer.shape[2], model_layer.shape[3])) for c in range(model_layer.shape[1])]
-        celltype_idx = np.argmax(
-            [np.max(correlation_map(membrane_potential, model_layer[:,c])) for c in range(model_layer.shape[1])])
+    assert len(model_layer.shape) > 2
+    cormaps = [correlation_map(membrane_potential, model_layer[:,c]) for c in range(model_layer.shape[1])]
+    cormap_argmaxs = [np.argmax(cormaps[c]) for c in range(model_layer.shape[1])]
+    space_idx = [np.unravel_index(cormap_argmaxs[c], (model_layer.shape[2], model_layer.shape[3])) for c in range(model_layer.shape[1])]
+    cormap_maxes = [np.ravel(cormaps[c])[cormap_argmaxs[c]] for c in range(model_layer.shape[1])]
+    celltype_idx = np.argmax(cormap_maxes)
+    if ret_max_cor:
+        return celltype_idx, space_idx, cormap_maxes[celltype_idx]
     return celltype_idx, space_idx
+
+	#if len(model_layer.shape) > 2:
+    #    space_idx = [np.unravel_index(np.argmax(correlation_map(membrane_potential, model_layer[:,c])), (model_layer.shape[2], model_layer.shape[3])) for c in range(model_layer.shape[1])]
+    #    celltype_idx = np.argmax(
+    #        [np.max(correlation_map(membrane_potential, model_layer[:,c])) for c in range(model_layer.shape[1])])
+    #return celltype_idx, space_idx
 
 def sorted_correlation(membrane_potential, model_layer):
     '''
@@ -105,20 +115,35 @@ def max_correlation_all_layers(membrane_potential, model_response, layer_keys=['
     return max(max_correlation(membrane_potential, model_response[layer_keys[0]]), 
                max_correlation(membrane_potential, model_response[layer_keys[1]]))
 
-def argmax_correlation_all_layers(membrane_potential, model_response, layer_keys=['conv1', 'conv2']):
+def argmax_correlation_all_layers(membrane_potential, model_response, layer_keys=['conv1', 'conv2'], ret_max_cor_all_layers=False):
     '''
     Takes a 1d membrane potential and computes the maximum correlation over the 2 conv layers within a model.
     Args: 
         membrane_potential: 1-d numpy array
         model_response: a dict of layer activities
     '''
-    if max_correlation(membrane_potential, model_response[layer_keys[0]]) == max_correlation_all_layers(membrane_potential, model_response, layer_keys=layer_keys):
-        layer = layer_keys[0]
-    else:
-        layer = layer_keys[1]
-    cell_type = argmax_correlation(membrane_potential, model_response[layer])[0]
-    # an example return: ('conv1', 8, (10, 5)) 
-    return (layer, cell_type, argmax_correlation(membrane_potential, model_response[layer])[1][cell_type])
+    argmax_cors = [argmax_correlation(membrane_potential, model_response[k], ret_max_cor=True) for k in layer_keys]
+    max_cors = [argmax_cors[k][-1] for k in range(len(layer_keys))]
+    cor_argmax = np.argmax(max_cors)
+    layer = layer_keys[cor_argmax]
+    cell_type = argmax_cors[cor_argmax][0]
+    if ret_max_cor_all_layers:
+        return (layer, cell_type, argmax_cors[cor_argmax][1][cell_type]), max_cors[cor_argmax]
+    return (layer, cell_type, argmax_cors[cor_argmax][1][cell_type])
+
+
+    #max_cors = [max_correlation(membrane_potential, model_response[k]) for k in layer_keys]
+    #max_cor_all_layers = max(max_cors)
+    #if max_cors[0] == max_cor_all_layers:
+    #    layer = layer_keys[0]
+    #else:
+    #    layer = layer_keys[1]
+    #argmax_cor, max_cor = argmax_correlation(membrane_potential, model_response[layer], ret_max_cor=True)
+    #cell_type = argmax_cor[0]
+    ## an example return: ('conv1', 8, (10, 5)) 
+    #if ret_max_cor_all_layers:
+    #    return (layer, cell_type, argmax_cor[1][cell_type]), max_cor_all_layers
+    #return (layer, cell_type, argmax_cor[1][cell_type])
 
 def classify(membrane_potential, model_response, time, layer_keys=['conv1', 'conv2']):
     '''
@@ -133,8 +158,8 @@ def classify(membrane_potential, model_response, time, layer_keys=['conv1', 'con
     model_response_time = {}
     model_response_time[layer_keys[0]] = model_response[layer_keys[0]][:time]
     model_response_time[layer_keys[1]] = model_response[layer_keys[1]][:time]
-    best_cell = argmax_correlation_all_layers(membrane_potential[:time], model_response_time, layer_keys=layer_keys)
-    return best_cell[0], best_cell[1], best_cell[2], max_correlation_all_layers(membrane_potential[:time], model_response_time, layer_keys=layer_keys)
+    best_cell, max_cor_all_layers = argmax_correlation_all_layers(membrane_potential[:time], model_response_time, layer_keys=layer_keys, ret_max_cor_all_layers=True)
+    return best_cell[0], best_cell[1], best_cell[2], max_cor_all_layers
 
 def classify_subtypes(membrane_potential, model_response, time, layer_keys=['conv1', 'conv2']):
     '''
