@@ -78,17 +78,6 @@ def train(hyps, model, data):
         epoch_loss = 0
         print('Epoch ' + str(epoch))  
         
-        model.eval()
-        test_obs = model(test_x.to(DEVICE)).cpu().detach().numpy()
-        model.train(mode=True)
-
-        for cell in range(test_obs.shape[-1]):
-            obs = test_obs[:,cell]
-            lab = test_data.y[:,cell]
-            r,p = pearsonr(obs,lab)
-            print('Cell ' + str(cell) + ': ')
-            print('-----> pearsonr: ' + str(r))
-        
         starttime = time.time()
         activity_l1 = torch.zeros(1).to(DEVICE)
         for batch in range(num_batches):
@@ -134,6 +123,20 @@ def train(hyps, model, data):
         model.train(mode=True)
         print("Val Acc:", val_acc, " -- Val Loss:", val_loss, " | SaveFolder:", SAVE)
         scheduler.step(val_loss)
+
+        test_obs = model(test_x.to(DEVICE)).cpu().detach().numpy()
+        model.train(mode=True)
+
+        avg_pearson = 0
+        for cell in range(test_obs.shape[-1]):
+            obs = test_obs[:,cell]
+            lab = test_data.y[:,cell]
+            r,p = pearsonr(obs,lab)
+            avg_pearson += r
+            print('Cell ' + str(cell) + ': ')
+            print('-----> pearsonr: ' + str(r))
+        avg_pearson = avg_pearson / float(test_obs.shape[-1])
+
         save_dict = {
             "model": model,
             "model_state_dict":model.state_dict(),
@@ -142,6 +145,7 @@ def train(hyps, model, data):
             "epoch":epoch,
             "val_loss":val_loss,
             "val_acc":val_acc,
+            "val_pearson":avg_pearson,
         }
         io.save_checkpoint_dict(save_dict,SAVE,'test')
         del val_obs
@@ -184,7 +188,7 @@ def hyper_search(hyps, hyp_ranges, keys, train, data, idx=0):
         hyps['save_folder'] = hyps['exp_name'] + "/" + hyps['exp_name'] +"_"+ str(hyps['exp_num']) 
         for k in keys:
             hyps['save_folder'] += "_" + str(k)+str(hyps[k])
-        model = hyps['model_type'](hyps['n_output_units'], noise=hyps['noise'])
+        model = hyps['model_type'](hyps['n_output_units'], noise=hyps['noise'], bias=hyps['bias'])
         results = train(hyps, model, data)
         with open(hyps['results_file'],'a') as f:
             if hyps['exp_num'] == 0:
