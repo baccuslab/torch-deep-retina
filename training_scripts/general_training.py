@@ -193,6 +193,14 @@ def hyper_search(hyps, hyp_ranges, keys, train, data, idx=0):
         with open(hyps['results_file'],'a') as f:
             if hyps['exp_num'] == 0:
                 f.write(str(model)+'\n\n')
+                f.write("Hyperparameters:\n")
+                for k in hyps.keys():
+                    if k not in hyp_ranges:
+                        f.write(str(k) + ": " + str(hyps[k]) + '\n')
+                f.write("\nHyperranges:\n")
+                for k in hyp_ranges.keys():
+                    f.write(str(k) + ": [" + ",".join([str(v) for v in hyp_ranges[k]])+']\n')
+                f.write('\n')
             results = " ".join([k+":"+str(results[k]) for k in sorted(results.keys())])
             f.write(hyps['save_folder'].split("/")[-1] + ":\n\t" + results +"\n\n")
         hyps['exp_num'] += 1
