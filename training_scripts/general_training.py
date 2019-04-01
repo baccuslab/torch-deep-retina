@@ -13,8 +13,8 @@ import gc
 import resource
 sys.path.append('../')
 sys.path.append('../utils/')
-from utils.hyperparams import HyperParams
-from models import BNCNN, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN
+from utils.miscellaneous import ShuffledDataSplit
+from models import BNCNN, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN
 import retio as io
 import argparse
 import time
@@ -232,6 +232,8 @@ def set_model_type(model_str):
         return PracticalBNCNN
     if model_str == "StackedBNCNN":
         return StackedBNCNN
+    if model_str == "SkipBNCNN":
+        return SkipBNCNN
     print("Invalid model type!")
     return None
 
