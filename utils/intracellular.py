@@ -48,7 +48,9 @@ def correlation_map(membrane_potential, model_layer):
     for y in range(height):
         for x in range(width):
             adjusted_layer = model_layer[:,y,x]
-            adjusted_layer = adjusted_layer*10**(-np.log10(np.absolute(adjusted_layer.mean())))
+            log10 = np.log10(np.absolute(np.min(adjusted_layer)))
+            if log10 < -10:
+                adjusted_layer = adjusted_layer*10**(-log10)
             correlations[y,x] = pearsonr(membrane_potential, adjusted_layer)[0]
     return correlations
 
@@ -65,7 +67,9 @@ def max_correlation(membrane_potential, model_layer):
             [np.max(correlation_map(membrane_potential, model_layer[:,c])) for c in range(model_layer.shape[1])])
     else:
         adjusted_layer = model_layer[:,c]
-        adjusted_layer = adjusted_layer*10**(-np.log10(np.absolute(adjusted_layer.mean())))
+        log10 = np.log10(np.absolute(np.min(adjusted_layer)))
+        if log10 < -10:
+            adjusted_layer = adjusted_layer*10**(-log10)
         return np.max(
             [pearsonr(membrane_potential, adjusted_layer)[0] for c in range(model_layer.shape[1])])
 
@@ -102,7 +106,9 @@ def sorted_correlation(membrane_potential, model_layer):
             [np.max(correlation_map(membrane_potential, model_layer[:,c])) for c in range(model_layer.shape[1])])
     else:
         adjusted_layer = model_layer[:,c]
-        adjusted_layer = adjusted_layer*10**(-np.log10(np.absolute(adjusted_layer.mean())))
+        log10 = np.log10(np.absolute(np.min(adjusted_layer)))
+        if log10 < -10:
+            adjusted_layer = adjusted_layer*10**(-log10)
         return sorted(
             [pearsonr(membrane_potential, adjusted_layer)[0] for c in range(model_layer.shape[1])])
 
