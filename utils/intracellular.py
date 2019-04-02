@@ -138,20 +138,6 @@ def argmax_correlation_all_layers(membrane_potential, model_response, layer_keys
         return (layer, cell_type, argmax_cors[cor_argmax][1][cell_type]), max_cors[cor_argmax]
     return (layer, cell_type, argmax_cors[cor_argmax][1][cell_type])
 
-
-    #max_cors = [max_correlation(membrane_potential, model_response[k]) for k in layer_keys]
-    #max_cor_all_layers = max(max_cors)
-    #if max_cors[0] == max_cor_all_layers:
-    #    layer = layer_keys[0]
-    #else:
-    #    layer = layer_keys[1]
-    #argmax_cor, max_cor = argmax_correlation(membrane_potential, model_response[layer], ret_max_cor=True)
-    #cell_type = argmax_cor[0]
-    ## an example return: ('conv1', 8, (10, 5)) 
-    #if ret_max_cor_all_layers:
-    #    return (layer, cell_type, argmax_cor[1][cell_type]), max_cor_all_layers
-    #return (layer, cell_type, argmax_cor[1][cell_type])
-
 def classify(membrane_potential, model_response, time, layer_keys=['conv1', 'conv2']):
     '''
     Finds the most correlated cell in a model to a membrane potential.
