@@ -1,7 +1,15 @@
 import torch
 import torch.nn as nn
+import numpy as np
 
 DEVICE = torch.device("cuda:0")
+
+
+def diminish_weight_magnitude(params):
+    for param in params:
+        divisor = float(np.prod(param.data.shape))/2
+        if param.data is not None and divisor >= 0:
+            param.data = param.data/divisor
 
 class GaussianNoise(nn.Module):
     def __init__(self, std=0.1, set_at_runtime=False):
@@ -139,6 +147,9 @@ class WeightNorm(nn.Module):
         return self.torch_module(x)
 
 class MeanOnlyBatchNorm(nn.Module):
+    """
+    Does not currently work during backprop
+    """
     def __init__(self, shape, momentum=.1):
         super(MeanOnlyBatchNorm, self).__init__()
         self.running_mean = 0
@@ -192,14 +203,72 @@ class SkipConnection1(nn.Module):
         super(SkipConnection1,self).__init__()
         padding = kernel_size//2
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=padding, bias=bias)
+        self.relu = nn.ReLU()
 
     def forward(self, x):
         fx = self.conv(x)
+        fx = self.relu(fx)
+        return torch.cat([x,fx], dim=1)
+
+class SkipConnection(nn.Module):
+    """
+    Performs a conv2d and returns the output stacked with  
+    the original input.
+    """
+    def __init__(self, in_channels, out_channels, kernel_size, bias=True):
+        super(SkipConnection,self).__init__()
+        padding = kernel_size//2
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=padding, bias=bias)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        fx = self.conv(x)
+        fx = self.relu(fx)
         return torch.cat([x,fx], dim=1)
         
+class SkipConnectionBN(nn.Module):
+    """
+    Performs a conv2d and returns the output stacked with  
+    the original input.
+    """
+    def __init__(self, in_channels, out_channels, kernel_size, x_shape=(40,50,50), bias=True, noise=.05):
+        super(SkipConnectionBN,self).__init__()
+        padding = kernel_size//2
+        modules = []
+        modules.append(nn.Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=padding, bias=bias))
+        modules.append(Flatten())
+        modules.append(nn.BatchNorm1d(out_channels*x_shape[-2]*x_shape[-1]))
+        modules.append(GaussianNoise(noise))
+        modules.append(nn.ReLU())
+        modules.append(Reshape((out_channels,x_shape[-2],x_shape[-1])))
+        self.sequential = nn.Sequential(*modules)
 
+    def forward(self, x):
+        fx = self.sequential(x)
+        return torch.cat([x,fx], dim=1)
 
+class DalesSkipConnection(nn.Module):
+    """
+    Performs an absolute value conv2d and returns the output stacked with  
+    the original input.
+    """
+    def __init__(self, in_channels, out_channels, kernel_size, x_shape=(40,50,50), bias=True, noise=.05, neg_p=1):
+        super(DalesSkipConnection,self).__init__()
+        padding = kernel_size//2
+        modules = []
+        modules.append(AbsConv2d(in_channels, out_channels, kernel_size, stride=1, padding=padding, bias=bias))
+        diminish_weight_magnitude(modules[-1].parameters())
+        modules.append(Flatten())
+        modules.append(nn.BatchNorm1d(out_channels*x_shape[-2]*x_shape[-1]))
+        modules.append(GaussianNoise(noise))
+        modules.append(nn.ReLU())
+        modules.append(Reshape((-1, out_channels,x_shape[-2],x_shape[-1])))
+        modules.append(DaleActivations(out_channels, neg_p=neg_p))
+        self.sequential = nn.Sequential(*modules)
 
+    def forward(self, x):
+        fx = self.sequential(x)
+        return torch.cat([x,fx], dim=1)
 
 
 

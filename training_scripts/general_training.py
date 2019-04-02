@@ -14,7 +14,7 @@ import resource
 sys.path.append('../')
 sys.path.append('../utils/')
 from utils.miscellaneous import ShuffledDataSplit
-from models import BNCNN, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN
+from models import BNCNN, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN, DalesSkipBNCNN, SkipBNBNCNN
 import retio as io
 import argparse
 import time
@@ -237,6 +237,10 @@ def set_model_type(model_str):
         return StackedBNCNN
     if model_str == "SkipBNCNN":
         return SkipBNCNN
+    if model_str == "DalesSkipBNCNN":
+        return DalesSkipBNCNN
+    if model_str == "SkipBNBNCNN":
+        return SkipBNBNCNN
     print("Invalid model type!")
     return None
 
