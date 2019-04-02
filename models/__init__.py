@@ -9,3 +9,5 @@ from models.practical_BN_CNN import PracticalBNCNN
 from models.stacked_BN_CNN import StackedBNCNN
 from models.Normed_BN_CNN import NormedBNCNN
 from models.Skip_BN_CNN import SkipBNCNN
+from models.DalesSkip_BN_CNN import DalesSkipBNCNN
+from models.SkipBN_BN_CNN import SkipBNBNCNN
