@@ -148,7 +148,7 @@ def train(hyps, model, data):
             "epoch":epoch,
             "val_loss":val_loss,
             "val_acc":val_acc,
-            "val_pearson":avg_pearson,
+            "test_pearson":avg_pearson,
         }
         io.save_checkpoint_dict(save_dict,SAVE,'test')
         del val_obs
@@ -158,7 +158,7 @@ def train(hyps, model, data):
         if math.isnan(avg_loss) or math.isinf(avg_loss):
             break
     
-    results = {"Loss":avg_loss, "ValAcc":val_acc, "ValLoss":val_loss}
+    results = {"Loss":avg_loss, "ValAcc":val_acc, "ValLoss":val_loss, "TestPearson":avg_pearson}
     with open(SAVE + "/hyperparams.txt",'a') as f:
         f.write("\n" + " ".join([k+":"+str(results[k]) for k in sorted(results.keys())]) + '\n')
     return results
