@@ -47,7 +47,9 @@ def correlation_map(membrane_potential, model_layer):
     correlations = np.zeros((height, width))
     for y in range(height):
         for x in range(width):
-            correlations[y,x] = pearsonr(membrane_potential, model_layer[:, y, x])[0]
+            adjusted_layer = model_layer[:,y,x]
+            adjusted_layer = adjusted_layer*10**(-np.log10(np.absolute(adjusted_layer.mean())))
+            correlations[y,x] = pearsonr(membrane_potential, adjusted_layer)[0]
     return correlations
 
 def max_correlation(membrane_potential, model_layer):
@@ -62,8 +64,10 @@ def max_correlation(membrane_potential, model_layer):
         return np.max(
             [np.max(correlation_map(membrane_potential, model_layer[:,c])) for c in range(model_layer.shape[1])])
     else:
+        adjusted_layer = model_layer[:,c]
+        adjusted_layer = adjusted_layer*10**(-np.log10(np.absolute(adjusted_layer.mean())))
         return np.max(
-            [pearsonr(membrane_potential, model_layer[:,c])[0] for c in range(model_layer.shape[1])])
+            [pearsonr(membrane_potential, adjusted_layer)[0] for c in range(model_layer.shape[1])])
 
 def argmax_correlation(membrane_potential, model_layer, ret_max_cor=False):
     '''
@@ -83,11 +87,6 @@ def argmax_correlation(membrane_potential, model_layer, ret_max_cor=False):
         return celltype_idx, space_idx, cormap_maxes[celltype_idx]
     return celltype_idx, space_idx
 
-	#if len(model_layer.shape) > 2:
-    #    space_idx = [np.unravel_index(np.argmax(correlation_map(membrane_potential, model_layer[:,c])), (model_layer.shape[2], model_layer.shape[3])) for c in range(model_layer.shape[1])]
-    #    celltype_idx = np.argmax(
-    #        [np.max(correlation_map(membrane_potential, model_layer[:,c])) for c in range(model_layer.shape[1])])
-    #return celltype_idx, space_idx
 
 def sorted_correlation(membrane_potential, model_layer):
     '''
@@ -102,8 +101,10 @@ def sorted_correlation(membrane_potential, model_layer):
         return sorted(
             [np.max(correlation_map(membrane_potential, model_layer[:,c])) for c in range(model_layer.shape[1])])
     else:
+        adjusted_layer = model_layer[:,c]
+        adjusted_layer = adjusted_layer*10**(-np.log10(np.absolute(adjusted_layer.mean())))
         return sorted(
-            [pearsonr(membrane_potential, model_layer[:,c])[0] for c in range(model_layer.shape[1])])
+            [pearsonr(membrane_potential, adjusted_layer)[0] for c in range(model_layer.shape[1])])
 
 def max_correlation_all_layers(membrane_potential, model_response, layer_keys=['conv1', 'conv2']):
     '''
