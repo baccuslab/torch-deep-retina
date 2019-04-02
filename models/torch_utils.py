@@ -162,6 +162,7 @@ class SplitConv2d(nn.Module):
     output.
     """
     def __init__(self, conv_param_tuples, ret_stacked=True):
+        super(SplitConv2d,self).__init__()
         self.convs = nn.ModuleList([])
         self.ret_stacked = ret_stacked
         for tup in conv_param_tuples:
@@ -182,7 +183,20 @@ class SplitConv2d(nn.Module):
     def extra_repr(self):
         return 'ret_stacked={}'.format(self.ret_stacked)
 
+class SkipConnection1(nn.Module):
+    """
+    Performs a conv2d and returns the output stacked with  
+    the original input.
+    """
+    def __init__(self, in_channels, out_channels, kernel_size, bias=True):
+        super(SkipConnection1,self).__init__()
+        padding = kernel_size//2
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=padding, bias=bias)
 
+    def forward(self, x):
+        fx = self.conv(x)
+        return torch.cat([x,fx], dim=1)
+        
 
 
 

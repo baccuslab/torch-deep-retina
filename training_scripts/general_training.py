@@ -13,8 +13,8 @@ import gc
 import resource
 sys.path.append('../')
 sys.path.append('../utils/')
-from utils.hyperparams import HyperParams
-from models import BNCNN, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN
+from utils.miscellaneous import ShuffledDataSplit
+from models import BNCNN, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN
 import retio as io
 import argparse
 import time
@@ -57,14 +57,17 @@ def train(hyps, model, data):
 
     # train/val split
     num_val = 20000
-    epoch_train_x = torch.FloatTensor(train_data.X[num_val//2:-num_val//2])
-    epoch_train_y = torch.FloatTensor(train_data.y[num_val//2:-num_val//2])
-    epoch_val_x = torch.FloatTensor(np.concatenate([train_data.X[:num_val//2], train_data.X[-num_val//2:]], axis=0))
-    epoch_val_y = torch.FloatTensor(np.concatenate([train_data.y[:num_val//2], train_data.y[-num_val//2:]], axis=0))
-    epoch_length = epoch_train_x.shape[0]
+    data = ShuffledDataSplit(train_data, num_val)
+    data.torch()
+    #epoch_train_x = torch.FloatTensor(train_data.X[num_val//2:-num_val//2])
+    #epoch_train_y = torch.FloatTensor(train_data.y[num_val//2:-num_val//2])
+    #epoch_val_x = torch.FloatTensor(np.concatenate([train_data.X[:num_val//2], train_data.X[-num_val//2:]], axis=0))
+    #epoch_val_y = torch.FloatTensor(np.concatenate([train_data.y[:num_val//2], train_data.y[-num_val//2:]], axis=0))
+    #epoch_length = epoch_train_x.shape[0]
+    epoch_length = data.train_shape[0]
     num_batches,leftover = divmod(epoch_length, batch_size)
-    print("Train size:", len(epoch_train_x))
-    print("Val size:", len(epoch_val_x))
+    print("Train size:", epoch_length)
+    print("Val size:", data.val_shape[0])
     print("N Batches:", num_batches, "  Leftover:", leftover)
 
     # test data
@@ -72,7 +75,7 @@ def train(hyps, model, data):
 
     # Train Loop
     for epoch in range(EPOCHS):
-        indices = torch.randperm(epoch_train_x.shape[0]).long()
+        indices = torch.randperm(data.train_shape[0]).long()
 
         losses = []
         epoch_loss = 0
@@ -83,8 +86,8 @@ def train(hyps, model, data):
         for batch in range(num_batches):
             optimizer.zero_grad()
             idxs = indices[batch_size*batch:batch_size*(batch+1)]
-            x = epoch_train_x[idxs]
-            label = epoch_train_y[idxs]
+            x = data.train_X[idxs]
+            label = data.train_y[idxs]
             label = label.float()
             label = label.to(DEVICE)
 
@@ -112,14 +115,14 @@ def train(hyps, model, data):
         val_obs = []
         val_loss = 0
         step_size = 2500
-        n_loops = epoch_val_x.shape[0]//step_size
+        n_loops = data.val_shape[0]//step_size
         for v in tqdm(range(0, n_loops*step_size, step_size)):
-            temp = model(epoch_val_x[v:v+step_size].to(DEVICE)).detach()
-            val_loss += loss_fn(temp, epoch_val_y[v:v+step_size].to(DEVICE)).item()
+            temp = model(data.val_X[v:v+step_size].to(DEVICE)).detach()
+            val_loss += loss_fn(temp, data.val_y[v:v+step_size].to(DEVICE)).item()
             val_obs.append(temp.cpu().numpy())
         val_loss = val_loss/n_loops
         val_obs = np.concatenate(val_obs, axis=0)
-        val_acc = np.mean([pearsonr(val_obs[:, i], epoch_val_y[:val_obs.shape[0], i].numpy()) for i in range(epoch_val_y.shape[-1])])
+        val_acc = np.mean([pearsonr(val_obs[:, i], data.val_y[:val_obs.shape[0]][:,i].numpy()) for i in range(val_obs.shape[-1])])
         model.train(mode=True)
         print("Val Acc:", val_acc, " -- Val Loss:", val_loss, " | SaveFolder:", SAVE)
         scheduler.step(val_loss)
@@ -232,6 +235,8 @@ def set_model_type(model_str):
         return PracticalBNCNN
     if model_str == "StackedBNCNN":
         return StackedBNCNN
+    if model_str == "SkipBNCNN":
+        return SkipBNCNN
     print("Invalid model type!")
     return None
 
