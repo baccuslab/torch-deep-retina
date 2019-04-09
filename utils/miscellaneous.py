@@ -94,14 +94,3 @@ class ShuffledDataSplit:
         self.val_X = DataObj(self.X, self.val_idxs)
         self.val_y = DataObj(self.y, self.val_idxs)
 
-    #def train_X(self,idxs):
-    #    return self.X[self.train_idxs[idxs]]
-    #    
-    #def train_y(self,idxs):
-    #    return self.y[self.train_idxs[idxs]]
-
-    #def val_X(self,idxs):
-    #    return self.X[self.val_idxs[idxs]]
-    #    
-    #def val_y(self,idxs):
-    #    return self.y[self.val_idxs[idxs]]

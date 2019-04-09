@@ -95,7 +95,7 @@ def train(hyps, model, data):
             y = y.float() 
 
             if LAMBDA1 > 0:
-                activity_l1 = LAMBDA1 * torch.norm(y, 1).float()
+                activity_l1 = LAMBDA1 * torch.norm(y, 1).float()/y.shape[0]
             error = loss_fn(y,label)
             loss = error + activity_l1
             loss.backward()
@@ -184,7 +184,8 @@ def hyper_search(hyps, hyp_ranges, keys, train, data, idx=0):
     # Base call, runs the training and saves the result
     if idx >= len(keys):
         if 'exp_num' not in hyps:
-            hyps['exp_num'] = 0
+            if 'starting_exp_num' not in hyps: hyps['starting_exp_num'] = 0
+            hyps['exp_num'] = hyps['starting_exp_num']
             if not os.path.exists(hyps['exp_name']):
                 os.mkdir(hyps['exp_name'])
             hyps['results_file'] = hyps['exp_name']+"/results.txt"
@@ -194,7 +195,7 @@ def hyper_search(hyps, hyp_ranges, keys, train, data, idx=0):
         model = hyps['model_type'](hyps['n_output_units'], noise=hyps['noise'], bias=hyps['bias'])
         results = train(hyps, model, data)
         with open(hyps['results_file'],'a') as f:
-            if hyps['exp_num'] == 0:
+            if hyps['exp_num'] == hyps['starting_exp_num']:
                 f.write(str(model)+'\n\n')
                 f.write("Hyperparameters:\n")
                 for k in hyps.keys():
