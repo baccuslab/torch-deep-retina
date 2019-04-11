@@ -22,7 +22,7 @@ from tqdm import tqdm
 import json
 import math
 
-from deepretina.experiments import loadexpt
+from utils.deepretina_loader import loadexpt
 
 DEVICE = torch.device("cuda:0")
 
@@ -149,6 +149,7 @@ def train(hyps, model, data):
             "val_loss":val_loss,
             "val_acc":val_acc,
             "test_pearson":avg_pearson,
+            "data_norm_stats":train_data.stats,
         }
         io.save_checkpoint_dict(save_dict,SAVE,'test')
         del val_obs
