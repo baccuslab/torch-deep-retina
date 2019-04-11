@@ -27,7 +27,11 @@ class GaussianNoise(nn.Module):
         return x + noise
 
     def extra_repr(self):
-        return 'std={}, trainable={}'.format(self.std, self.trainable)
+        try:
+            return 'std={}, trainable={}'.format(self.std, self.trainable)
+        except:
+            return 'std={}'.format(self.std)
+            
 
 class ScaleShift(nn.Module):
     def __init__(self, shape, scale=True, shift=True):
