@@ -13,8 +13,13 @@ def diminish_weight_magnitude(params):
 
 class GaussianNoise(nn.Module):
     def __init__(self, std=0.1, trainable=False):
+        """
+        If trainable is set to True, then the std is turned into 
+        a learned parameter.
+        """
         super(GaussianNoise, self).__init__()
         self.trainable = trainable
+        self.std = std
         self.sigma = nn.Parameter(torch.ones(1)*std, requires_grad=trainable)
     
     def forward(self, x):
