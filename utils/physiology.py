@@ -25,10 +25,10 @@ class Physio:
     
     # activity_dict = phys.inspect(stim)
     # activity_dict['conv1'] <--- gets the conv2d_1 layer activity
-    def inspect(self, stim, insp_modules={"all"}):
+    def inspect(self, stim, insp_keys={"all"}):
         if len(self.hooks) <= 0:
             for name, module in self.net.named_modules():
-                if name in insp_modules or "all" in insp_modules:
+                if name in insp_keys or "all" in insp_keys:
                     self.hooks.append(module.register_forward_hook(self.layer_activity(name)))
                     self.hooks.append(module.register_backward_hook(self.layer_grad(name)))
         self.dict['output'] = self.net(stim)
