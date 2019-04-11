@@ -29,7 +29,7 @@ Exptdata = namedtuple('Exptdata', ['X', 'y', 'spkhist', 'stats'])
 __all__ = ['loadexpt', 'stimcut', 'CELLS']
 
 
-def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=None):
+def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=None, norm_stats=None):
     """Loads an experiment from an h5 file on disk
 
     Parameters
@@ -54,6 +54,10 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=
 
     cutout_width : int, optional
         If not None, cuts out the stimulus around the STA (assumes cells is a scalar)
+
+    norm_stats : listlike of floats i.e. [mean, std], optional
+        If a list of len 2 is argued, idx 0 will be used as the mean and idx 1 the std for
+        data normalization
     """
     assert history > 0 and type(history) is int, "Temporal history must be a positive integer"
     assert train_or_test in ('train', 'test'), "train_or_test must be 'train' or 'test'"
@@ -76,8 +80,12 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=
         else:
             stim = ft.cutout(np.asarray(f[train_or_test]['stimulus']), idx=(px, py), width=cutout_width).astype('float32')
         stats = {}
-        stats['mean'] = stim.mean()
-        stats['std'] = stim.std()+1e-7
+        if norm_stats is not None:
+            stats['mean'] = norm_stats[0]
+            stats['std'] = norm_stats[1]
+        else:
+            stats['mean'] = stim.mean()
+            stats['std'] = stim.std()+1e-7
         stim = (stim-stats['mean'])/stats['std']
 
         # apply clipping to remove the stimulus just after transitions

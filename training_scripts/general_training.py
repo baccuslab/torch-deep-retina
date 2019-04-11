@@ -21,7 +21,6 @@ import time
 from tqdm import tqdm
 import json
 import math
-
 from utils.deepretina_loader import loadexpt
 
 DEVICE = torch.device("cuda:0")
@@ -279,7 +278,8 @@ if __name__ == "__main__":
 
     # Load data using Lane and Nirui's dataloader
     train_data = DataContainer(loadexpt(dataset,cells,'naturalscene','train',40,0))
-    test_data = DataContainer(loadexpt(dataset,cells,'naturalscene','test',40,0))
+    norm_stats = [train_data.stats['mean'], train_data.stats['std']] 
+    test_data = DataContainer(loadexpt(dataset,cells,'naturalscene','test',40,0, norm_stats=norm_stats))
     test_data.X = test_data.X[:500]
     test_data.y = test_data.y[:500]
 
