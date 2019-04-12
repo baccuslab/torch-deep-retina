@@ -114,7 +114,7 @@ def train(hyps, model, data):
             temp = model(data.val_X[v:v+step_size].to(DEVICE)).detach()
             val_loss += loss_fn(temp, data.val_y[v:v+step_size].to(DEVICE)).item()
             if LAMBDA1 > 0:
-                val_loss += LAMBDA1 * torch.norm(temp, 1).float()/temp.shape[0]
+                val_loss += (LAMBDA1 * torch.norm(temp, 1).float()/temp.shape[0]).item()
             val_obs.append(temp.cpu().numpy())
         val_loss = val_loss/n_loops
         val_obs = np.concatenate(val_obs, axis=0)
@@ -160,7 +160,7 @@ def train(hyps, model, data):
         f.write("\n" + " ".join([k+":"+str(results[k]) for k in sorted(results.keys())]) + '\n')
     return results
 
-def hyper_search(hyps, hyp_ranges, keys, train, data, idx=0):
+def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
     """
     Recursive function to loop through each of the hyperparameter combinations
 
@@ -175,7 +175,6 @@ def hyper_search(hyps, hyp_ranges, keys, train, data, idx=0):
     keys - keys of the hyperparameters to be searched over. Used to
             specify order of keys to search
     train - method that handles training of model. Should return a dict of results.
-    data - tuple of train_data and test_data
     idx - the index of the current key to be searched over
     """
     # Base call, runs the training and saves the result
@@ -189,7 +188,16 @@ def hyper_search(hyps, hyp_ranges, keys, train, data, idx=0):
         hyps['save_folder'] = hyps['exp_name'] + "/" + hyps['exp_name'] +"_"+ str(hyps['exp_num']) 
         for k in keys:
             hyps['save_folder'] += "_" + str(k)+str(hyps[k])
-        model = hyps['model_type'](hyps['n_output_units'], noise=hyps['noise'], bias=hyps['bias'])
+        print("Loading", hyps['stim_type'],"using Cells:", hyps['cells'], "from dataset:", hyps['dataset'])
+        train_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],
+                                            hyps['stim_type'],'train',40,0))
+        norm_stats = [train_data.stats['mean'], train_data.stats['std']] 
+        test_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],hyps['stim_type'],
+                                                        'test',40,0, norm_stats=norm_stats))
+        test_data.X = test_data.X[:500]
+        test_data.y = test_data.y[:500]
+        data = [train_data, test_data]
+        model = hyps['model_type'](test_data.y.shape[-1], noise=hyps['noise'], bias=hyps['bias'])
         results = train(hyps, model, data)
         with open(hyps['results_file'],'a') as f:
             if hyps['exp_num'] == hyps['starting_exp_num']:
@@ -211,7 +219,7 @@ def hyper_search(hyps, hyp_ranges, keys, train, data, idx=0):
         key = keys[idx]
         for param in hyp_ranges[key]:
             hyps[key] = param
-            hyper_search(hyps, hyp_ranges, keys, train, data, idx+1)
+            hyper_search(hyps, hyp_ranges, keys, train, idx+1)
     return
 
 def set_model_type(model_str):
@@ -255,10 +263,9 @@ class DataContainer():
     def __init__(self, data):
         self.X = data.X
         self.y = data.y
+        self.stats = data.stats
 
 if __name__ == "__main__":
-    cells = [0,1,2,3,4]
-    dataset = '15-10-07'
     hyperparams_file = "hyperparams.json"
     hyperranges_file = 'hyperranges.json'
     hyps = load_json(hyperparams_file)
@@ -269,16 +276,8 @@ if __name__ == "__main__":
     hyp_ranges = load_json(hyperranges_file)
     print("Model type:", hyps['model_type'])
     hyps['model_type'] = set_model_type(hyps['model_type'])
-    hyps['n_output_units'] = len(cells)
     keys = list(hyp_ranges.keys())
     print("Searching over:", keys)
 
-    # Load data using Lane and Nirui's dataloader
-    train_data = DataContainer(loadexpt(dataset,cells,'naturalscene','train',40,0))
-    norm_stats = [train_data.stats['mean'], train_data.stats['std']] 
-    test_data = DataContainer(loadexpt(dataset,cells,'naturalscene','test',40,0, norm_stats=norm_stats))
-    test_data.X = test_data.X[:500]
-    test_data.y = test_data.y[:500]
-
-    hyper_search(hyps, hyp_ranges, keys, train, [train_data, test_data], 0)
+    hyper_search(hyps, hyp_ranges, keys, train, 0)
 
