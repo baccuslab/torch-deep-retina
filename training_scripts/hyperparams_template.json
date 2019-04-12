@@ -1,0 +1,14 @@
+{
+    "exp_name":"bncnnb",
+    "data_set":"15-11-21b",
+    "starting_exp_num":0,
+    "batch_size":512,
+    "n_epochs":85,
+    "lr":1e-4,
+    "l1":5e-4,
+    "l2":1e-2,
+    "noise":0.05,
+    "bias":true,
+    "model_type":"BNCNN"
+}
+
