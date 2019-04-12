@@ -52,18 +52,13 @@ def train(hyps, model, data):
     model = model.to(DEVICE)
 
     loss_fn = torch.nn.PoissonNLLLoss()
-    optimizer = torch.optim.Adam(model.parameters(),lr = LR, weight_decay = LAMBDA2)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.2)
+    optimizer = torch.optim.Adam(model.parameters(), lr = LR, weight_decay = LAMBDA2)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.2*LR)
 
     # train/val split
     num_val = 20000
     data = ShuffledDataSplit(train_data, num_val)
     data.torch()
-    #epoch_train_x = torch.FloatTensor(train_data.X[num_val//2:-num_val//2])
-    #epoch_train_y = torch.FloatTensor(train_data.y[num_val//2:-num_val//2])
-    #epoch_val_x = torch.FloatTensor(np.concatenate([train_data.X[:num_val//2], train_data.X[-num_val//2:]], axis=0))
-    #epoch_val_y = torch.FloatTensor(np.concatenate([train_data.y[:num_val//2], train_data.y[-num_val//2:]], axis=0))
-    #epoch_length = epoch_train_x.shape[0]
     epoch_length = data.train_shape[0]
     num_batches,leftover = divmod(epoch_length, batch_size)
     print("Train size:", epoch_length)
@@ -119,6 +114,8 @@ def train(hyps, model, data):
         for v in tqdm(range(0, n_loops*step_size, step_size)):
             temp = model(data.val_X[v:v+step_size].to(DEVICE)).detach()
             val_loss += loss_fn(temp, data.val_y[v:v+step_size].to(DEVICE)).item()
+            if LAMBDA1 > 0:
+                val_loss += LAMBDA1 * torch.norm(temp, 1).float()/temp.shape[0]
             val_obs.append(temp.cpu().numpy())
         val_loss = val_loss/n_loops
         val_obs = np.concatenate(val_obs, axis=0)
