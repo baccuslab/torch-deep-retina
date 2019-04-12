@@ -1,14 +1,16 @@
 {
-    "exp_name":"bncnnb",
-    "data_set":"15-11-21b",
+    "exp_name":"practicalBNnofinal",
+    "model_type":"PracticalBNCNN",
+    "dataset":"15-10-07",
+    "cells":[0, 1, 2,3,4],
+    "stim_type":"naturalscenes",
     "starting_exp_num":0,
     "batch_size":512,
     "n_epochs":85,
-    "lr":1e-4,
-    "l1":5e-4,
-    "l2":1e-2,
-    "noise":0.05,
-    "bias":true,
-    "model_type":"BNCNN"
+    "lr":0.005,
+    "l1":1e-4,
+    "l2":5e-3,
+    "noise":0.3,
+    "bias":true
 }
 
