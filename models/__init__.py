@@ -12,4 +12,4 @@ from models.Normed_BN_CNN import NormedBNCNN
 from models.Skip_BN_CNN import SkipBNCNN
 from models.DalesSkip_BN_CNN import DalesSkipBNCNN
 from models.SkipBN_BN_CNN import SkipBNBNCNN
-from models.Multi_Data_BN_CNN import MultiDataBNCNN
+from models.Parallel_Data_BN_CNN import ParallelDataBNCNN

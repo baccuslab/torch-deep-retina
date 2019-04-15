@@ -14,7 +14,7 @@ import resource
 sys.path.append('../')
 sys.path.append('../utils/')
 from utils.miscellaneous import ShuffledDataSplit
-from models import MultiDataBNCNN, BNCNN, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN, DalesSkipBNCNN, SkipBNBNCNN
+from models import ParallelDataBNCNN, BNCNN, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN, DalesSkipBNCNN, SkipBNBNCNN
 import retio as io
 import argparse
 import time
@@ -234,8 +234,8 @@ def set_model_type(model_str):
         return DalesSkipBNCNN
     if model_str == "SkipBNBNCNN":
         return SkipBNBNCNN
-    if model_str == "MultiDataBNCNN":
-        return MultiDataBNCNN
+    if model_str == "ParallelDataBNCNN":
+        return ParallelDataBNCNN
     print("Invalid model type!")
     return None
 
@@ -255,8 +255,8 @@ class DataContainer():
         self.stats = data.stats
 
 if __name__ == "__main__":
-    hyperparams_file = "multi_hyperparams.json"
-    hyperranges_file = 'multi_hyperranges.json'
+    hyperparams_file = "paralleldata_hyperparams.json"
+    hyperranges_file = 'paralleldata_hyperranges.json'
     hyps = load_json(hyperparams_file)
     inp = input("Last chance to change the experiment name "+hyps['exp_name']+": ")
     inp = inp.strip()
