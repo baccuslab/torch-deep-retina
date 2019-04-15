@@ -14,7 +14,7 @@ import resource
 sys.path.append('../')
 sys.path.append('../utils/')
 from utils.miscellaneous import ShuffledDataSplit
-from models import BNCNN, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN, DalesSkipBNCNN, SkipBNBNCNN
+from models import BNCNN, BNCNN2D, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN, DalesSkipBNCNN, SkipBNBNCNN
 import retio as io
 import argparse
 import time
@@ -69,6 +69,7 @@ def train(hyps, model, data):
 
     # Train Loop
     for epoch in range(EPOCHS):
+        model.train(mode=True)
         indices = torch.randperm(data.train_shape[0]).long()
 
         losses = []
@@ -106,7 +107,7 @@ def train(hyps, model, data):
         del y
         del label
         model.eval()
-        val_obs = []
+        val_preds = []
         val_loss = 0
         step_size = 2500
         n_loops = data.val_shape[0]//step_size
@@ -115,16 +116,14 @@ def train(hyps, model, data):
             val_loss += loss_fn(temp, data.val_y[v:v+step_size].to(DEVICE)).item()
             if LAMBDA1 > 0:
                 val_loss += (LAMBDA1 * torch.norm(temp, 1).float()/temp.shape[0]).item()
-            val_obs.append(temp.cpu().numpy())
+            val_preds.append(temp.cpu().numpy())
         val_loss = val_loss/n_loops
-        val_obs = np.concatenate(val_obs, axis=0)
-        val_acc = np.mean([pearsonr(val_obs[:, i], data.val_y[:val_obs.shape[0]][:,i].numpy()) for i in range(val_obs.shape[-1])])
-        model.train(mode=True)
+        val_preds = np.concatenate(val_preds, axis=0)
+        val_acc = np.mean([pearsonr(val_preds[:, i], data.val_y[:val_preds.shape[0]][:,i].numpy()) for i in range(val_preds.shape[-1])])
         print("Val Acc:", val_acc, " -- Val Loss:", val_loss, " | SaveFolder:", SAVE)
         scheduler.step(val_loss)
 
         test_obs = model(test_x.to(DEVICE)).cpu().detach().numpy()
-        model.train(mode=True)
 
         avg_pearson = 0
         for cell in range(test_obs.shape[-1]):
@@ -145,10 +144,10 @@ def train(hyps, model, data):
             "val_loss":val_loss,
             "val_acc":val_acc,
             "test_pearson":avg_pearson,
-            "data_norm_stats":train_data.stats,
+            "norm_stats":train_data.stats,
         }
         io.save_checkpoint_dict(save_dict,SAVE,'test')
-        del val_obs
+        del val_preds
         del temp
         print()
         # If loss is nan, training is futile
@@ -197,7 +196,10 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
         test_data.X = test_data.X[:500]
         test_data.y = test_data.y[:500]
         data = [train_data, test_data]
-        model = hyps['model_type'](test_data.y.shape[-1], noise=hyps['noise'], bias=hyps['bias'])
+        if "chans" in hyps:
+            model = hyps['model_type'](test_data.y.shape[-1], noise=hyps['noise'], bias=hyps['bias'], chans=hyps['chans'])
+        else:
+            model = hyps['model_type'](test_data.y.shape[-1], noise=hyps['noise'], bias=hyps['bias'])
         results = train(hyps, model, data)
         with open(hyps['results_file'],'a') as f:
             if hyps['exp_num'] == hyps['starting_exp_num']:
@@ -247,6 +249,8 @@ def set_model_type(model_str):
         return DalesSkipBNCNN
     if model_str == "SkipBNBNCNN":
         return SkipBNBNCNN
+    if model_str == "BNCNN2D":
+        return BNCNN2D
     print("Invalid model type!")
     return None
 
