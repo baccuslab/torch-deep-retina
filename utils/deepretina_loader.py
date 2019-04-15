@@ -37,8 +37,9 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=
     expt : str
         The date of the experiment to load in YY-MM-DD format (e.g. '15-10-07')
 
-    cells : list of ints
+    cells : list of ints (or string "all")
         Indices of the cells to load from the experiment
+        If "all" is argued, then all cells for the argued expt are used.
 
     filename : string
         Name of the hdf5 file to load (e.g. 'whitenoise' or 'naturalscene')
@@ -61,6 +62,8 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=
     """
     assert history > 0 and type(history) is int, "Temporal history must be a positive integer"
     assert train_or_test in ('train', 'test'), "train_or_test must be 'train' or 'test'"
+    if type(cells) == type(str()) and cells=="all":
+        cells = CELLS[expt]
 
     # get whitenoise STA for cutout stimulus
     if cutout_width is not None:
