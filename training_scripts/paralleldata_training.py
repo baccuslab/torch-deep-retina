@@ -61,24 +61,19 @@ def train(hyps, model, train_datas):
         datas[-1].torch()
     epoch_length = np.max([data.train_shape[0] for data in datas])
     num_batches, leftover = divmod(epoch_length, batch_size)
-    print("Train sizes:", ",".join([data.train_shape[0] for data in datas]))
-    print("Val size:", data.val_shape[0])
+    print("Train sizes:", ",".join([str(data.train_shape[0]) for data in datas]))
+    print("Val size:", num_val)
     print("N Batches:", num_batches)
 
-    # test data
-    test_x = torch.from_numpy(test_data.X)
-
     # Train Loop
-    #for epoch in range(EPOCHS):
-    for epoch in range(1):
+    for epoch in range(EPOCHS):
         #indices = torch.randperm(data.train_shape[0]).long()
         epoch_loss = 0
         print('Epoch ' + str(epoch))  
         
         starttime = time.time()
         activity_l1 = torch.zeros(1).to(DEVICE)
-        #for batch in range(num_batches):
-        for batch in range(2):
+        for batch in range(num_batches):
             optimizer.zero_grad()
             for i,data in enumerate(datas):
                 x,label = next(data.train_sample())
@@ -106,24 +101,25 @@ def train(hyps, model, train_datas):
         del y
         del label
         model.eval()
-        model.no_grad(True)
+        model.calc_grad(False)
         step_size = 2500
         val_losses = []
         val_accs = []
-        for data in datas:
-            val_obs = []
+        for i,data in enumerate(datas):
+            val_preds = []
             n_loops = data.val_shape[0]//step_size
+            val_loss = 0
             for v in tqdm(range(0, n_loops*step_size, step_size)):
-                temp = model(data.val_X[v:v+step_size].to(DEVICE)).detach()
+                temp = model(data.val_X[v:v+step_size].to(DEVICE), i).detach()
                 val_loss += loss_fn(temp, data.val_y[v:v+step_size].to(DEVICE)).item()
                 if LAMBDA1 > 0:
                     val_loss += (LAMBDA1 * torch.norm(temp, 1).float()/temp.shape[0]).item()
-                val_obs.append(temp.cpu().numpy())
+                val_preds.append(temp.cpu().numpy())
             val_losses.append(val_loss/n_loops)
-            val_obs = np.concatenate(val_obs, axis=0)
-            val_accs.append(np.mean([pearsonr(val_obs[:, i], data.val_y[:val_obs.shape[0]][:,i].numpy()) for i in range(val_obs.shape[-1])]))
+            val_preds = np.concatenate(val_preds, axis=0)
+            val_accs.append(np.mean([pearsonr(val_preds[:, i], data.val_y[:val_preds.shape[0]][:,i].numpy()) for i in range(val_preds.shape[-1])]))
         model.train(mode=True)
-        model.no_grad(False)
+        model.calc_grad(True)
         print("Val Acc:", np.mean(val_accs), " -- Val Loss:", np.mean(val_losses), " | SaveFolder:", SAVE)
         scheduler.step(val_loss)
 
@@ -138,7 +134,7 @@ def train(hyps, model, train_datas):
             "norm_stats":train_data.stats,
         }
         io.save_checkpoint_dict(save_dict,SAVE,'test')
-        del val_obs
+        del val_preds
         del temp
         print()
     
@@ -182,7 +178,7 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
                 print("Loading", stim_type,"using Cells:", cells, "from dataset:", dataset)
                 train_datas.append(DataContainer(loadexpt(dataset,cells, stim_type,'train',40,0, norm_stats=norm_stats)))
                 if len(train_datas) == 1: # Simply use normalization stats from first dataset
-                    norm_stats = [train_data.stats['mean'], train_data.stats['std']]                
+                    norm_stats = [train_datas[-1].stats['mean'], train_datas[-1].stats['std']]                
         output_units = [data.y.shape[-1] for data in train_datas]
         model = hyps['model_type'](output_units, noise=hyps['noise'], bias=hyps['bias'])
         results = train(hyps, model, train_datas)
@@ -239,9 +235,6 @@ def set_model_type(model_str):
     print("Invalid model type!")
     return None
 
-def load_data(dataset, cells):
-    return train_data, test_data
-
 def load_json(file_name):
     with open(file_name) as f:
         s = f.read()
@@ -256,7 +249,7 @@ class DataContainer():
 
 if __name__ == "__main__":
     hyperparams_file = "paralleldata_hyperparams.json"
-    hyperranges_file = 'paralleldata_hyperranges.json'
+    hyperranges_file = 'hyperranges.json'
     hyps = load_json(hyperparams_file)
     inp = input("Last chance to change the experiment name "+hyps['exp_name']+": ")
     inp = inp.strip()

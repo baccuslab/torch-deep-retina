@@ -3,9 +3,9 @@ import torch.nn as nn
 from torch.distributions import normal
 from models.torch_utils import GaussianNoise, ScaleShift, Flatten, Reshape
 
-class ParallelOutputBNCNN(nn.Module):
+class ParallelDataBNCNN(nn.Module):
     def __init__(self, output_units=[5], noise=.05, bias=True):
-        super(ParallelOutputBNCNN,self).__init__()
+        super(ParallelDataBNCNN,self).__init__()
         self.name = 'McNiruNet'
 
         # Create base of model
@@ -25,7 +25,7 @@ class ParallelOutputBNCNN(nn.Module):
 
         # Create output layers
         self.output_layers = nn.ModuleList([])
-        for n_units in range(output_units):
+        for n_units in output_units:
             modules = []
             modules.append(nn.Linear(8*26*26, n_units, bias=bias))
             modules.append(nn.BatchNorm1d(n_units))
@@ -36,3 +36,14 @@ class ParallelOutputBNCNN(nn.Module):
         feats = self.features(x)
         return self.output_layers[output_idx](feats)
 
+    def calc_grad(self, mode):
+        """
+        If mode is false, gradients are not calculated. If mode is true gradients are calculated.
+
+        mode : bool
+        """
+        for p in self.parameters():
+            try:
+                p.requires_grad = mode
+            except:
+                pass
