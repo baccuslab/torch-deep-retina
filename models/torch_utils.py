@@ -12,19 +12,32 @@ def diminish_weight_magnitude(params):
             param.data = param.data/divisor
 
 class GaussianNoise(nn.Module):
-    def __init__(self, std=0.1, trainable=False):
+    def __init__(self, std=0.1, trainable=False, adapt=False):
         """
-        If trainable is set to True, then the std is turned into 
-        a learned parameter.
+        std - float
+            the standard deviation of the noise to add to the layer.
+            if adapt is true, this is used as the proportional value to
+            set the std to based of the std of the activations.
+            gauss_std = activ_std*std
+        trainable - bool
+            If trainable is set to True, then the std is turned into 
+            a learned parameter.
+        adapt - bool
+            adapts the gaussian std to a proportion of the
+            std of the received activations
         """
         super(GaussianNoise, self).__init__()
         self.trainable = trainable
+        self.adapt = adapt
+        assert not (self.trainable and self.adapt)
         self.std = std
         self.sigma = nn.Parameter(torch.ones(1)*std, requires_grad=trainable)
     
     def forward(self, x):
         if not self.training: # No noise during evaluation
             return x
+        if self.adapt:
+            self.sigma.data[0] = self.std*x.std()
         if self.sigma.is_cuda:
             noise = self.sigma * torch.randn(x.size()).to(self.sigma.get_device())
         else:
@@ -33,9 +46,12 @@ class GaussianNoise(nn.Module):
 
     def extra_repr(self):
         try:
-            return 'std={}, trainable={}'.format(self.std, self.trainable)
+            return 'std={}, trainable={}, adapt={}'.format(self.std, self.trainable, self.adapt)
         except:
-            return 'std={}'.format(self.std)
+            try:
+                return 'std={}, trainable={}'.format(self.std, self.trainable)
+            except:
+                return 'std={}'.format(self.std)
             
 
 class ScaleShift(nn.Module):
@@ -153,24 +169,25 @@ class WeightNorm(nn.Module):
         return self.torch_module(x)
 
 class MeanOnlyBatchNorm(nn.Module):
-    """
-    Does not currently work during backprop
-    """
-    def __init__(self, shape, momentum=.1):
+    def __init__(self, shape, momentum=.1, eps=1e-5):
         super(MeanOnlyBatchNorm, self).__init__()
-        self.running_mean = 0
+        self.running_mean = torch.zeros(shape)
+        self.running_var = None
         self.momentum = momentum
+        self.eps = eps
         self.scale = nn.Parameter(torch.ones(shape).float())
         self.shift = nn.Parameter(torch.zeros(shape).float())
 
     def forward(self, x):
-        mean = x.mean(0)
         if self.train:
-            x = x - mean
-            self.running_mean = (1-self.momentum)*self.running_mean + self.momentum*mean
+            # the argument training=False forces the use of the argued statistics 
+            xmean = x.mean(0)
+            self.running_mean = self.running_mean*(1-self.momentum) + xmean*self.momentum
+            return nn.functional.batch_norm(x, x.mean(0), torch.ones(self.running_mean.shape), 
+                                            weight=self.scale, bias=self.shift, eps=0, training=False) 
         else:
-            x = x - self.running_mean
-        return x*self.scale + self.shift
+            return nn.functional.batch_norm(x, self.running_mean, torch.ones(self.running_mean.shape), 
+                        weight=self.scale, bias=self.shift, training=False)
 
 class SplitConv2d(nn.Module):
     """
@@ -199,22 +216,6 @@ class SplitConv2d(nn.Module):
         
     def extra_repr(self):
         return 'ret_stacked={}'.format(self.ret_stacked)
-
-class SkipConnection1(nn.Module):
-    """
-    Performs a conv2d and returns the output stacked with  
-    the original input.
-    """
-    def __init__(self, in_channels, out_channels, kernel_size, bias=True):
-        super(SkipConnection1,self).__init__()
-        padding = kernel_size//2
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=padding, bias=bias)
-        self.relu = nn.ReLU()
-
-    def forward(self, x):
-        fx = self.conv(x)
-        fx = self.relu(fx)
-        return torch.cat([x,fx], dim=1)
 
 class SkipConnection(nn.Module):
     """
