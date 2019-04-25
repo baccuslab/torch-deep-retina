@@ -1,0 +1,16 @@
+{
+    "exp_name":"paralleldata_multidatabncnn",
+    "model_type":"ParallelDataBNCNN",
+    "datasets":["15-10-07", "15-11-21a", "15-11-21b"],
+    "cells":["all","all","all"],
+    "stim_types":["naturalscene", "whitenoise"],
+    "starting_exp_num":0,
+    "batch_size":512,
+    "n_epochs":100,
+    "lr":0.005,
+    "l1":5e-5,
+    "l2":5e-3,
+    "noise":0.05,
+    "bias":true
+}
+

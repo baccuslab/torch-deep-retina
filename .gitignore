@@ -107,6 +107,12 @@ venv.bak/
 */checkpoints/
 *.pth
 *.p
+training_scripts/*/
+
+# Miscellaneous
 */hyperparams.txt
 */description.txt
-training_scripts/*/
+delete_me.py
+*/hyperparams.json
+*/hyperranges.json
+*/*_results.txt
