@@ -12,7 +12,7 @@ def diminish_weight_magnitude(params):
             param.data = param.data/divisor
 
 class GaussianNoise(nn.Module):
-    def __init__(self, std=0.1, trainable=False, adapt=False):
+    def __init__(self, std=0.1, trainable=False, adapt=False, momentum=.95):
         """
         std - float
             the standard deviation of the noise to add to the layer.
@@ -21,10 +21,14 @@ class GaussianNoise(nn.Module):
             gauss_std = activ_std*std
         trainable - bool
             If trainable is set to True, then the std is turned into 
-            a learned parameter.
+            a learned parameter. Cannot be set to true if adapt is True
         adapt - bool
             adapts the gaussian std to a proportion of the
-            std of the received activations
+            std of the received activations. Cannot be set to True if
+            trainable is True
+        momentum - float (0 <= momentum < 1)
+            this is the exponentially moving average factor for updating the
+            activ_std. 0 uses the std of the current activations.
         """
         super(GaussianNoise, self).__init__()
         self.trainable = trainable
@@ -32,12 +36,16 @@ class GaussianNoise(nn.Module):
         assert not (self.trainable and self.adapt)
         self.std = std
         self.sigma = nn.Parameter(torch.ones(1)*std, requires_grad=trainable)
+        self.running_std = 1
+        self.momentum = momentum
     
     def forward(self, x):
         if not self.training: # No noise during evaluation
             return x
         if self.adapt:
-            self.sigma.data[0] = self.std*x.std()
+            xstd = x.std().item()
+            self.running_std = self.momentum*self.running_std + (1-self.momentum)*xstd
+            self.sigma.data[0] = self.std*self.running_std
         if self.sigma.is_cuda:
             noise = self.sigma * torch.randn(x.size()).to(self.sigma.get_device())
         else:
@@ -46,13 +54,93 @@ class GaussianNoise(nn.Module):
 
     def extra_repr(self):
         try:
-            return 'std={}, trainable={}, adapt={}'.format(self.std, self.trainable, self.adapt)
+            return 'std={}, trainable={}, adapt={}, momentum={}'.format(self.std, self.trainable, self.adapt, self.momentum)
         except:
             try:
-                return 'std={}, trainable={}'.format(self.std, self.trainable)
+                return 'std={}, trainable={}, adapt={}'.format(self.std, self.trainable, self.adapt)
             except:
-                return 'std={}'.format(self.std)
+                try:
+                    return 'std={}, trainable={}'.format(self.std, self.trainable)
+                except:
+                    return 'std={}'.format(self.std)
             
+class GaussianNoise1d(nn.Module):
+    def __init__(self, shape, noise=0.1, momentum=.95):
+        """
+        adds noise to each activation based off the batch statistics. Very similar to
+        BatchNorm1d but function is adding gaussian noise.
+
+        shape - list like, sequence (..., C, H, W) or (..., L)
+            this is the shape of the incoming activations 
+        noise - float
+            used as the proportional value to set the std of the gaussian noise. 
+            proportion is based of the std of the activations.
+            gauss_std = activ_std*noise
+        momentum - float (0 <= momentum < 1)
+            this is the exponentially moving average factor for updating the
+            activ_std. 0 uses the std of the current activations.
+        """
+        super(GaussianNoise1d, self).__init__()
+        if type(shape) == type(int()):
+            shape = [shape]
+        self.noise = noise
+        self.shape = shape
+        self.momentum = momentum
+        self.running_std = nn.Parameter(torch.ones(shape[1:]), requires_grad=False)
+        self.sigma = nn.Parameter(torch.ones(shape[1:])*self.noise, requires_grad=False)
+    
+    def forward(self, x):
+        if not self.training: # No noise during evaluation
+            return x
+        xstd = x.std(0)
+        self.running_std.data = self.momentum*self.running_std.data + (1-self.momentum)*xstd
+        self.sigma.data = self.running_std.data * self.noise
+        gauss = torch.randn(x.size())
+        if self.sigma.is_cuda:
+            gauss = gauss.to(self.sigma.get_device())
+        return x + gauss*self.sigma
+
+    def extra_repr(self):
+        return 'shape={}, noise={}, momentum={}'.format(self.shape, self.noise, self.momentum)
+
+class GaussianNoise2d(nn.Module):
+    def __init__(self, n_chans, noise=0.1, momentum=.95):
+        """
+        adds noise to each activation based off the batch statistics. Very similar to
+        BatchNorm2d but function is adding gaussian noise.
+
+        n_chans - float
+            the number of channels in the activations 
+        noise - float
+            used as the proportional value to set the std of the gaussian noise. 
+            proportion is based of the std of the activations.
+            gauss_std = activ_std*noise
+        momentum - float (0 <= momentum < 1)
+            this is the exponentially moving average factor for updating the
+            activ_std. 0 uses the std of the current activations.
+        """
+        super(GaussianNoise2d, self).__init__()
+        self.noise = noise
+        self.n_chans = n_chans
+        self.momentum = momentum
+        self.running_std = nn.Parameter(torch.ones(n_chans), requires_grad=False)
+        self.sigma = nn.Parameter(torch.ones(n_chans)*self.noise, requires_grad=False)
+    
+    def forward(self, x):
+        if not self.training: # No noise during evaluation
+            return x
+        # x.shape = (B, C, H, W)
+        x_perm = x.permute(0,2,3,1).contiguous() # Now (B, H, W, C)
+        xstd = x.view(-1, self.shape).std(0) # (C,)
+        self.running_std = self.momentum*self.running_std + (1-self.momentum)*xstd
+        self.sigma.data = self.running_std * self.noise
+        gauss = torch.randn(x.size())
+        if self.sigma.is_cuda:
+            gauss = gauss.to(self.sigma.get_device())
+        return (x_perm + gauss*self.sigma).permute(0,3,1,2).contiguous() # Return x with shape (B, C, H, W)
+
+    def extra_repr(self):
+        return 'n_chans={}, noise={}, momentum={}'.format(self.n_chans, self.noise, self.momentum)
 
 class ScaleShift(nn.Module):
     def __init__(self, shape, scale=True, shift=True):
@@ -90,14 +178,47 @@ class DaleActivations(nn.Module):
     def extra_repr(self):
         return 'n_chan={}, neg_p={}, n_neg_chan={}'.format(self.n_chan, self.neg_p, self.n_neg_chan)
 
+class AbsBatchNorm1d(nn.Module):
+    def __init__(self, n_units, bias=True, abs_bias=False, momentum=.1, eps=1e-5):
+        super(AbsBatchNorm1d, self).__init__()
+        self.n_units = n_units
+        self.momentum = momentum
+        self.eps = eps
+        self.running_mean = nn.Parameter(torch.zeros(n_units), requires_grad=False)
+        self.running_var = nn.Parameter(torch.ones(n_units), requires_grad=False)
+        self.scale = nn.Parameter(torch.ones(n_units).float())
+        self.bias = bias
+        self.abs_bias = abs_bias
+        self.shift = nn.Parameter(torch.zeros(n_units).float(), requires_grad=self.bias)
+
+    def forward(self, x):
+        if self.abs_bias:
+            return torch.nn.functional.batch_norm(x, self.running_mean, self.running_var,
+                                            weight=self.scale.abs(), bias=self.shift.abs(), eps=self.eps, 
+                                            momentum=self.momentum, training=self.training)
+        return torch.nn.functional.batch_norm(x, self.running_mean, self.running_var,
+                                            weight=self.scale.abs(), bias=self.shift, eps=self.eps, 
+                                            momentum=self.momentum, training=self.training)
+
+    def extra_repr(self):
+        return 'bias={}, abs_bias={}, momentum={}, eps={}'.format(self.bias, self.abs_bias, self.momentum, self.eps)
+                                            
 class AbsConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, abs_bias=False):
         super(AbsConv2d, self).__init__()
+        self.abs_bias = abs_bias
         self.bias = bias
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
 
     def forward(self, x):
         if self.bias:
+            try:
+                if not self.abs_bias:
+                    return nn.functional.conv2d(x, self.conv.weight.abs(), self.conv.bias, 
+                                                            self.conv.stride, self.conv.padding, 
+                                                            self.conv.dilation, self.conv.groups)
+            except:
+                pass
             return nn.functional.conv2d(x, self.conv.weight.abs(), self.conv.bias.abs(), 
                                                     self.conv.stride, self.conv.padding, 
                                                     self.conv.dilation, self.conv.groups)
@@ -105,6 +226,11 @@ class AbsConv2d(nn.Module):
             return nn.functional.conv2d(x, self.conv.weight.abs(), None, 
                                                 self.conv.stride, self.conv.padding, 
                                                 self.conv.dilation, self.conv.groups)
+    def extra_repr(self):
+        try:
+            return 'abs_bias={}'.format(self.abs_bias)
+        except:
+            return "abs_bias={}".format(True)
 
 class AbsLinear(nn.Module):
     def __init__(self, in_features, out_features, bias=True):
@@ -168,18 +294,19 @@ class WeightNorm(nn.Module):
     def forward(self, x):
         return self.torch_module(x)
 
-class MeanOnlyBatchNorm(nn.Module):
-    def __init__(self, shape, momentum=.1, eps=1e-5):
-        super(MeanOnlyBatchNorm, self).__init__()
-        self.running_mean = torch.zeros(shape)
+class MeanOnlyBatchNorm1d(nn.Module):
+    def __init__(self, n_units, momentum=.1, eps=1e-5):
+        super(MeanOnlyBatchNorm1d, self).__init__()
+        self.n_units = n_units
+        self.running_mean = torch.zeros(n_units)
         self.running_var = None
         self.momentum = momentum
         self.eps = eps
-        self.scale = nn.Parameter(torch.ones(shape).float())
-        self.shift = nn.Parameter(torch.zeros(shape).float())
+        self.scale = nn.Parameter(torch.ones(n_units).float())
+        self.shift = nn.Parameter(torch.zeros(n_units).float())
 
     def forward(self, x):
-        if self.train:
+        if self.training:
             # the argument training=False forces the use of the argued statistics 
             xmean = x.mean(0)
             self.running_mean = self.running_mean*(1-self.momentum) + xmean*self.momentum

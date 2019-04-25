@@ -1,6 +1,8 @@
 import models.torch_utils
 from models.CNN import CNN
 from models.BN_CNN import BNCNN
+from models.AbsBN_BN_CNN import AbsBNBNCNN
+from models.Gauss1d_BN_CNN import Gauss1dBNCNN
 from models.BN_CNN_2D import BNCNN2D
 from models.SS_CNN import SSCNN
 from models.Dales_BN_CNN import DalesBNCNN
