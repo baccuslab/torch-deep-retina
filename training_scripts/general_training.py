@@ -14,7 +14,7 @@ import resource
 sys.path.append('../')
 sys.path.append('../utils/')
 from utils.miscellaneous import ShuffledDataSplit
-from models import BNCNN, BNCNN2D, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN, DalesSkipBNCNN, SkipBNBNCNN
+from models import BNCNN, BNCNN2D, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN, DalesSkipBNCNN, SkipBNBNCNN, Gauss1dBNCNN, AbsBNBNCNN
 import retio as io
 import argparse
 import time
@@ -119,8 +119,12 @@ def train(hyps, model, data):
             val_preds.append(temp.cpu().numpy())
         val_loss = val_loss/n_loops
         val_preds = np.concatenate(val_preds, axis=0)
-        val_acc = np.mean([pearsonr(val_preds[:, i], data.val_y[:val_preds.shape[0]][:,i].numpy()) for i in range(val_preds.shape[-1])])
-        print("Val Acc:", val_acc, " -- Val Loss:", val_loss, " | SaveFolder:", SAVE)
+        pearsons = []
+        for cell in range(val_preds.shape[-1]):
+            pearsons.append(pearsonr(val_preds[:, cell], data.val_y[:val_preds.shape[0]][:,cell].numpy())[0])
+        print("Val Cell Pearsons:", " - ".join([str(p) for p in pearsons]))
+        val_acc = np.mean(pearsons)
+        print("Avg Val Pearson:", val_acc, " -- Val Loss:", val_loss, " | SaveFolder:", SAVE)
         scheduler.step(val_loss)
 
         test_obs = model(test_x.to(DEVICE)).cpu().detach().numpy()
@@ -134,6 +138,7 @@ def train(hyps, model, data):
             print('Cell ' + str(cell) + ': ')
             print('-----> pearsonr: ' + str(r))
         avg_pearson = avg_pearson / float(test_obs.shape[-1])
+        print("Avg Test Pearson")
 
         save_dict = {
             "model": model,
@@ -196,8 +201,15 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
         test_data.X = test_data.X[:500]
         test_data.y = test_data.y[:500]
         data = [train_data, test_data]
-        if "chans" in hyps:
-            model = hyps['model_type'](test_data.y.shape[-1], noise=hyps['noise'], bias=hyps['bias'], chans=hyps['chans'])
+        if "chans" in hyps and "adapt_gauss" in hyps:
+            model = hyps['model_type'](test_data.y.shape[-1], noise=hyps['noise'], bias=hyps['bias'], 
+                                                 chans=hyps['chans'], adapt_gauss=hyps['adapt_gauss'])
+        elif "chans" in hyps:
+            model = hyps['model_type'](test_data.y.shape[-1], noise=hyps['noise'], bias=hyps['bias'], 
+                                                                                  chans=hyps['chans'])
+        elif "adapt_gauss" in hyps:
+            model = hyps['model_type'](test_data.y.shape[-1], noise=hyps['noise'], bias=hyps['bias'], 
+                                                                    adapt_gauss=hyps['adapt_gauss'])
         else:
             model = hyps['model_type'](test_data.y.shape[-1], noise=hyps['noise'], bias=hyps['bias'])
         results = train(hyps, model, data)
@@ -227,6 +239,10 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
 def set_model_type(model_str):
     if model_str == "BNCNN":
         return BNCNN
+    if model_str == "Gauss1dBNCNN":
+        return Gauss1dBNCNN
+    if model_str == "AbsBNBNCNN":
+        return AbsBNBNCNN
     if model_str == "SSCNN":
         return SSCNN
     if model_str == "CNN":
@@ -273,7 +289,8 @@ if __name__ == "__main__":
     hyperparams_file = "hyperparams.json"
     hyperranges_file = 'hyperranges.json'
     hyps = load_json(hyperparams_file)
-    inp = input("Last chance to change the experiment name "+hyps['exp_name']+": ")
+    inp = input("Last chance to change the experiment name "+
+                hyps['exp_name']+" (num "+ str(hyps['starting_exp_num'])+"): ")
     inp = inp.strip()
     if inp is not None and inp != "":
         hyps['exp_name'] = inp
