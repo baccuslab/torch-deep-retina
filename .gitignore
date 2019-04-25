@@ -115,3 +115,4 @@ training_scripts/*/
 delete_me.py
 */hyperparams.json
 */hyperranges.json
+*/*_results.txt

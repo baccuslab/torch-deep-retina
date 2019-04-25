@@ -29,7 +29,7 @@ class DataObj:
     def __init__(self, data, idxs):
         self.data = data
         self.idxs = idxs
-        self.shape = data.shape
+        self.shape = [len(idxs), *data.shape[1:]]
 
     def __len__(self):
         return len(self.idxs)
@@ -46,11 +46,13 @@ class ShuffledDataSplit:
     for shuffling large datasets.
     """
 
-    def __init__(self, data, val_size=30000):
+    def __init__(self, data, val_size=30000, batch_size=512):
         """
         data - a class or named tuple containing an X and y member variable.
         val_size - the number of samples dedicated to validation
+        batch_size - size of batches yielded by train_sample generator
         """
+        self.batch_size = batch_size
         self.X = data.X
         self.y = data.y
         if type(self.X) == type(np.array([])):
@@ -71,6 +73,18 @@ class ShuffledDataSplit:
 
     def __getitem__(self, idx):
         return self.X[self.perm[idx]]
+
+    def set_batch_size(self, batch_size):
+        self.batch_size = batch_size
+
+    def train_sample(self):
+        while True:
+            batch_size = self.batch_size # Batchsize is fixed through a complete set
+            n_loops = self.train_shape[0]//batch_size
+            batch_perm = torch.randperm(self.train_shape[0]).long()
+            for i in range(0, n_loops*batch_size, batch_size):
+                idxs = batch_perm[i:i+self.batch_size]
+                yield self.train_X[idxs], self.train_y[idxs]
 
     def torch(self):
         self.X = torch.FloatTensor(self.X)
@@ -94,14 +108,3 @@ class ShuffledDataSplit:
         self.val_X = DataObj(self.X, self.val_idxs)
         self.val_y = DataObj(self.y, self.val_idxs)
 
-    #def train_X(self,idxs):
-    #    return self.X[self.train_idxs[idxs]]
-    #    
-    #def train_y(self,idxs):
-    #    return self.y[self.train_idxs[idxs]]
-
-    #def val_X(self,idxs):
-    #    return self.X[self.val_idxs[idxs]]
-    #    
-    #def val_y(self,idxs):
-    #    return self.y[self.val_idxs[idxs]]

@@ -12,25 +12,31 @@ def diminish_weight_magnitude(params):
             param.data = param.data/divisor
 
 class GaussianNoise(nn.Module):
-    def __init__(self, std=0.1, set_at_runtime=False):
+    def __init__(self, std=0.1, trainable=False):
+        """
+        If trainable is set to True, then the std is turned into 
+        a learned parameter.
+        """
         super(GaussianNoise, self).__init__()
-        self.cuda_param = nn.Parameter(torch.zeros(1), requires_grad=False)
+        self.trainable = trainable
         self.std = std
-        self.set_at_runtime = set_at_runtime
+        self.sigma = nn.Parameter(torch.ones(1)*std, requires_grad=trainable)
     
     def forward(self, x):
-        if not self.training:
+        if not self.training: # No noise during evaluation
             return x
-        if self.set_at_runtime is True:
-            self.set_at_runtime = False
-            self.std = x.std()*self.std
-        noise = self.std * torch.randn(x.size())
-        if next(self.parameters()).is_cuda:
-            noise = noise.to(next(self.parameters()).get_device())
+        if self.sigma.is_cuda:
+            noise = self.sigma * torch.randn(x.size()).to(self.sigma.get_device())
+        else:
+            noise = self.sigma * torch.randn(x.size())
         return x + noise
 
     def extra_repr(self):
-        return 'std={}'.format(self.std)
+        try:
+            return 'std={}, trainable={}'.format(self.std, self.trainable)
+        except:
+            return 'std={}'.format(self.std)
+            
 
 class ScaleShift(nn.Module):
     def __init__(self, shape, scale=True, shift=True):
