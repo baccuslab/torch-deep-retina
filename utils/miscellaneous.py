@@ -25,6 +25,33 @@ def multi_shuffle(arrays):
             del temp
     return arrays
 
+def conv_backwards(z, filt, xshape):
+    """
+    Used for gradient calculations specific to a single convolutional filter.
+    '_out' in the dims refers to the output of the forward pass of the convolutional layer.
+    '_in' in the dims refers to the input of the forward pass of the convolutional layer.
+
+    z - torch FloatTensor (Batch, C_out, W_out, H_out)
+        the accumulated activation gradient up to this point
+    filt - torch FloatTensor (C_in, k_w, k_h)
+        a single convolutional filter from the convolutional layer
+        note that this is taken from the greater layer that has dims (C_out, C_in
+    xshape - list like 
+        the shape of the activations of interest. the shape should be (Batch, C_in, W_in, H_in)
+    """
+    dx = torch.zeros(xshape)
+    if filt.is_cuda:
+        dx = dx.to(filt.get_device())
+    filt_temp = filt.view(-1)[:,None]
+    for chan in range(z.shape[1]):
+        for row in range(z.shape[2]):
+            for col in range(z.shape[3]):
+                ztemp = z[:,chan,row,col]
+                matmul = torch.mm(filt_temp, ztemp[None])
+                matmul = matmul.permute(1,0).view(dx.shape[0], dx.shape[1], filt.shape[-2], filt.shape[-1])
+                dx[:,:,row:row+filt.shape[-2], col:col+filt.shape[-1]] += matmul    
+    return dx
+
 class DataObj:
     def __init__(self, data, idxs):
         self.data = data
