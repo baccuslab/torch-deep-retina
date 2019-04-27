@@ -2,20 +2,27 @@ import torch
 import torch.nn as nn
 
 class Physio:
-    def __init__(self, net):
+    def __init__(self, net, numpy=True):
         self.net = net
         self.dict = {}
         self.inspect_hooks = False
         self.hooks = []
+        self.numpy = numpy
     
     def layer_activity(self, name):
         def hook(module, inp, out):
-            self.dict[name] = out.cpu().detach().numpy()
+            if self.numpy:
+                self.dict[name] = out.cpu().detach().numpy()
+            else:
+                self.dict[name] = out
         return hook
       
     def layer_grad(self, name):
         def hook(module, inp, out):
-            self.dict[name+'_grad'] = out[0].cpu().detach().numpy()
+            if self.numpy:
+                self.dict[name+'_grad'] = out[0].cpu().detach().numpy()
+            else:
+                self.dict[name+'_grad'] = out[0]
         return hook
     
     def injection(self, subtype, constant):
@@ -31,7 +38,7 @@ class Physio:
                 if name in insp_keys or "all" in insp_keys:
                     self.hooks.append(module.register_forward_hook(self.layer_activity(name)))
                     self.hooks.append(module.register_backward_hook(self.layer_grad(name)))
-        self.dict['output'] = self.net(stim)
+        self.dict['output'] =self.net(stim) 
         return self.dict
     
     # phys.inject('conv1', 1, 2)

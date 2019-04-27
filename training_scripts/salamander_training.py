@@ -39,11 +39,11 @@ torch.manual_seed(seed)
 
 
 # Load data using Lane and Nirui's dataloader
-train_data = loadexpt('15-10-07',[0,1,2,3,4],'naturalscene','train',40,0)
-test_data = loadexpt('15-10-07',[0,1,2,3,4],'naturalscene','test',40,0)
+train_data = loadexpt('15-11-21b',[0, 1, 3, 5, 8, 9, 13, 14, 16, 17, 18, 20, 21, 22, 23, 24, 25],'naturalscene','train',40,0)
+test_data = loadexpt('15-11-21b',[0, 1, 3, 5, 8, 9, 13, 14, 16, 17, 18, 20, 21, 22, 23, 24, 25],'naturalscene','test',40,0)
 val_split = 0.005
 
-def train(hyps, epochs=250, batch_size=5000, LR=1e-3, l1_scale=1e-4, l2_scale=1e-2, shuffle=True, save='./checkpoints', noise=.1):
+def train(hyps, epochs=250, batch_size=5000, LR=1e-3, l1_scale=1e-4, l2_scale=1e-2, b1_scale=5, shuffle=True, save='./checkpoints', noise=.1):
     if not os.path.exists(save):
         os.mkdir(save)
     LAMBDA1 = l1_scale
@@ -56,7 +56,7 @@ def train(hyps, epochs=250, batch_size=5000, LR=1e-3, l1_scale=1e-4, l2_scale=1e
     #model = CNN(bias=False)
     #model = SSCNN(scale=True, shift=False, bias=True)
     #model = DalesHybrid(bias=True, neg_p=hyps['neg_p'], noise=noise)
-    model = PracticalBNCNN(5, noise=noise) # Uses dropout
+    model = BNCNN(17, noise=noise) # Uses dropout
     print(model)
     model = model.to(DEVICE)
 
@@ -127,8 +127,10 @@ def train(hyps, epochs=250, batch_size=5000, LR=1e-3, l1_scale=1e-4, l2_scale=1e
 
             if LAMBDA1 > 0:
                 activity_l1 = LAMBDA1 * torch.norm(y, 1).float()
+            loss_b1 = b1* (torch.sum(torch.max(model.sequential[2].weight) - torch.min(model.sequential[2].weight))
+                + torch.sum(torch.max(model.sequential[8].weight) - torch.min(model.sequential[8].weight)))
             error = loss_fn(y,label)
-            loss = error + activity_l1
+            loss = error + activity_l1 + loss_b1
             loss.backward()
             optimizer.step()
             epoch_loss += loss.item()
@@ -211,14 +213,15 @@ if __name__ == "__main__":
     #train(50, 512, 1e-4, 0, .01, True, "delete_me")
     hp = HyperParams()
     hyps = hp.hyps
-    hyps['exp_name'] = 'bndropout_practicalBN'
+    hyps['exp_name'] = 'batchConstrainRange'
     hyps['n_epochs'] = 60
     hyps['batch_size'] = 512
     hyps['shuffle'] = True
-    lrs = [1e-3, 1e-4, 1e-5, 1e-2]
+    lrs = [5e-4]
     l1s = [1e-5]
     l2s = [1e-2]
-    noises = [.3, .4]
+    b1s = [0, 1, 5, 10]
+    noises = [.05]
     exp_num = 0
     for noise in noises:
         hyps['noise'] = noise
@@ -228,10 +231,12 @@ if __name__ == "__main__":
                 hyps['l1'] = l1
                 for l2 in l2s:
                     hyps['l2'] = l2
-                    hyps['save_folder'] = hyps['exp_name'] +"_"+ str(exp_num) + "_lr"+str(lr) + "_" + "l1" + str(l1) + "_" + "l2" + str(l2) + "_noise"+str(noise)
-                    hp.print()            
-                    train(hyps, hyps['n_epochs'], hyps['batch_size'], lr, l1, l2, hyps['shuffle'], hyps['save_folder'], hyps['noise'])
-                    exp_num += 1
+                    for b1 in b1s:
+                        hyps['b1'] = b1
+                        hyps['save_folder'] = hyps['exp_name'] +"_"+ str(exp_num) + "_lr"+str(lr) + "_" + "b1" + str(b1)
+                        hp.print()            
+                        train(hyps, hyps['n_epochs'], hyps['batch_size'], lr, l1, l2, b1, hyps['shuffle'], hyps['save_folder'], hyps['noise'])
+                        exp_num += 1
 
 
 
