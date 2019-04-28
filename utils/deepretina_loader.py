@@ -25,7 +25,7 @@ CELLS = {
     '16-05-31': [2, 3, 4, 14, 16, 18, 20, 25, 27]
 }
 
-Exptdata = namedtuple('Exptdata', ['X', 'y', 'spkhist', 'stats'])
+Exptdata = namedtuple('Exptdata', ['X', 'y', 'spkhist', 'stats', "cells"])
 __all__ = ['loadexpt', 'stimcut', 'CELLS']
 
 
@@ -106,7 +106,7 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=
         binned = np.array(f[train_or_test]['response/binned'][cells]).T[valid_indices]
         spk_hist = rolling_window(binned, history, time_axis=0)
 
-    return Exptdata(stim_reshaped, resp, spk_hist, stats)
+    return Exptdata(stim_reshaped, resp, spk_hist, stats, cells)
 
 
 def _loadexpt_h5(expt, filename):
