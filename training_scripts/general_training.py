@@ -14,7 +14,7 @@ import resource
 sys.path.append('../')
 sys.path.append('../utils/')
 from utils.miscellaneous import ShuffledDataSplit
-from models import BNCNN, BNCNN2D, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN, DalesSkipBNCNN, SkipBNBNCNN, Gauss1dBNCNN, AbsBNBNCNN
+from models import BNCNN, BNCNN2D, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN, DalesSkipBNCNN, SkipBNBNCNN, Gauss1dBNCNN, AbsBNBNCNN, AbsSSSSCNN
 import retio as io
 import argparse
 import time
@@ -138,7 +138,7 @@ def train(hyps, model, data):
             print('Cell ' + str(cell) + ': ')
             print('-----> pearsonr: ' + str(r))
         avg_pearson = avg_pearson / float(test_obs.shape[-1])
-        print("Avg Test Pearson")
+        print("Avg Test Pearson:", avg_pearson)
 
         save_dict = {
             "model": model,
@@ -243,6 +243,8 @@ def set_model_type(model_str):
         return Gauss1dBNCNN
     if model_str == "AbsBNBNCNN":
         return AbsBNBNCNN
+    if model_str == "AbsSSSSCNN":
+        return AbsSSSSCNN
     if model_str == "SSCNN":
         return SSCNN
     if model_str == "CNN":
