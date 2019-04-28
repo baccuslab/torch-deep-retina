@@ -157,6 +157,21 @@ class ScaleShift(nn.Module):
     def extra_repr(self):
         return 'shape={}, scale={}, shift={}'.format(self.shape, self.scale, self.shift)
 
+class AbsScaleShift(nn.Module):
+    def __init__(self, shape, scale=True, shift=True):
+        super(AbsScaleShift, self).__init__()
+        self.shape = shape
+        self.scale = scale
+        self.shift = shift
+        self.scale_param = nn.Parameter(torch.ones(shape).float(), requires_grad=scale)
+        self.shift_param= nn.Parameter(torch.zeros(shape).float(), requires_grad=shift)
+
+    def forward(self, x):
+        return x*self.scale_param.abs() + self.shift_param
+
+    def extra_repr(self):
+        return 'shape={}, scale={}, shift={}'.format(self.shape, self.scale, self.shift)
+
 class DaleActivations(nn.Module):
     """
     For the full Dale effect, will also need to use AbsConv2d and AbsLinear layers.
