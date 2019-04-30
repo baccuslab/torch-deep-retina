@@ -35,7 +35,7 @@ class GaussianNoise(nn.Module):
         self.adapt = adapt
         assert not (self.trainable and self.adapt)
         self.std = std
-        self.cuda_param = nn.Parameter(torch.ones(1)*std, requires_grad=trainable)
+        self.sigma = nn.Parameter(torch.ones(1)*std, requires_grad=trainable)
         self.running_std = 1
         self.momentum = momentum
     
@@ -45,11 +45,11 @@ class GaussianNoise(nn.Module):
         if self.adapt:
             xstd = x.std().item()
             self.running_std = self.momentum*self.running_std + (1-self.momentum)*xstd
-            self.cuda_param.data[0] = self.std*self.running_std
-        if self.cuda_param.is_cuda:
-            noise = self.cuda_param * torch.randn(x.size()).to(self.cuda_param.get_device())
+            self.sigma.data[0] = self.std*self.running_std
+        if self.sigma.is_cuda:
+            noise = self.sigma * torch.randn(x.size()).to(self.sigma.get_device())
         else:
-            noise = self.cuda_param * torch.randn(x.size())
+            noise = self.sigma * torch.randn(x.size())
         return x + noise
 
     def extra_repr(self):
