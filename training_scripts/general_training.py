@@ -28,7 +28,7 @@ seed = 3
 np.random.seed(seed)
 torch.manual_seed(seed)
 
-def train(hyps, model, data):
+def train(hyps, model, data, model_hyps):
     train_data = data[0]
     test_data = data[1]
     SAVE = hyps['save_folder']
@@ -139,7 +139,7 @@ def train(hyps, model, data):
         print("Avg Test Pearson:", avg_pearson)
 
         save_dict = {
-            "model": model,
+            "model_hyps": model_hyps,
             "model_state_dict":model.state_dict(),
             "optim_state_dict":optimizer.state_dict(),
             "loss": avg_loss,
@@ -199,18 +199,17 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
         test_data.X = test_data.X[:500]
         test_data.y = test_data.y[:500]
         data = [train_data, test_data]
-        if "chans" in hyps and "adapt_gauss" in hyps:
-            model = hyps['model_type'](test_data.y.shape[-1], noise=hyps['noise'], bias=hyps['bias'], 
-                                                 chans=hyps['chans'], adapt_gauss=hyps['adapt_gauss'])
-        elif "chans" in hyps:
-            model = hyps['model_type'](test_data.y.shape[-1], noise=hyps['noise'], bias=hyps['bias'], 
-                                                                                  chans=hyps['chans'])
-        elif "adapt_gauss" in hyps:
-            model = hyps['model_type'](test_data.y.shape[-1], noise=hyps['noise'], bias=hyps['bias'], 
-                                                                    adapt_gauss=hyps['adapt_gauss'])
-        else:
-            model = hyps['model_type'](test_data.y.shape[-1], noise=hyps['noise'], bias=hyps['bias'])
-        results = train(hyps, model, data)
+        model_hyps = {"n_units":test_data.y.shape[-1],"noise":hyps['noise'],"bias":hyps['bias']}
+        if "chans" in hyps:
+            model_hyps['chans'] = hyps['chans']
+        if "adapt_gauss" in hyps:
+            model_hyps['adapt_gauss'] = hyps['adapt_gauss']
+        fn_args = set(hyps['model_type'].__init__.__code__.co_varnames)
+        for k in model_hyps.keys():
+            if k not in fn_args:
+                del model_hyps[k]
+        model = hyps['model_type'](**model_hyps)
+        results = train(hyps, model, data, model_hyps)
         with open(hyps['results_file'],'a') as f:
             if hyps['exp_num'] == hyps['starting_exp_num']:
                 f.write(str(model)+'\n\n')
@@ -233,40 +232,6 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
             hyps[key] = param
             hyper_search(hyps, hyp_ranges, keys, train, idx+1)
     return
-
-def set_model_type(model_str):
-    if model_str == "BNCNN":
-        return BNCNN
-    if model_str == "Gauss1dBNCNN":
-        return Gauss1dBNCNN
-    if model_str == "AbsBNBNCNN":
-        return AbsBNBNCNN
-    if model_str == "AbsSSSSCNN":
-        return AbsSSSSCNN
-    if model_str == "SSCNN":
-        return SSCNN
-    if model_str == "CNN":
-        return CNN
-    if model_str == "DalesBNCNN":
-        return DalesBNCNN
-    if model_str == "DalesSSCNN":
-        return DalesSSCNN
-    if model_str == "DalesHybrid":
-        return DalesHybrid
-    if model_str == "PracticalBNCNN":
-        return PracticalBNCNN
-    if model_str == "StackedBNCNN":
-        return StackedBNCNN
-    if model_str == "SkipBNCNN":
-        return SkipBNCNN
-    if model_str == "DalesSkipBNCNN":
-        return DalesSkipBNCNN
-    if model_str == "SkipBNBNCNN":
-        return SkipBNBNCNN
-    if model_str == "BNCNN2D":
-        return BNCNN2D
-    print("Invalid model type!")
-    return None
 
 def load_data(dataset, cells):
     return train_data, test_data
@@ -294,7 +259,7 @@ if __name__ == "__main__":
         hyps['exp_name'] = inp
     hyp_ranges = load_json(hyperranges_file)
     print("Model type:", hyps['model_type'])
-    hyps['model_type'] = set_model_type(hyps['model_type'])
+    hyps['model_type'] = globals()[hyps['model_type']]
     keys = list(hyp_ranges.keys())
     print("Searching over:", keys)
 
