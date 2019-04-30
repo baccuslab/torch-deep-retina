@@ -11,17 +11,15 @@ import sys
 from torch.distributions import normal
 import gc
 import resource
-sys.path.append('../')
-sys.path.append('../utils/')
-from utils.miscellaneous import ShuffledDataSplit
-from models import ParallelDataBNCNN, BNCNN, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN, DalesSkipBNCNN, SkipBNBNCNN
-import retio as io
+from torchdeepretina.miscellaneous import ShuffledDataSplit
+from torchdeepretina.models import *
+import torchdeepretina.retio as io
+from torchdeepretina.deepretina_loader import loadexpt
 import argparse
 import time
 from tqdm import tqdm
 import json
 import math
-from utils.deepretina_loader import loadexpt
 
 DEVICE = torch.device("cuda:0")
 

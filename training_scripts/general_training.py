@@ -11,17 +11,15 @@ import sys
 from torch.distributions import normal
 import gc
 import resource
-sys.path.append('../')
-sys.path.append('../utils/')
-from utils.miscellaneous import ShuffledDataSplit
-from models import BNCNN, BNCNN2D, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN, DalesSkipBNCNN, SkipBNBNCNN, Gauss1dBNCNN, AbsBNBNCNN, AbsSSSSCNN
+from torchdeepretina.miscellaneous import ShuffledDataSplit
+from torchdeepretina.deepretina_loader import loadexpt
+from torchdeepretina.models import *
 import retio as io
 import argparse
 import time
 from tqdm import tqdm
 import json
 import math
-from utils.deepretina_loader import loadexpt
 
 DEVICE = torch.device("cuda:0")
 
@@ -249,8 +247,6 @@ def set_model_type(model_str):
         return SSCNN
     if model_str == "CNN":
         return CNN
-    if model_str == "NormedBNCNN":
-        return NormedBNCNN
     if model_str == "DalesBNCNN":
         return DalesBNCNN
     if model_str == "DalesSSCNN":
