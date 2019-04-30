@@ -1,5 +1,5 @@
 import numpy as np
-from .physiology import Physio
+from torchdeepretina.physiology import Physio
 import torch
 
 DEVICE = torch.device("cuda:0")
