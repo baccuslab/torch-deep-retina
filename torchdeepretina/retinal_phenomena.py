@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np 
 from itertools import repeat
-import torchdeepretina.utils.stimuli as stim
-import torchdeepretina.utils.visualizations as viz
+import torchdeepretina.stimuli as stim
+import torchdeepretina.visualizations as viz
 from tqdm import tqdm, trange
 import torch
 
