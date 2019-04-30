@@ -199,19 +199,20 @@ class AbsBatchNorm1d(nn.Module):
         self.n_units = n_units
         self.momentum = momentum
         self.eps = eps
-        self.running_mean = nn.Parameter(torch.zeros(n_units), requires_grad=False)
-        self.running_var = nn.Parameter(torch.ones(n_units), requires_grad=False)
+        self.running_mean = nn.Parameter(torch.zeros(n_units))
+        self.running_var = nn.Parameter(torch.ones(n_units))
         self.scale = nn.Parameter(torch.ones(n_units).float())
         self.bias = bias
         self.abs_bias = abs_bias
-        self.shift = nn.Parameter(torch.zeros(n_units).float(), requires_grad=self.bias)
+        self.shift = nn.Parameter(torch.zeros(n_units).float())
 
     def forward(self, x):
+        self.shift.requires_grad = self.bias
         if self.abs_bias:
-            return torch.nn.functional.batch_norm(x, self.running_mean, self.running_var,
+            return torch.nn.functional.batch_norm(x, self.running_mean.data, self.running_var.data,
                                             weight=self.scale.abs(), bias=self.shift.abs(), eps=self.eps, 
                                             momentum=self.momentum, training=self.training)
-        return torch.nn.functional.batch_norm(x, self.running_mean, self.running_var,
+        return torch.nn.functional.batch_norm(x, self.running_mean.data, self.running_var.data,
                                             weight=self.scale.abs(), bias=self.shift, eps=self.eps, 
                                             momentum=self.momentum, training=self.training)
 
