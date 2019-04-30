@@ -158,19 +158,22 @@ class ScaleShift(nn.Module):
         return 'shape={}, scale={}, shift={}'.format(self.shape, self.scale, self.shift)
 
 class AbsScaleShift(nn.Module):
-    def __init__(self, shape, scale=True, shift=True):
+    def __init__(self, shape, scale=True, shift=True, abs_shift=False):
         super(AbsScaleShift, self).__init__()
         self.shape = shape
         self.scale = scale
         self.shift = shift
+        self.abs_shift = abs_shift
         self.scale_param = nn.Parameter(torch.ones(shape).float(), requires_grad=scale)
         self.shift_param= nn.Parameter(torch.zeros(shape).float(), requires_grad=shift)
 
     def forward(self, x):
+        if self.abs_shift:
+            shift = self.shift_param.abs()
         return x*self.scale_param.abs() + self.shift_param
 
     def extra_repr(self):
-        return 'shape={}, scale={}, shift={}'.format(self.shape, self.scale, self.shift)
+        return 'shape={}, scale={}, shift={}, abs_shift={}'.format(self.shape, self.scale, self.shift, self.abs_shift)
 
 class DaleActivations(nn.Module):
     """
