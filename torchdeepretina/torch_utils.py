@@ -35,7 +35,7 @@ class GaussianNoise(nn.Module):
         self.adapt = adapt
         assert not (self.trainable and self.adapt)
         self.std = std
-        self.sigma = nn.Parameter(torch.ones(1)*std, requires_grad=trainable)
+        self.cuda_param = nn.Parameter(torch.ones(1)*std, requires_grad=trainable)
         self.running_std = 1
         self.momentum = momentum
     
@@ -45,11 +45,11 @@ class GaussianNoise(nn.Module):
         if self.adapt:
             xstd = x.std().item()
             self.running_std = self.momentum*self.running_std + (1-self.momentum)*xstd
-            self.sigma.data[0] = self.std*self.running_std
-        if self.sigma.is_cuda:
-            noise = self.sigma * torch.randn(x.size()).to(self.sigma.get_device())
+            self.cuda_param.data[0] = self.std*self.running_std
+        if self.cuda_param.is_cuda:
+            noise = self.cuda_param * torch.randn(x.size()).to(self.cuda_param.get_device())
         else:
-            noise = self.sigma * torch.randn(x.size())
+            noise = self.cuda_param * torch.randn(x.size())
         return x + noise
 
     def extra_repr(self):
@@ -249,18 +249,25 @@ class AbsConv2d(nn.Module):
             return "abs_bias={}".format(True)
 
 class AbsLinear(nn.Module):
-    def __init__(self, in_features, out_features, bias=True):
+    def __init__(self, in_features, out_features, bias=True, abs_bias=False):
         super(AbsLinear, self).__init__()
         self.bias = bias
+        self.abs_bias = bias
         self.linear = nn.Linear(in_features, out_features, bias=bias)
 
     def forward(self, x):
-        if self.bias:
+        if self.abs_bias:
             return nn.functional.linear(x, self.linear.weight.abs(), 
                                             self.linear.bias.abs())
         else:
             return nn.functional.linear(x, self.linear.weight.abs(), 
                                                     self.linear.bias)
+    
+    def extra_repr(self):
+        try:
+            return 'bias={}, abs_bias={}'.format(self.bias, self.abs_bias)
+        except:
+            return "bias={}, abs_bias={}".format(self.bias, True)
 
 class StackedConv2d(nn.Module):
     '''
@@ -323,7 +330,7 @@ class MeanOnlyBatchNorm1d(nn.Module):
 
     def forward(self, x):
         if self.training:
-            # the argument training=False forces the use of the argued statistics 
+            # the argument training=False forces the use of the argued statistics in the batch_norm func
             xmean = x.mean(0)
             self.running_mean = self.running_mean*(1-self.momentum) + xmean*self.momentum
             return nn.functional.batch_norm(x, x.mean(0), torch.ones(self.running_mean.shape), 

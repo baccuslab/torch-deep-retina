@@ -4,23 +4,24 @@ from torchdeepretina.torch_utils import *
 import numpy as np
 
 class BNCNN(nn.Module):
-    def __init__(self, output_units=5, noise=.05, bias=True, adapt_gauss=False):
+    def __init__(self, n_units=5, noise=.05, bias=True, adapt_gauss=False, chans=[8,8]):
         super(BNCNN,self).__init__()
         self.name = 'McNiruNet'
+        self.chans = chans
         modules = []
-        modules.append(nn.Conv2d(40,8,kernel_size=15, bias=bias))
+        modules.append(nn.Conv2d(40,chans[0],kernel_size=15, bias=bias))
         modules.append(Flatten())
-        modules.append(nn.BatchNorm1d(8*36*36, eps=1e-3, momentum=.99))
+        modules.append(nn.BatchNorm1d(chans[0]*36*36, eps=1e-3, momentum=.99))
         modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
-        modules.append(Reshape((-1,8,36,36)))
-        modules.append(nn.Conv2d(8,8,kernel_size=11, bias=bias))
+        modules.append(Reshape((-1,chans[0],36,36)))
+        modules.append(nn.Conv2d(chans[0],chans[1],kernel_size=11, bias=bias))
         modules.append(Flatten())
-        modules.append(nn.BatchNorm1d(8*26*26, eps=1e-3, momentum=.99))
+        modules.append(nn.BatchNorm1d(chans[1]*26*26, eps=1e-3, momentum=.99))
         modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
-        modules.append(nn.Linear(8*26*26,output_units, bias=bias))
-        modules.append(nn.BatchNorm1d(output_units))
+        modules.append(nn.Linear(chans[1]*26*26,n_units, bias=bias))
+        modules.append(nn.BatchNorm1d(n_units))
         modules.append(nn.Softplus())
         self.sequential = nn.Sequential(*modules)
         
@@ -34,7 +35,7 @@ class BNCNN(nn.Module):
             pass
 
 class AbsBNBNCNN(nn.Module):
-    def __init__(self, output_units=5, noise=.05, bias=True, adapt_gauss=False, chans=[8,8]):
+    def __init__(self, n_units=5, noise=.05, bias=True, adapt_gauss=False, chans=[8,8]):
         super(AbsBNBNCNN,self).__init__()
         self.name = 'McNiruNet'
         modules = []
@@ -50,8 +51,8 @@ class AbsBNBNCNN(nn.Module):
         modules.append(AbsBatchNorm1d(chans[1]*26*26, eps=1e-3, momentum=.99))
         modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
-        modules.append(nn.Linear(chans[1]*26*26,output_units, bias=bias))
-        modules.append(AbsBatchNorm1d(output_units))
+        modules.append(nn.Linear(chans[1]*26*26,n_units, bias=bias))
+        modules.append(AbsBatchNorm1d(n_units))
         modules.append(nn.Softplus())
         self.sequential = nn.Sequential(*modules)
         
@@ -59,21 +60,22 @@ class AbsBNBNCNN(nn.Module):
         return self.sequential(x)
 
 class AbsSSSSCNN(nn.Module):
-    def __init__(self, output_units, scale=True, shift=False, bias=True, noise=0.05, adapt_gauss=False):
+    def __init__(self, n_units, scale=True, shift=False, bias=True, noise=0.05, adapt_gauss=False, chans=[8,8]):
         super(AbsSSSSCNN,self).__init__()
         self.name = 'McNiruNet'
+        self.chans=[8,8]
         modules = []
-        modules.append(nn.Conv2d(40,8,kernel_size=15, bias=bias))
-        modules.append(AbsScaleShift((8,36,36)))
+        modules.append(nn.Conv2d(40,chans[0],kernel_size=15, bias=bias))
+        modules.append(AbsScaleShift((chans[0],36,36)))
         modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
-        modules.append(nn.Conv2d(8,8,kernel_size=11, bias=bias))
-        modules.append(AbsScaleShift((8,26,26)))
+        modules.append(nn.Conv2d(chans[0],chans[1],kernel_size=11, bias=bias))
+        modules.append(AbsScaleShift((chans[1],26,26)))
         modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
         modules.append(Flatten())
-        modules.append(nn.Linear(8*26*26,output_units, bias=bias))
-        modules.append(AbsScaleShift(output_units))
+        modules.append(nn.Linear(chans[1]*26*26,n_units, bias=bias))
+        modules.append(AbsScaleShift(n_units))
         modules.append(nn.Softplus())
         self.sequential = nn.Sequential(*modules)
         
@@ -81,25 +83,25 @@ class AbsSSSSCNN(nn.Module):
         return self.sequential(x)
 
 class BNCNN2D(nn.Module):
-    def __init__(self, output_units=5, noise=.05, bias=True, chans=None):
+    def __init__(self, n_units=5, noise=.05, bias=True, adapt_gauss=False, chans=[8,8]):
         super(BNCNN2D,self).__init__()
         self.name = 'McNiruNet'
         modules = []
-        if chans is None:
-            chans = [8,8]
+        self.adapt_gauss = adapt_gauss
+        self.chans = chans
         modules.append(nn.Conv2d(40,chans[0],kernel_size=15, bias=bias))
         modules.append(nn.BatchNorm2d(chans[0], eps=1e-3, momentum=.99))
-        modules.append(GaussianNoise(std=noise))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
 
         modules.append(nn.Conv2d(chans[0],chans[1],kernel_size=11, bias=bias))
         modules.append(nn.BatchNorm2d(chans[1], eps=1e-3, momentum=.99))
-        modules.append(GaussianNoise(std=noise))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
 
         modules.append(Flatten())
-        modules.append(nn.Linear(chans[1]*26*26,output_units, bias=bias))
-        modules.append(nn.BatchNorm1d(output_units))
+        modules.append(nn.Linear(chans[1]*26*26,n_units, bias=bias))
+        modules.append(nn.BatchNorm1d(n_units))
         modules.append(nn.Softplus())
         self.sequential = nn.Sequential(*modules)
         
@@ -107,18 +109,20 @@ class BNCNN2D(nn.Module):
         return self.sequential(x)
 
 class CNN(nn.Module):
-    def __init__(self, output_units, bias=False, noise=0.05):
+    def __init__(self, n_units, bias=False, noise=0.05, adapt_gauss=False, chans=[8,8]):
         super(CNN,self).__init__()
         self.name = 'McNiruNet'
+        self.chans = chans
+        self.adapt_gauss = adapt_gauss
         modules = []
-        modules.append(nn.Conv2d(40,8,kernel_size=15, bias=bias))
-        modules.append(GaussianNoise(std=noise))
+        modules.append(nn.Conv2d(40,chans[0],kernel_size=15, bias=bias))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
-        modules.append(nn.Conv2d(8,8,kernel_size=11, bias=bias))
-        modules.append(GaussianNoise(std=noise))
+        modules.append(nn.Conv2d(chans[0],chans[1],kernel_size=11, bias=bias))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
         modules.append(Flatten())
-        modules.append(nn.Linear(8*26*26,output_units, bias=bias))
+        modules.append(nn.Linear(chans[1]*26*26,n_units, bias=bias))
         modules.append(nn.Softplus())
         self.sequential = nn.Sequential(*modules)
         
@@ -126,30 +130,71 @@ class CNN(nn.Module):
         return self.sequential(x)
 
 class DalesBNCNN(nn.Module):
-    def __init__(self, output_units=5, bias=True, noise=0.1, neg_p=0.5):
+    def __init__(self, n_units=5, bias=True, noise=0.1, adapt_gauss=False, chans=[8,8], neg_p=0.5):
         super(DalesBNCNN,self).__init__()
         self.name = 'DaleNet'
+        self.chans = chans
+        self.adapt_gauss = adapt_gauss
         modules = []
-        modules.append(AbsConv2d(40,8,kernel_size=15, bias=bias))
+        modules.append(AbsConv2d(40,chans[0],kernel_size=15, bias=bias, abs_bias=False))
         self.diminish_weight_magnitude(modules[-1].parameters())
         modules.append(Flatten())
-        modules.append(nn.BatchNorm1d(8*36*36, eps=1e-3))
-        modules.append(GaussianNoise(std=noise))
+        modules.append(nn.BatchNorm1d(chans[0]*36*36, eps=1e-3))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
-        modules.append(Reshape((-1,8,36,36)))
-        modules.append(DaleActivations(8, neg_p))
-        modules.append(AbsConv2d(8,8,kernel_size=11, bias=bias))
+        modules.append(Reshape((-1,chans[0],36,36)))
+        modules.append(DaleActivations(chans[0], neg_p))
+        modules.append(AbsConv2d(chans[0],chans[1],kernel_size=11, bias=bias, abs_bias=False))
         self.diminish_weight_magnitude(modules[-1].parameters())
         modules.append(Flatten())
-        modules.append(nn.BatchNorm1d(8*26*26, eps=1e-3))
-        modules.append(GaussianNoise(std=noise))
+        modules.append(nn.BatchNorm1d(chans[1]*26*26, eps=1e-3))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
-        modules.append(Reshape((-1,8,26,26)))
-        modules.append(DaleActivations(8, neg_p))
+        modules.append(Reshape((-1,chans[1],26,26)))
+        modules.append(DaleActivations(chans[1], neg_p))
         modules.append(Flatten())
-        modules.append(AbsLinear(8*26*26,output_units, bias=bias))
+        modules.append(AbsLinear(chans[1]*26*26,n_units, bias=bias, abs_bias=False))
         self.diminish_weight_magnitude(modules[-1].parameters())
-        modules.append(nn.BatchNorm1d(output_units))
+        modules.append(nn.BatchNorm1d(n_units))
+        modules.append(nn.Softplus())
+        self.sequential = nn.Sequential(*modules)
+        
+    def forward(self, x):
+        return self.sequential(x)
+    
+    def diminish_weight_magnitude(self, params):
+        for param in params:
+            divisor = float(np.prod(param.data.shape))/2
+            if param.data is not None and divisor >= 0:
+                param.data = param.data/divisor
+
+class AbsBNDalesBNCNN(nn.Module):
+    def __init__(self, n_units=5, bias=True, noise=0.1, adapt_gauss=False, chans=[8,8], neg_p=0.5):
+        super(AbsBNDalesBNCNN,self).__init__()
+        self.name = 'DaleNet'
+        self.chans = chans
+        self.adapt_gauss = adapt_gauss
+        modules = []
+        modules.append(AbsConv2d(40,chans[0],kernel_size=15, bias=bias, abs_bias=False))
+        self.diminish_weight_magnitude(modules[-1].parameters())
+        modules.append(Flatten())
+        modules.append(AbsBatchNorm1d(chans[0]*36*36, eps=1e-3))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
+        modules.append(nn.ReLU())
+        modules.append(Reshape((-1,chans[0],36,36)))
+        modules.append(DaleActivations(chans[0], neg_p))
+        modules.append(AbsConv2d(chans[0],chans[1],kernel_size=11, bias=bias, abs_bias=False))
+        self.diminish_weight_magnitude(modules[-1].parameters())
+        modules.append(Flatten())
+        modules.append(AbsBatchNorm1d(chans[1]*26*26, eps=1e-3))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
+        modules.append(nn.ReLU())
+        modules.append(Reshape((-1,chans[1],26,26)))
+        modules.append(DaleActivations(chans[1], neg_p))
+        modules.append(Flatten())
+        modules.append(AbsLinear(chans[1]*26*26,n_units, bias=bias, abs_bias=False))
+        self.diminish_weight_magnitude(modules[-1].parameters())
+        modules.append(AbsBatchNorm1d(n_units))
         modules.append(nn.Softplus())
         self.sequential = nn.Sequential(*modules)
         
@@ -163,32 +208,35 @@ class DalesBNCNN(nn.Module):
                 param.data = param.data/divisor
 
 class DalesSkipBNCNN(nn.Module):
-    def __init__(self, output_units=5, noise=.05, bias=True, x_shape=(40,50,50), skip_depth=2, neg_p=.5):
+    def __init__(self, n_units=5, noise=.05, bias=True, x_shape=(40,50,50), skip_depth=2, 
+                                                neg_p=.5, adapt_gauss=False, chans=[8,8]):
         super(DalesSkipBNCNN,self).__init__()
         self.name = 'SkipNet'
+        self.chans=chans
+        self.adapt_gauss=adapt_gauss
         modules = []
         #in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True
         modules.append(DalesSkipConnection(40,skip_depth,15,x_shape=x_shape,bias=bias, noise=noise, neg_p=1))
-        modules.append(AbsConv2d(40+skip_depth,8,kernel_size=15, bias=bias))
+        modules.append(AbsConv2d(40+skip_depth,chans[0],kernel_size=15, bias=bias, abs_bias=False))
         diminish_weight_magnitude(modules[-1].parameters())
         modules.append(Flatten())
-        modules.append(nn.BatchNorm1d(8*36*36, eps=1e-3))
-        modules.append(GaussianNoise(std=noise))
+        modules.append(nn.BatchNorm1d(chans[0]*36*36, eps=1e-3))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
-        modules.append(Reshape((-1,8,36,36)))
-        modules.append(DaleActivations(8, neg_p))
-        modules.append(AbsConv2d(8,8,kernel_size=11, bias=bias))
+        modules.append(Reshape((-1,chans[0],36,36)))
+        modules.append(DaleActivations(chans[0], neg_p))
+        modules.append(AbsConv2d(chans[0],chans[1],kernel_size=11, bias=bias, abs_bias=False))
         diminish_weight_magnitude(modules[-1].parameters())
         modules.append(Flatten())
-        modules.append(nn.BatchNorm1d(8*26*26, eps=1e-3))
-        modules.append(GaussianNoise(std=noise))
+        modules.append(nn.BatchNorm1d(chans[1]*26*26, eps=1e-3))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
-        modules.append(Reshape((-1,8,26,26)))
-        modules.append(DaleActivations(8, neg_p))
+        modules.append(Reshape((-1,chans[1],26,26)))
+        modules.append(DaleActivations(chans[1], neg_p))
         modules.append(Flatten())
-        modules.append(AbsLinear(8*26*26,output_units, bias=bias))
+        modules.append(AbsLinear(chans[1]*26*26,n_units, bias=bias, abs_bias=False))
         diminish_weight_magnitude(modules[-1].parameters())
-        modules.append(nn.BatchNorm1d(output_units))
+        modules.append(nn.BatchNorm1d(n_units))
         modules.append(nn.Softplus())
         self.sequential = nn.Sequential(*modules)
         
@@ -196,26 +244,29 @@ class DalesSkipBNCNN(nn.Module):
         return self.sequential(x)
 
 class DalesSSCNN(nn.Module):
-    def __init__(self, output_units=5, bias=True, noise=0.1, neg_p=0.5, scale=True, shift=True):
+    def __init__(self, n_units=5, bias=True, noise=0.1, neg_p=0.5, scale=True, shift=True,
+                                                        adapt_gauss=False, chans=[8,8]):
         super(DalesSSCNN,self).__init__()
         self.name = 'DaleNet'
+        self.chans=chans
+        self.adapt_gauss = adapt_gauss
         modules = []
-        modules.append(AbsConv2d(40,8,kernel_size=15, bias=bias))
+        modules.append(AbsConv2d(40,chans[0],kernel_size=15, bias=bias, abs_bias=False))
         self.diminish_weight_magnitude(modules[-1].parameters())
-        modules.append(ScaleShift((8,36,36), scale=scale, shift=shift))
-        modules.append(GaussianNoise(std=noise))
+        modules.append(ScaleShift((chans[0],36,36), scale=scale, shift=shift))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
-        modules.append(DaleActivations(8, neg_p))
-        modules.append(AbsConv2d(8,8,kernel_size=11, bias=bias))
+        modules.append(DaleActivations(chans[0], neg_p))
+        modules.append(AbsConv2d(chans[0],chans[1],kernel_size=11, bias=bias, abs_bias=False))
         self.diminish_weight_magnitude(modules[-1].parameters())
-        modules.append(ScaleShift((8,26,26), scale=scale, shift=shift))
-        modules.append(GaussianNoise(std=noise))
+        modules.append(ScaleShift((chans[1],26,26), scale=scale, shift=shift))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
-        modules.append(DaleActivations(8, neg_p))
+        modules.append(DaleActivations(chans[1], neg_p))
         modules.append(Flatten())
-        modules.append(AbsLinear(8*26*26,output_units, bias=bias))
+        modules.append(AbsLinear(chans[1]*26*26,n_units, bias=bias, abs_bias=False))
         self.diminish_weight_magnitude(modules[-1].parameters())
-        modules.append(ScaleShift(output_units, scale=scale, shift=shift))
+        modules.append(ScaleShift(n_units, scale=scale, shift=shift))
         modules.append(nn.Softplus())
         self.sequential = nn.Sequential(*modules)
         
@@ -229,23 +280,24 @@ class DalesSSCNN(nn.Module):
                 param.data = param.data/divisor
 
 class Gauss1dBNCNN(nn.Module):
-    def __init__(self, output_units=5, noise=.05, bias=True, adapt_gauss=False):
+    def __init__(self, n_units=5, noise=.05, bias=True, adapt_gauss=False, chans=[8,8]):
         super(Gauss1dBNCNN,self).__init__()
         self.name = 'McNiruNet'
+        self.chans=chans
         modules = []
-        modules.append(nn.Conv2d(40,8,kernel_size=15, bias=bias))
+        modules.append(nn.Conv2d(40,chans[0],kernel_size=15, bias=bias))
         modules.append(Flatten())
-        modules.append(nn.BatchNorm1d(8*36*36, eps=1e-3, momentum=.99))
-        modules.append(GaussianNoise1d(8*36*36, noise=noise))
+        modules.append(nn.BatchNorm1d(chans[0]*36*36, eps=1e-3, momentum=.99))
+        modules.append(GaussianNoise1d(chans[0]*36*36, noise=noise))
         modules.append(nn.ReLU())
-        modules.append(Reshape((-1,8,36,36)))
-        modules.append(nn.Conv2d(8,8,kernel_size=11, bias=bias))
+        modules.append(Reshape((-1,chans[0],36,36)))
+        modules.append(nn.Conv2d(chans[0],chans[1],kernel_size=11, bias=bias))
         modules.append(Flatten())
-        modules.append(nn.BatchNorm1d(8*26*26, eps=1e-3, momentum=.99))
-        modules.append(GaussianNoise1d(8*26*26, noise=noise))
+        modules.append(nn.BatchNorm1d(chans[1]*26*26, eps=1e-3, momentum=.99))
+        modules.append(GaussianNoise1d(chans[1]*26*26, noise=noise))
         modules.append(nn.ReLU())
-        modules.append(nn.Linear(8*26*26,output_units, bias=bias))
-        modules.append(nn.BatchNorm1d(output_units))
+        modules.append(nn.Linear(chans[1]*26*26,n_units, bias=bias))
+        modules.append(nn.BatchNorm1d(n_units))
         modules.append(nn.Softplus())
         self.sequential = nn.Sequential(*modules)
         
@@ -253,30 +305,30 @@ class Gauss1dBNCNN(nn.Module):
         return self.sequential(x)
 
 class ParallelDataBNCNN(nn.Module):
-    def __init__(self, output_units=[5], noise=.05, bias=True):
+    def __init__(self, n_units=[5], noise=.05, bias=True, adapt_gauss=False, chans=[8,8]):
         super(ParallelDataBNCNN,self).__init__()
         self.name = 'McNiruNet'
-
+        self.chans=chans
         # Create base of model
         modules = []
-        modules.append(nn.Conv2d(40,8,kernel_size=15, bias=bias))
+        modules.append(nn.Conv2d(40,chans[0],kernel_size=15, bias=bias))
         modules.append(Flatten())
-        modules.append(nn.BatchNorm1d(8*36*36, eps=1e-3, momentum=.99))
-        modules.append(GaussianNoise(std=noise))
+        modules.append(nn.BatchNorm1d(chans[0]*36*36, eps=1e-3, momentum=.99))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
-        modules.append(Reshape((-1,8,36,36)))
-        modules.append(nn.Conv2d(8,8,kernel_size=11, bias=bias))
+        modules.append(Reshape((-1,chans[0],36,36)))
+        modules.append(nn.Conv2d(chans[0],chans[1],kernel_size=11, bias=bias))
         modules.append(Flatten())
-        modules.append(nn.BatchNorm1d(8*26*26, eps=1e-3, momentum=.99))
-        modules.append(GaussianNoise(std=noise))
+        modules.append(nn.BatchNorm1d(chans[1]*26*26, eps=1e-3, momentum=.99))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
         self.features = nn.Sequential(*modules)
 
         # Create output layers
         self.output_layers = nn.ModuleList([])
-        for n_units in output_units:
+        for n_units in n_units:
             modules = []
-            modules.append(nn.Linear(8*26*26, n_units, bias=bias))
+            modules.append(nn.Linear(chans[1]*26*26, n_units, bias=bias))
             modules.append(nn.BatchNorm1d(n_units))
             modules.append(nn.Softplus())
             self.output_layers.append(nn.Sequential(*modules))
@@ -298,7 +350,7 @@ class ParallelDataBNCNN(nn.Module):
                 pass
  
 class PracticalBNCNN(nn.Module):
-    def __init__(self, output_units=5, noise=.1, bias=True, chans=[8,8]):
+    def __init__(self, n_units=5, noise=.1, bias=True, chans=[8,8]):
         super(PracticalBNCNN,self).__init__()
         self.chans=chans
         modules = []
@@ -313,8 +365,8 @@ class PracticalBNCNN(nn.Module):
         modules.append(nn.ReLU())
         modules.append(Flatten())
         modules.append(nn.BatchNorm1d(chans[1]*26*26, eps=1e-3))
-        modules.append(nn.Linear(chans[1]*26*26,output_units, bias=bias))
-        modules.append(nn.BatchNorm1d(output_units))
+        modules.append(nn.Linear(chans[1]*26*26,n_units, bias=bias))
+        modules.append(nn.BatchNorm1d(n_units))
         modules.append(nn.Softplus())
         self.sequential = nn.Sequential(*modules)
         
@@ -322,7 +374,7 @@ class PracticalBNCNN(nn.Module):
         return self.sequential(x)
 
 class PracticalBNCNN2D(nn.Module):
-    def __init__(self, output_units=5, noise=.3, bias=True, chans=[8,8]):
+    def __init__(self, n_units=5, noise=.3, bias=True, chans=[8,8]):
         super(PracticalBNCNN2D,self).__init__()
         self.name = 'McNiruNet'
         self.chans=[8,8]
@@ -338,8 +390,8 @@ class PracticalBNCNN2D(nn.Module):
         modules.append(nn.BatchNorm2d(chans[1], eps=1e-3, momentum=.99))
 
         modules.append(Flatten())
-        modules.append(nn.Linear(chans[1]*26*26,output_units, bias=bias))
-        modules.append(nn.BatchNorm1d(output_units))
+        modules.append(nn.Linear(chans[1]*26*26,n_units, bias=bias))
+        modules.append(nn.BatchNorm1d(n_units))
         modules.append(nn.Softplus())
         self.sequential = nn.Sequential(*modules)
         
@@ -347,7 +399,7 @@ class PracticalBNCNN2D(nn.Module):
         return self.sequential(x)
 
 class SkipBNBNCNN(nn.Module):
-    def __init__(self, output_units=5, noise=.05, bias=True, x_shape=(40,50,50), chans=[8,8]):
+    def __init__(self, n_units=5, noise=.05, bias=True, x_shape=(40,50,50), chans=[8,8], adapt_gauss=False):
         super(SkipBNBNCNN,self).__init__()
         self.name = 'SkipNet'
         self.chans = chans
@@ -357,16 +409,16 @@ class SkipBNBNCNN(nn.Module):
         modules.append(nn.Conv2d(48,8,kernel_size=15, bias=bias))
         modules.append(Flatten())
         modules.append(nn.BatchNorm1d(8*36*36, eps=1e-3, momentum=.99))
-        modules.append(GaussianNoise(std=noise))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
         modules.append(Reshape((-1,8,36,36)))
         modules.append(nn.Conv2d(8,8,kernel_size=11, bias=bias))
         modules.append(Flatten())
         modules.append(nn.BatchNorm1d(8*26*26, eps=1e-3, momentum=.99))
-        modules.append(GaussianNoise(std=noise))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
-        modules.append(nn.Linear(8*26*26,output_units, bias=bias))
-        modules.append(nn.BatchNorm1d(output_units))
+        modules.append(nn.Linear(8*26*26,n_units, bias=bias))
+        modules.append(nn.BatchNorm1d(n_units))
         modules.append(nn.Softplus())
         self.sequential = nn.Sequential(*modules)
         
@@ -374,22 +426,22 @@ class SkipBNBNCNN(nn.Module):
         return self.sequential(x)
 
 class SSCNN(nn.Module):
-    def __init__(self, output_units, scale=True, shift=False, bias=True, noise=0.05, chans=[8,8]):
+    def __init__(self, n_units, scale=True, shift=False, bias=True, noise=0.05, chans=[8,8], adapt_gauss=False):
         super(SSCNN,self).__init__()
         self.name = 'McNiruNet'
         self.chans=chans
         modules = []
         modules.append(nn.Conv2d(40,chans[0],kernel_size=15, bias=bias))
         modules.append(ScaleShift((chans[0],36,36)))
-        modules.append(GaussianNoise(std=noise))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
         modules.append(nn.Conv2d(chans[0],chans[1],kernel_size=11, bias=bias))
         modules.append(ScaleShift((chans[1],26,26)))
-        modules.append(GaussianNoise(std=noise))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
         modules.append(Flatten())
-        modules.append(nn.Linear(chans[1]*26*26,output_units, bias=bias))
-        modules.append(ScaleShift(output_units))
+        modules.append(nn.Linear(chans[1]*26*26,n_units, bias=bias))
+        modules.append(ScaleShift(n_units))
         modules.append(nn.Softplus())
         self.sequential = nn.Sequential(*modules)
         
@@ -397,7 +449,7 @@ class SSCNN(nn.Module):
         return self.sequential(x)
 
 class StackedBNCNN(nn.Module):
-    def __init__(self, output_units=5, noise=.05, bias=True, adapt_gauss=False, chans=[8,8]):
+    def __init__(self, n_units=5, noise=.05, bias=True, adapt_gauss=False, chans=[8,8]):
         super(StackedBNCNN,self).__init__()
         self.name = 'StackedNet'
         self.chans = chans
@@ -413,8 +465,8 @@ class StackedBNCNN(nn.Module):
         module_list.append(nn.BatchNorm1d(chans[1]*26*26, eps=1e-3, momentum=.99))
         module_list.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         module_list.append(nn.ReLU())
-        module_list.append(nn.Linear(chans[1]*26*26,output_units, bias=False))
-        module_list.append(nn.BatchNorm1d(output_units, eps=1e-3, momentum=.99))
+        module_list.append(nn.Linear(chans[1]*26*26,n_units, bias=False))
+        module_list.append(nn.BatchNorm1d(n_units, eps=1e-3, momentum=.99))
         module_list.append(nn.Softplus())
         self.sequential = nn.Sequential(*module_list)
 
