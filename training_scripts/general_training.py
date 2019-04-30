@@ -1,3 +1,5 @@
+import matplotlib
+matplotlib.use('Agg')
 from scipy.stats import pearsonr
 import os
 import sys
@@ -14,7 +16,7 @@ import resource
 from torchdeepretina.miscellaneous import ShuffledDataSplit
 from torchdeepretina.deepretina_loader import loadexpt
 from torchdeepretina.models import *
-import retio as io
+import torchdeepretina.retio as io
 import argparse
 import time
 from tqdm import tqdm
