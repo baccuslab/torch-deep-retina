@@ -5,22 +5,6 @@ import sys
 import json
 import pickle
 import numpy as np
-sys.path.append('../')
-sys.path.append('../utils/')
-from models import BNCNN, BNCNN2D, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN, DalesSkipBNCNN, SkipBNBNCNN, Gauss1dBNCNN, AbsBNBNCNN
-
-"""
-Outline of main:
-    Read in trained model
-    Freeze weights
-    Train image that maximizes neurons of interest:
-        Isolate neuron(s) of interest
-        Initialize random image
-        Perform forward pass using random image
-        Create loss that maximizes neurons of interest
-        Backprop loss into random image
-    Save image
-"""
 
 def load_json(json_file):
     with open(json_file) as f:
@@ -52,7 +36,7 @@ class STAAscent:
             self.activs = output[0]
         self.hook_handle = module.register_forward_hook(fwd_hook)
     
-    def sta_ascent(self, model, layer, units, lr=.01, n_epochs=5000, sta_shape=(1,40,50,50)):
+    def sta_ascent(self, model, layer, units, lr=.01, n_epochs=5000, sta_shape=(1,40,50,50), constraint=1):
         """
         Performs gradient ascent on a randomly initialized image with dimensions
         the same shape as was trained on.
@@ -67,6 +51,8 @@ class STAAscent:
         units - sequence of coordinate tuples (c,h,w)
             if none, all units will be examined, otherwise only units with the
             specified idxs will be evaluated
+        constraint - float
+            the coefficient of the norm of the sta image added to the loss
         """
         model.eval()
         freeze_weights(model)
@@ -96,29 +82,12 @@ class STAAscent:
             optim.zero_grad()
             model(sta_image)
             loss = -self.activs.view(-1)[units].mean()
+            if constraint > 0:
+                loss += sta_image.norm(2)*constraint
             loss.backward()
             optim.step()
-            print("Loss:", loss.item(), "--", i, "/", n_epochs, end=" "*20 + '\r')
-        print("Loss:", loss.item(), "--", i, "/", n_epochs, end=" "*20 + '\r')
+            print("Loss:", "{:.5f}".format(loss.item()), "--", i, "/", n_epochs, end='\r')
         sta_image = sta_image.detach().cpu().numpy().astype(np.float)
         self.remove_hook()
         return sta_image
 
-if __name__=="__main__":
-    hyperparams_file = "hyperparams.json"
-    hyps = load_json(hyperparams_file)
-    inp = input("Visualizing "+hyps['model_file']+": ")
-    with open(hyps['model_file'], "rb") as fd:
-        temp = torch.load(fd)
-    model = temp['model']
-    print(model)
-    layer = "sequential." + str(len(model.sequential)-1)
-    print("Viewing:", layer)
-    sta_obj = STAAscent()
-    units = [1, 2]
-    sta_img = sta_obj.sta_ascent(model, layer=layer, units=units)
-    if type(units[0]) == type(int()):
-        np.save(hyps['img_save']+"_"+layer.replace(".", "")+"_"+"-".join([str(x) for x in units]), sta_img)
-    else:
-        np.save(hyps['img_save']+"_"+layer.replace(".", "")+"_"+"-".join([str(x) for x in units[0]]), sta_img)
-    
