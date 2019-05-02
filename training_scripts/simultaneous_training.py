@@ -54,6 +54,12 @@ def prep_dataIntra(dataIntra, num_batches):
 	intraData.torch()
 	return intraData, intra_batchsize
 
+def load_pretrained(model, pretrained_path):
+    pretrained_dict = torch.load(pretrained_path)['model_state_dict']
+    model_dict = model.state_dict()
+    model_dict.update(pretrained_dict)
+    model.load_state_dict(model_dict)
+    return model
 
 def train(hyps, model, dataGang, dataIntra, intraRF):
 
@@ -74,17 +80,18 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 		y = model(x.to(DEVICE))
 		y = y.float() 
 		activity_l1 = LAMBDA1 * torch.norm(y, 1).float()/y.shape[0]
-		error_gang = loss_fn(y,label)
+		error_gang = loss_fn(y,label) + activity_l1
+		error_gang.backward()
 
 		del x
 		del label
 
 		intra_x, intra_label = prepare_x_and_label(intraData, intraidxs)
-		intra_y = physio.inspect(intra_x, insp_keys={"sequential.6"})['sequential.6'][:, 0, sidx[0], sidx[1]]
+		intra_y = physio.inspect(intra_x, insp_keys={layer})[layer][:, celltype, sidx[0], sidx[1]]
 		error_intra = loss_fn(intra_y, intra_label)
 
-		loss = error_gang + error_intra + activity_l1
-		loss.backward()
+		error_intra.backward()
+		loss = error_intra + error_gang
 		optimizer.step()
 		print("Loss:", loss.item()," - error_gang:", error_gang.item(), "- error_intra:", error_intra.item(), " - l1:", activity_l1.item(), " | ", int(round(batch/num_batches, 2)*100), "% done", end='               \r')
 		if math.isnan(epoch_loss) or math.isinf(epoch_loss):
@@ -143,7 +150,17 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 
 	"""%%%%%%%%%%%%%%%%%%%%%%% Actual start of train %%%%%%%%%%%%%%%%%%%%%"""
 
-	_, sidx, tidx = filterpeak(intraRF)
+	physio = Physio(model, numpy=False)
+
+	if 'pretrained_path' in hyps:
+        model = load_pretrained(model, pretrained_path)
+        model_response = physio.inspect(concat(pad_to_edge(zscore(dataIntra[0]))), insp_keys={"sequential.0", "sequential.6"})
+        layer, cell_type, sidx, _ = intracellular.classify(dataIntra[1], model_response, dataIntra[1].shape[0])
+    else:
+    	_, sidx, tidx = filterpeak(intraRF)
+    	layer = "sequential.6"
+    	cell_type = 0
+    
 
 	LR = hyps['lr']
 	LAMBDA1 = hyps['l1']
@@ -171,7 +188,6 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 
 	# train/val split
 
-	physio = Physio(model, numpy=False)
 	# test data
 	test_x = torch.from_numpy(test_data.X)
 
@@ -202,7 +218,7 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 		if ret == -1: break
 
 
-	if ret not -1:
+	if ret != -1:
 		val_acc, val_loss, avg_pearson = ret
 		results = {"Loss":avg_loss, "ValAcc":val_acc, "ValLoss":val_loss, "TestPearson":avg_pearson}
 		with open(SAVE + "/hyperparams.txt",'a') as f:

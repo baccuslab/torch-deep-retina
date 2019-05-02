@@ -30,7 +30,21 @@ seed = 3
 np.random.seed(seed)
 torch.manual_seed(seed)
 
+def load_pretrained(model, pretrained_path):
+    pretrained_dict = torch.load(pretrained_path)['model_state_dict']
+    pretrained_dict['sequential.2.weight'] = pretrained_dict['sequential.2.weight'].view(-1, 8, 36, 36)
+    pretrained_dict['sequential.2.bias'] = pretrained_dict['sequential.2.bias'].view(-1, 8, 36, 36)
+    pretrained_dict['sequential.8.weight'] = pretrained_dict['sequential.8.weight'].view(-1, 8, 26, 26)
+    pretrained_dict['sequential.8.bias'] = pretrained_dict['sequential.8.bias'].view(-1, 8, 36, 36)
+    model_dict = model.state_dict()
+    model_dict.update(pretrained_dict)
+    model.load_state_dict(model_dict)
+    return model
+
+
 def train(hyps, model, data):
+    if 'pretrained_path' in hyps:
+        model = load_pretrained(model, pretrained_path)
     train_data = data[0]
     test_data = data[1]
     SAVE = hyps['save_folder']
@@ -290,7 +304,7 @@ if __name__ == "__main__":
     hyperranges_file = 'hyperranges.json'
     hyps = load_json(hyperparams_file)
     inp = input("Last chance to change the experiment name "+
-                hyps['exp_name']+" (num "+ str(hyps['starting_exp_num'])+"): ")
+                hyps['exp_name']+": ")
     inp = inp.strip()
     if inp is not None and inp != "":
         hyps['exp_name'] = inp

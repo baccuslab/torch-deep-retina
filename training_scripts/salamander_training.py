@@ -22,6 +22,7 @@ from models.Dales_SS_CNN import DalesSSCNN
 from models.Dales_CNN import DalesCNN
 from models.Dales_Hybrid import DalesHybrid
 from models.practical_BN_CNN import PracticalBNCNN
+from models.AbsBN_BN_CNN import AbsBNBNCNN
 import retio as io
 import argparse
 import time
@@ -56,7 +57,7 @@ def train(hyps, epochs=250, batch_size=5000, LR=1e-3, l1_scale=1e-4, l2_scale=1e
     #model = CNN(bias=False)
     #model = SSCNN(scale=True, shift=False, bias=True)
     #model = DalesHybrid(bias=True, neg_p=hyps['neg_p'], noise=noise)
-    model = BNCNN(17, noise=noise) # Uses dropout
+    model = AbsBNBNCNN(17, noise=noise) # Uses dropout
     print(model)
     model = model.to(DEVICE)
 
@@ -127,8 +128,8 @@ def train(hyps, epochs=250, batch_size=5000, LR=1e-3, l1_scale=1e-4, l2_scale=1e
 
             if LAMBDA1 > 0:
                 activity_l1 = LAMBDA1 * torch.norm(y, 1).float()
-            loss_b1 = b1* (torch.sum(torch.max(model.sequential[2].weight) - torch.min(model.sequential[2].weight))
-                + torch.sum(torch.max(model.sequential[8].weight) - torch.min(model.sequential[8].weight)))
+            loss_b1 = b1* (torch.sum(torch.max(model.sequential[2].scale) - torch.min(model.sequential[2].scale))
+                + torch.sum(torch.max(model.sequential[8].scale) - torch.min(model.sequential[8].scale)))
             error = loss_fn(y,label)
             loss = error + activity_l1 + loss_b1
             loss.backward()
