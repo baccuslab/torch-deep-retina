@@ -109,7 +109,7 @@ def train(hyps, model, data, model_hyps):
         model.eval()
         val_preds = []
         val_loss = 0
-        step_size = 2500
+        step_size = 1000
         n_loops = data.val_shape[0]//step_size
         for v in tqdm(range(0, n_loops*step_size, step_size)):
             temp = model(data.val_X[v:v+step_size].to(DEVICE)).detach()
@@ -126,6 +126,8 @@ def train(hyps, model, data, model_hyps):
         val_acc = np.mean(pearsons)
         print("Avg Val Pearson:", val_acc, " -- Val Loss:", val_loss, " | SaveFolder:", SAVE)
         scheduler.step(val_loss)
+        del val_preds
+        del temp
 
         test_obs = model(test_x.to(DEVICE)).cpu().detach().numpy()
 
@@ -139,6 +141,7 @@ def train(hyps, model, data, model_hyps):
             print('-----> pearsonr: ' + str(r))
         avg_pearson = avg_pearson / float(test_obs.shape[-1])
         print("Avg Test Pearson:", avg_pearson)
+        del test_obs
 
         save_dict = {
             "model_hyps": model_hyps,
@@ -152,8 +155,6 @@ def train(hyps, model, data, model_hyps):
             "norm_stats":train_data.stats,
         }
         io.save_checkpoint_dict(save_dict,SAVE,'test')
-        del val_preds
-        del temp
         print()
         # If loss is nan, training is futile
         if math.isnan(avg_loss) or math.isinf(avg_loss):
@@ -207,7 +208,8 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
         if "adapt_gauss" in hyps:
             model_hyps['adapt_gauss'] = hyps['adapt_gauss']
         fn_args = set(hyps['model_type'].__init__.__code__.co_varnames)
-        for k in model_hyps.keys():
+        keys = list(model_hyps.keys())
+        for k in keys:
             if k not in fn_args:
                 del model_hyps[k]
         model = hyps['model_type'](**model_hyps)
