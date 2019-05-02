@@ -196,6 +196,27 @@ class DaleActivations(nn.Module):
     def extra_repr(self):
         return 'n_chan={}, neg_p={}, n_neg_chan={}'.format(self.n_chan, self.neg_p, self.n_neg_chan)
 
+class BatchNorm1d(nn.Module):
+    def __init__(self, n_units, bias=True, momentum=.1, eps=1e-5):
+        super(BatchNorm1d, self).__init__()
+        self.n_units = n_units
+        self.momentum = momentum
+        self.eps = eps
+        self.running_mean = nn.Parameter(torch.zeros(n_units))
+        self.running_var = nn.Parameter(torch.ones(n_units))
+        self.scale = nn.Parameter(torch.ones(n_units).float())
+        self.bias = bias
+        self.shift = nn.Parameter(torch.zeros(n_units).float())
+
+    def forward(self, x):
+        self.shift.requires_grad = self.bias
+        return torch.nn.functional.batch_norm(x, self.running_mean.data, self.running_var.data,
+                                            weight=self.scale, bias=self.shift, eps=self.eps, 
+                                            momentum=self.momentum, training=self.training)
+
+    def extra_repr(self):
+        return 'bias={}, momentum={}, eps={}'.format(self.bias, self.momentum, self.eps)
+
 class AbsBatchNorm1d(nn.Module):
     def __init__(self, n_units, bias=True, abs_bias=False, momentum=.1, eps=1e-5):
         super(AbsBatchNorm1d, self).__init__()
@@ -210,6 +231,34 @@ class AbsBatchNorm1d(nn.Module):
         self.shift = nn.Parameter(torch.zeros(n_units).float())
 
     def forward(self, x):
+        assert len(x.shape) == 2
+        self.shift.requires_grad = self.bias
+        if self.abs_bias:
+            return torch.nn.functional.batch_norm(x, self.running_mean.data, self.running_var.data,
+                                            weight=self.scale.abs(), bias=self.shift.abs(), eps=self.eps, 
+                                            momentum=self.momentum, training=self.training)
+        return torch.nn.functional.batch_norm(x, self.running_mean.data, self.running_var.data,
+                                            weight=self.scale.abs(), bias=self.shift, eps=self.eps, 
+                                            momentum=self.momentum, training=self.training)
+
+    def extra_repr(self):
+        return 'bias={}, abs_bias={}, momentum={}, eps={}'.format(self.bias, self.abs_bias, self.momentum, self.eps)
+                                            
+class AbsBatchNorm2d(nn.Module):
+    def __init__(self, n_units, bias=True, abs_bias=False, momentum=.1, eps=1e-5):
+        super(AbsBatchNorm2d, self).__init__()
+        self.n_units = n_units
+        self.momentum = momentum
+        self.eps = eps
+        self.running_mean = nn.Parameter(torch.zeros(n_units))
+        self.running_var = nn.Parameter(torch.ones(n_units))
+        self.scale = nn.Parameter(torch.ones(n_units).float())
+        self.bias = bias
+        self.abs_bias = abs_bias
+        self.shift = nn.Parameter(torch.zeros(n_units).float())
+
+    def forward(self, x):
+        assert len(x.shape) == 4
         self.shift.requires_grad = self.bias
         if self.abs_bias:
             return torch.nn.functional.batch_norm(x, self.running_mean.data, self.running_var.data,
@@ -276,7 +325,7 @@ class StackedConv2d(nn.Module):
     '''
     Builds argued kernel out of multiple 3x3 kernels.
     '''
-    def __init__(self, in_channels, out_channels, kernel_size, bias=True):
+    def __init__(self, in_channels, out_channels, kernel_size, bias=True, abs_bnorm=False):
         super(StackedConv2d, self).__init__()
         self.bias = bias
         n_filters = int((kernel_size-1)/2)
@@ -288,7 +337,10 @@ class StackedConv2d(nn.Module):
                 else:
                     convs.append(nn.Conv2d(out_channels, out_channels, 3, bias=False))
                 convs.append(nn.ReLU())
-                convs.append(nn.BatchNorm2d(out_channels))
+                if abs_bnorm:
+                    convs.append(AbsBatchNorm2d(out_channels))
+                else:
+                    convs.append(nn.BatchNorm2d(out_channels))
         else:
             convs = [nn.Conv2d(in_channels, out_channels, 3, bias=bias), nn.BatchNorm2d(out_channels), nn.ReLU()]
         self.convs = nn.Sequential(*convs)
@@ -321,25 +373,29 @@ class WeightNorm(nn.Module):
         return self.torch_module(x)
 
 class MeanOnlyBatchNorm1d(nn.Module):
-    def __init__(self, n_units, momentum=.1, eps=1e-5):
+    def __init__(self, n_units, momentum=.1, eps=1e-5, scale=True, shift=True):
         super(MeanOnlyBatchNorm1d, self).__init__()
         self.n_units = n_units
-        self.running_mean = torch.zeros(n_units)
-        self.running_var = None
+        self.use_scale = scale
+        self.use_shift = shift
+        self.running_mean = nn.Parameter(torch.zeros(n_units), requires_grad=False)
+        self.running_var = nn.Parameter(torch.ones(n_units), requires_grad=False)
         self.momentum = momentum
         self.eps = eps
         self.scale = nn.Parameter(torch.ones(n_units).float())
         self.shift = nn.Parameter(torch.zeros(n_units).float())
 
     def forward(self, x):
+        self.scale.requires_grad = self.scale.requires_grad and self.use_scale
+        self.shift.requires_grad = self.shift.requires_grad and self.use_shift
         if self.training:
             # the argument training=False forces the use of the argued statistics in the batch_norm func
             xmean = x.mean(0)
-            self.running_mean = self.running_mean*(1-self.momentum) + xmean*self.momentum
-            return nn.functional.batch_norm(x, x.mean(0), torch.ones(self.running_mean.shape), 
+            self.running_mean.data = self.running_mean.data*(1-self.momentum) + xmean*self.momentum
+            return nn.functional.batch_norm(x, x.mean(0).data, self.running_var.data, 
                                             weight=self.scale, bias=self.shift, eps=0, training=False) 
         else:
-            return nn.functional.batch_norm(x, self.running_mean, torch.ones(self.running_mean.shape), 
+            return nn.functional.batch_norm(x, self.running_mean.data, self.running_var.data, 
                         weight=self.scale, bias=self.shift, training=False)
 
 class SplitConv2d(nn.Module):

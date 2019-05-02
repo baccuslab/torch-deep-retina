@@ -349,6 +349,54 @@ class ParallelDataBNCNN(nn.Module):
             except:
                 pass
  
+class AbsBNPracticalBNCNN(nn.Module):
+    def __init__(self, n_units=5, noise=.1, bias=True, chans=[8,8]):
+        super(AbsBNPracticalBNCNN,self).__init__()
+        self.chans=chans
+        modules = []
+        modules.append(nn.Conv2d(40,chans[0],kernel_size=15, bias=bias))
+        modules.append(nn.Dropout(p=noise/2))
+        modules.append(nn.ReLU())
+        modules.append(Flatten())
+        modules.append(AbsBatchNorm1d(chans[0]*36*36, eps=1e-3))
+        modules.append(Reshape((-1,chans[0],36,36)))
+        modules.append(nn.Conv2d(chans[0],chans[1],kernel_size=11, bias=bias))
+        modules.append(nn.Dropout(p=noise))
+        modules.append(nn.ReLU())
+        modules.append(Flatten())
+        modules.append(AbsBatchNorm1d(chans[1]*26*26, eps=1e-3))
+        modules.append(nn.Linear(chans[1]*26*26,n_units, bias=bias))
+        modules.append(nn.BatchNorm1d(n_units))
+        modules.append(nn.Softplus())
+        self.sequential = nn.Sequential(*modules)
+        
+    def forward(self, x):
+        return self.sequential(x)
+        
+class PracticalMeanBNCNN(nn.Module):
+    def __init__(self, n_units=5, noise=.1, bias=True, chans=[8,8]):
+        super(PracticalMeanBNCNN,self).__init__()
+        self.chans=chans
+        modules = []
+        modules.append(nn.Conv2d(40,chans[0],kernel_size=15, bias=bias))
+        modules.append(nn.Dropout(p=noise/2))
+        modules.append(nn.ReLU())
+        modules.append(Flatten())
+        modules.append(MeanOnlyBatchNorm1d(chans[0]*36*36, eps=1e-3))
+        modules.append(Reshape((-1,chans[0],36,36)))
+        modules.append(nn.Conv2d(chans[0],chans[1],kernel_size=11, bias=bias))
+        modules.append(nn.Dropout(p=noise))
+        modules.append(nn.ReLU())
+        modules.append(Flatten())
+        modules.append(MeanOnlyBatchNorm1d(chans[1]*26*26, eps=1e-3))
+        modules.append(nn.Linear(chans[1]*26*26,n_units, bias=bias))
+        modules.append(nn.BatchNorm1d(n_units))
+        modules.append(nn.Softplus())
+        self.sequential = nn.Sequential(*modules)
+        
+    def forward(self, x):
+        return self.sequential(x)
+
 class PracticalBNCNN(nn.Module):
     def __init__(self, n_units=5, noise=.1, bias=True, chans=[8,8]):
         super(PracticalBNCNN,self).__init__()
@@ -467,6 +515,31 @@ class StackedBNCNN(nn.Module):
         module_list.append(nn.ReLU())
         module_list.append(nn.Linear(chans[1]*26*26,n_units, bias=False))
         module_list.append(nn.BatchNorm1d(n_units, eps=1e-3, momentum=.99))
+        module_list.append(nn.Softplus())
+        self.sequential = nn.Sequential(*module_list)
+
+    def forward(self, x):
+        return self.sequential(x)
+    
+class AbsBNStackedBNCNN(nn.Module):
+    def __init__(self, n_units=5, noise=.05, bias=True, adapt_gauss=False, chans=[8,8]):
+        super(AbsBNStackedBNCNN,self).__init__()
+        self.name = 'StackedNet'
+        self.chans = chans
+        module_list = []
+        module_list.append(StackedConv2d(40,chans[0],kernel_size=15, abs_bnorm=True))
+        module_list.append(Flatten())
+        module_list.append(AbsBatchNorm1d(chans[0]*36*36, eps=1e-3, momentum=.99))
+        module_list.append(GaussianNoise(std=noise, adapt=adapt_gauss))
+        module_list.append(nn.ReLU())
+        module_list.append(Reshape((-1,chans[0],36,36)))
+        module_list.append(StackedConv2d(chans[0],chans[1],kernel_size=11, abs_bnorm=True))
+        module_list.append(Flatten())
+        module_list.append(AbsBatchNorm1d(chans[1]*26*26, eps=1e-3, momentum=.99))
+        module_list.append(GaussianNoise(std=noise, adapt=adapt_gauss))
+        module_list.append(nn.ReLU())
+        module_list.append(nn.Linear(chans[1]*26*26,n_units, bias=False))
+        module_list.append(AbsBatchNorm1d(n_units, eps=1e-3, momentum=.99))
         module_list.append(nn.Softplus())
         self.sequential = nn.Sequential(*module_list)
 
