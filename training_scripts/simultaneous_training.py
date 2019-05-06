@@ -13,7 +13,7 @@ import resource
 sys.path.append('../')
 sys.path.append('../utils/')
 from utils.miscellaneous import ShuffledDataSplit
-from models import BNCNN 
+from models import BNCNN, AbsBNBNCNN
 import retio as io
 import argparse
 import time
@@ -24,7 +24,7 @@ from utils.deepretina_loader import loadexpt
 from utils.stimuli import concat
 from utils.physiology import Physio
 from pyret.filtertools import filterpeak
-from utils.intracellular import pad_to_edge
+from utils.intracellular import pad_to_edge, classify
 
 DEVICE = torch.device("cuda:0")
 
@@ -55,11 +55,11 @@ def prep_dataIntra(dataIntra, num_batches):
 	return intraData, intra_batchsize
 
 def load_pretrained(model, pretrained_path):
-    pretrained_dict = torch.load(pretrained_path)['model_state_dict']
-    model_dict = model.state_dict()
-    model_dict.update(pretrained_dict)
-    model.load_state_dict(model_dict)
-    return model
+	pretrained_dict = torch.load(pretrained_path)['model_state_dict']
+	model_dict = model.state_dict()
+	model_dict.update(pretrained_dict)
+	model.load_state_dict(model_dict)
+	return model
 
 def train(hyps, model, dataGang, dataIntra, intraRF):
 
@@ -82,10 +82,12 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 		activity_l1 = LAMBDA1 * torch.norm(y, 1).float()/y.shape[0]
 		error_gang = loss_fn(y,label) + activity_l1
 		error_gang.backward()
+		optimizer.step()
 
 		del x
 		del label
 
+		optimizer.zero_grad()
 		intra_x, intra_label = prepare_x_and_label(intraData, intraidxs)
 		intra_y = physio.inspect(intra_x, insp_keys={layer})[layer][:, celltype, sidx[0], sidx[1]]
 		error_intra = loss_fn(intra_y, intra_label)
@@ -96,11 +98,12 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 		print("Loss:", loss.item()," - error_gang:", error_gang.item(), "- error_intra:", error_intra.item(), " - l1:", activity_l1.item(), " | ", int(round(batch/num_batches, 2)*100), "% done", end='               \r')
 		if math.isnan(epoch_loss) or math.isinf(epoch_loss):
 			return None
+
 		del y
 		del intra_x
 		del intra_label
 		del intra_y
-		return loss.item()
+		return error_gang.item(), error_intra.item()
 
 	def validate_model(model, scheduler):
 		model.eval()
@@ -134,10 +137,12 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 		save_dict = {
 			"model": model,
 			"loss": avg_loss,
-            "epoch":epoch,
-            "val_loss":val_loss,
-            "val_acc":val_acc,
-            "test_pearson":avg_pearson,
+			"loss_intra": avg_loss_intra,
+			"loss_gang": avg_loss_gang,
+			"epoch":epoch,
+			"val_loss":val_loss,
+			"val_acc":val_acc,
+			"test_pearson":avg_pearson,
 		}
 		io.save_checkpoint_dict(save_dict,SAVE,'test')
 		del val_preds
@@ -150,17 +155,10 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 
 	"""%%%%%%%%%%%%%%%%%%%%%%% Actual start of train %%%%%%%%%%%%%%%%%%%%%"""
 
-	physio = Physio(model, numpy=False)
 
-	if 'pretrained_path' in hyps:
-        model = load_pretrained(model, pretrained_path)
-        model_response = physio.inspect(concat(pad_to_edge(zscore(dataIntra[0]))), insp_keys={"sequential.0", "sequential.6"})
-        layer, cell_type, sidx, _ = intracellular.classify(dataIntra[1], model_response, dataIntra[1].shape[0])
-    else:
-    	_, sidx, tidx = filterpeak(intraRF)
-    	layer = "sequential.6"
-    	cell_type = 0
-    
+
+	
+
 
 	LR = hyps['lr']
 	LAMBDA1 = hyps['l1']
@@ -181,6 +179,22 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 
 	print(model)
 	model = model.to(DEVICE)
+	physio = Physio(model, numpy=True)
+
+	if 'pretrained_path' in hyps:
+		model = load_pretrained(model, hyps['pretrained_path'])
+		stim = torch.from_numpy(concat(pad_to_edge(zscore(dataIntra[0])[:5000]))).to(DEVICE)
+		model_response = physio.inspect(stim, insp_keys={"sequential.0", "sequential.6"})
+		del stim
+		layer, celltype, sidx, _ = classify(dataIntra[1], model_response, 4960, layer_keys=["sequential.0", "sequential.6"])
+		del model_response
+	else:
+		_, sidx, tidx = filterpeak(intraRF)
+		layer = "sequential.6"
+		celltype = 0
+
+	physio.numpy = False
+	torch.cuda.empty_cache()
 
 	loss_fn = torch.nn.PoissonNLLLoss()
 	optimizer = torch.optim.Adam(model.parameters(), lr = LR, weight_decay = LAMBDA2)
@@ -191,7 +205,7 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 	# test data
 	test_x = torch.from_numpy(test_data.X)
 
-	
+	loss_weights = [0, 0]
 
 	for epoch in range(EPOCHS):
 		model.train(mode=True)
@@ -199,18 +213,24 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 		intraindices = torch.randperm(intraData.train_shape[0]).long()
 
 		losses = []
+		epoch_loss_gang = 0
+		epoch_loss_intra = 0
 		epoch_loss = 0
 		print('Epoch ' + str(epoch))  
 		
 		starttime = time.time()
 
 		for batch in range(num_batches):
-			loss = batch_loop(batch, model, optimizer)
-			if loss == None: 
+			losses = batch_loop(batch, model, optimizer)
+			if losses == None: 
 				break
-			epoch_loss += loss
-
-		avg_loss = epoch_loss/num_batches
+			epoch_loss_gang += loss[0]
+			epoch_loss_intra += loss[1]
+			epoch_loss = epoch_loss_gang + epoch_loss_intra
+		
+		avg_loss_gang = epoch_loss_gang/num_batches
+		avg_loss_intra = epoch_loss_intra/num_batches
+		avg_loss = avg_loss_gang + avg_loss_intra
 		print('\nAvg Loss: ' + str(avg_loss), " - exec time:", time.time() - starttime)
 
 		#validate model
@@ -264,7 +284,7 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
 
 		file = '/home/julia/julia/data/amacrines_late_2012.h5'
 		with h5.File(file, 'r') as f:
-			intraData = (np.array(f['boxes/stimuli']), np.array(f['boxes/detrended_membrane_potential'][0]))
+			intraData = (np.array(f['boxes/stimuli']), np.array(f['boxes/detrended_membrane_potential'][0, 40:]))
 			intraRF = np.array(f['boxes/rfs/040412_c1'])
 		data = [train_data, test_data]
 		if "chans" in hyps:
@@ -298,8 +318,13 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
 def set_model_type(model_str):
 	if model_str == "BNCNN":
 		return BNCNN
+	if model_str == "AbsBNBNCNN":
+		return AbsBNBNCNN
+	print("Invalid model type!")
+	return None
 
-def load_json(file_name):
+def load_json(file_name):        
+
 	with open(file_name) as f:
 		s = f.read()
 		j = json.loads(s)

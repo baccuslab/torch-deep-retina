@@ -44,7 +44,7 @@ def load_pretrained(model, pretrained_path):
 
 def train(hyps, model, data):
     if 'pretrained_path' in hyps:
-        model = load_pretrained(model, pretrained_path)
+        model = load_pretrained(model, hyps['pretrained_path'])
     train_data = data[0]
     test_data = data[1]
     SAVE = hyps['save_folder']
@@ -105,8 +105,12 @@ def train(hyps, model, data):
 
             if LAMBDA1 > 0:
                 activity_l1 = LAMBDA1 * torch.norm(y, 1).float()/y.shape[0]
+            if 'b1' in hyps:
+                loss_b1 = hyps['b1']* (torch.sum(torch.max(model.sequential[2].scale) - torch.min(model.sequential[2].scale))
+                    + torch.sum(torch.max(model.sequential[8].scale) - torch.min(model.sequential[8].scale)))
+            else: loss_b1 = 0
             error = loss_fn(y,label)
-            loss = error + activity_l1
+            loss = error + activity_l1 + loss_b1
             loss.backward()
             optimizer.step()
             epoch_loss += loss.item()
