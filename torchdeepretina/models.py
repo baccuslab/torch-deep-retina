@@ -243,6 +243,35 @@ class DalesSkipBNCNN(nn.Module):
     def forward(self, x):
         return self.sequential(x)
 
+class DalesDoubleSkipBNCNN(nn.Module):
+    def __init__(self, n_units=5, noise=.05, bias=True, x_shape=(40,50,50), skip_depth=2, 
+                                                neg_p=.5, adapt_gauss=False, chans=[8,8]):
+        super(DalesDoubleSkipBNCNN,self).__init__()
+        self.name = 'SkipNet'
+        self.chans=chans
+        self.adapt_gauss=adapt_gauss
+        modules = []
+        #in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True
+        modules.append(DalesSkipConnection(40,skip_depth,15,x_shape=x_shape,bias=bias, noise=noise, neg_p=1))
+        modules.append(AbsConv2d(40+skip_depth,chans[0],kernel_size=15, bias=bias, abs_bias=False))
+        diminish_weight_magnitude(modules[-1].parameters())
+        modules.append(Flatten())
+        modules.append(nn.BatchNorm1d(chans[0]*36*36, eps=1e-3))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
+        modules.append(nn.ReLU())
+        modules.append(Reshape((-1,chans[0],36,36)))
+        modules.append(DaleActivations(chans[0], neg_p))
+        modules.append(DalesSkipConnection(chans[0],chans[1],kernel_size=11, x_shape=(chans[0],36,36), bias=bias, noise=noise,neg_p=.5))
+        modules.append(Flatten())
+        modules.append(AbsLinear((chans[1]+chans[0])*36*36,n_units, bias=bias, abs_bias=False))
+        diminish_weight_magnitude(modules[-1].parameters())
+        modules.append(nn.BatchNorm1d(n_units))
+        modules.append(nn.Softplus())
+        self.sequential = nn.Sequential(*modules)
+        
+    def forward(self, x):
+        return self.sequential(x)
+
 class DalesSSCNN(nn.Module):
     def __init__(self, n_units=5, bias=True, noise=0.1, neg_p=0.5, scale=True, shift=True,
                                                         adapt_gauss=False, chans=[8,8]):
