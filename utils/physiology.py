@@ -61,6 +61,15 @@ class Physio:
             except:
                 pass
 
+    def update_model(self, new_model):
+        self.remove_refs()
+        self.remove_hooks()
+        self.net = new_model
+
+    def __del__(self):
+        self.remove_refs()
+        self.remove_hooks()
+
 
 
 
