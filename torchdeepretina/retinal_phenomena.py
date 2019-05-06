@@ -151,7 +151,7 @@ def oms(duration=4, sample_rate=0.01, transition_duration=0.07, silent_duration=
     return movie
 
 
-def osr(model, duration=2, interval=10, nflashes=3, intensity=-2.0):
+def osr(model, duration=2, interval=10, nflashes=5, intensity=-2.0):
     """Omitted stimulus response
     Parameters
     ----------
@@ -235,3 +235,77 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
     ax.set_xlim(-735, 135)
 
     return (fig, ax), (speed_left, speed_right), (c_right, stim_right, resp_right), (c_left, stim_left, resp_left), (flash_centers, flash_responses)
+
+def motion_reversal(model, scale_factor=55, velocity=0.08, width=2):
+    """
+    Moves a bar to the right and reverses it in the center, then does the same to the left. 
+    The responses are averaged.
+    Parameters
+    ----------
+    model : pytorch model
+    scale_factor = 55       # microns per bar
+    velocity = 0.08         # 0.08 bars/frame == 0.44mm/s, same as Berry et. al.
+    width = 2               # 2 bars == 110 microns, Berry et. al. used 133 microns
+    flash_duration = 2      # 2 frames == 20 ms, Berry et. al. used 15ms
+    Returns
+    -------
+    motion : array_like
+    flashes : array_like
+    """
+    # moving bar stimuli
+    c_right, speed_right, stim_right = stim.driftingbar(velocity, width)
+    stim_right = stim_right[:,0]
+    c_left, speed_left, stim_left = stim.driftingbar(-velocity, width, x=(30, -30))
+    stim_left = stim_left[:,0]
+    # Find point that bars are at center
+    right_halfway = None
+    left_halfway = None 
+    half_idx = stim_right.shape[1]//2
+    for i in range(len(stim_right)):
+        if right_halfway is None and stim_right[i,0, half_idx] <= -.99:
+            right_halfway = i
+        if left_halfway is None and stim_left[i, 0, half_idx] <= -.99:
+            left_halfway = i
+        if right_halfway is not None and left_halfway is not None:
+            break
+    # Create stimulus from moving bars
+    rtl = np.concatenate([stim_right[:right_halfway], stim_left[left_halfway:]], axis=0)
+    ltr = np.concatenate([stim_left[:left_halfway], stim_right[right_halfway:]], axis=0)
+    if right_halfway < left_halfway:
+        cutoff = left_halfway-right_halfway
+        ltr = ltr[cutoff:-cutoff]
+    elif left_halfway < right_halfway:
+        cutoff = right_halfway-left_halfway
+        rtl = rtl[cutoff:-cutoff]
+    
+    rtl_blocks = stim.concat(rtl)
+    rtl_blocks = torch.from_numpy(rtl_blocks).to(DEVICE)
+    resp_rtl = model(rtl_blocks).cpu().detach().numpy()
+
+    ltr_blocks = stim.concat(ltr)
+    ltr_blocks = torch.from_numpy(ltr_blocks).to(DEVICE)
+    resp_ltr = model(ltr_blocks).cpu().detach().numpy()
+
+    # average the response from multiple cells
+    avg_resp_rtl = resp_rtl.mean(axis=-1)
+    avg_resp_ltr = resp_ltr.mean(axis=-1)
+
+    # normalize the average responses (to plot on the same scale)
+    avg_resp_rtl /= avg_resp_rtl.max()
+    avg_resp_ltr /= avg_resp_ltr.max()
+    avg_resp = (avg_resp_rtl + avg_resp_ltr)/2
+
+    # generate the figure
+    fig = plt.figure(figsize=(6, 4))
+    ax = fig.add_subplot(111)
+    halfway = avg_resp_ltr.shape[0]//2
+    ax.plot(np.arange(-halfway, halfway+1), avg_resp_ltr, 'g-', label='l->r')
+    ax.plot(np.arange(-halfway, halfway+1), avg_resp_rtl, 'b-', label='r->l')
+    ax.plot(np.arange(-halfway, halfway+1), avg_resp, 'r-', label='avg')
+    ax.legend(frameon=True, fancybox=True, fontsize=18)
+    ax.set_xlabel('Frames from reversal')
+    ax.set_ylabel('Scaled firing rate')
+    ax.set_xlim(-halfway, halfway)
+
+    return (fig, ax), (speed_left, speed_right), (rtl, resp_rtl), (ltr, resp_ltr), avg_resp
+
