@@ -1,6 +1,13 @@
+import numpy as np
 import matplotlib.pyplot as plt
-import numpy as np 
+import pyret.filtertools as ft
+from pyret.nonlinearities import Binterp, Sigmoid
+from scipy.optimize import minimize
+from matplotlib.ticker import MultipleLocator, FormatStrFormatter
+import collections
+from tqdm import tqdm
 from itertools import repeat
+import torchdeepretina.batch_compute as bc
 import torchdeepretina.stimuli as stim
 import torchdeepretina.visualizations as viz
 from tqdm import tqdm, trange
@@ -81,6 +88,184 @@ def contrast_adaptation(model, c0, c1, duration=50, delay=50, nsamples=140, nrep
 
     return figs, envelope, responses
 
+def oms_random_differential(model, duration=4, sample_rate=0.01, pre_silent=.75, post_silent=.75, img_shape=(50,50), center=(25,25), radius=5, background_velocity=.4, foreground_velocity=.5, seed=None):
+    """
+    Plays a video of differential motion by keeping a circular window fixed in space on a 2d background grating.
+    A grating exists behind the circular window that moves counter to the background grating. Each grating is jittered
+    randomly.
+
+    duration: float
+        length of video in seconds
+    sample_rate: float
+        sample rate of video in frames per second
+    pre_silent: float
+        duration of still image to be prepended to the jittering
+    post_silent: float
+        duration of still image to be appended to the jittering
+    img_shape: sequence of ints len 2
+        the image size (H,W)
+    center: sequence of ints len 2
+        the starting pixel coordinates of the circular window (0,0 is the upper left most pixel)
+    radius: float
+        the radius of the circular window
+    background_velocity: float
+        the intensity of the horizontal jittering of the background grating
+    foreground_velocity: float
+        the intensity of the horizontal jittering of the foreground grating
+    seed: int or None
+        sets the numpy random seed if int
+    """
+    if seed is not None:
+        np.random.seed(seed)
+    tot_frames = int(duration // sample_rate)
+    pre_frames = int(pre_silent//sample_rate)
+    post_frames = int(post_silent//sample_rate)
+    diff_frames = int(tot_frames-pre_frames-post_frames)
+    assert diff_frames > 0
+    differential = stim.random_differential_circle(diff_frames, bar_size=4, 
+                                    foreground_velocity=foreground_velocity, 
+                                    background_velocity=background_velocity,
+                                    image_shape=img_shape, center=center, radius=radius) 
+    pre_vid = np.repeat(differential[:1], pre_frames, axis=0)
+    post_vid = np.repeat(differential[-1:], post_frames, axis=0)
+    diff_vid = np.concatenate([pre_vid, differential, post_vid], axis=0)
+
+    global_ = stim.random_differential_circle(diff_frames, bar_size=4, 
+                                    foreground_velocity=foreground_velocity, sync_jitters=True,
+                                    background_velocity=foreground_velocity, 
+                                    image_shape=img_shape, center=center, radius=radius, 
+                                    horizontal_foreground=False, horizontal_background=False)
+    pre_vid = np.repeat(global_[:1], pre_frames, axis=0)
+    post_vid = np.repeat(global_[-1:], post_frames, axis=0)
+    global_vid = np.concatenate([pre_vid, global_, post_vid], axis=0)
+    
+    diff_response = model(torch.FloatTensor(stim.concat(diff_vid)).to(DEVICE)).cpu().detach().numpy()
+    global_response = model(torch.FloatTensor(stim.concat(global_vid)).to(DEVICE)).cpu().detach().numpy()
+
+    # generate the figure
+    fig = plt.figure(figsize=(6, 4))
+    ax = fig.add_subplot(111)
+    ax.plot(diff_response.mean(-1), color="g")
+    ax.plot(global_response.mean(-1), color="b")
+    ax.legend(["diff", "global"])
+    ax.axvline(x=pre_frames-40, color='r')
+    ax.axvline(x=tot_frames-post_frames, color='r')
+    diff_response = diff_response[pre_frames-40:tot_frames-post_frames]
+    global_response = global_response[pre_frames-40:tot_frames-post_frames]
+    return fig, diff_vid, global_vid, diff_response, global_response
+
+def oms_differential(model, duration=4, sample_rate=0.01, pre_silent=.75, post_silent=.75, img_shape=(50,50), center=(25,25), radius=5, background_velocity=0, foreground_velocity=.5, seed=None):
+    """
+    Plays a video of differential motion by keeping a circular window fixed in space on a 2d background grating.
+    A grating exists behind the circular window that moves counter to the background grating. 
+
+    duration: float
+        length of video in seconds
+    sample_rate: float
+        sample rate of video in frames per second
+    pre_silent: float
+        duration of still image to be prepended to the jittering
+    post_silent: float
+        duration of still image to be appended to the jittering
+    img_shape: sequence of ints len 2
+        the image size (H,W)
+    center: sequence of ints len 2
+        the starting pixel coordinates of the circular window (0,0 is the upper left most pixel)
+    radius: float
+        the radius of the circular window
+    background_velocity: float
+        the magnitude of horizontal movement of the background grating in pixels per frame
+    foreground_velocity: float
+        the magnitude of horizontal movement of the foreground grating in pixels per frame
+    seed: int or None
+        sets the numpy random seed if int
+    """
+    if seed is not None:
+        np.random.seed(seed)
+    tot_frames = int(duration // sample_rate)
+    pre_frames = int(pre_silent//sample_rate)
+    post_frames = int(post_silent//sample_rate)
+    diff_frames = int(tot_frames-pre_frames-post_frames)
+    assert diff_frames > 0
+    differential = stim.differential_circle(diff_frames, bar_size=4, 
+                                    foreground_velocity=foreground_velocity, 
+                                    background_velocity=background_velocity,
+                                    image_shape=img_shape, center=center, radius=radius, 
+                                    horizontal_foreground=False, horizontal_background=False)
+    pre_vid = np.repeat(differential[:1], pre_frames, axis=0)
+    post_vid = np.repeat(differential[-1:], post_frames, axis=0)
+    diff_vid = np.concatenate([pre_vid, differential, post_vid], axis=0)
+
+    global_ = stim.differential_circle(diff_frames, bar_size=4, 
+                                    foreground_velocity=foreground_velocity,
+                                    background_velocity=foreground_velocity, # Note the foreground velocity
+                                    image_shape=img_shape, center=center, radius=radius, 
+                                    horizontal_foreground=False, horizontal_background=False)
+    pre_vid = np.repeat(global_[:1], pre_frames, axis=0)
+    post_vid = np.repeat(global_[-1:], post_frames, axis=0)
+    global_vid = np.concatenate([pre_vid, global_, post_vid], axis=0)
+    
+    diff_response = model(torch.FloatTensor(stim.concat(diff_vid)).to(DEVICE)).cpu().detach().numpy()
+    global_response = model(torch.FloatTensor(stim.concat(global_vid)).to(DEVICE)).cpu().detach().numpy()
+
+    # generate the figure
+    fig = plt.figure(figsize=(6, 4))
+    ax = fig.add_subplot(111)
+    ax.plot(diff_response.mean(-1), color="g")
+    ax.plot(global_response.mean(-1), color="b")
+    ax.legend(["diff", "global"])
+    ax.axvline(x=pre_frames-40, color='r')
+    ax.axvline(x=tot_frames-post_frames, color='r')
+    diff_response = diff_response[pre_frames-40:tot_frames-post_frames]
+    global_response = global_response[pre_frames-40:tot_frames-post_frames]
+    return fig, diff_vid, global_vid, diff_response, global_response
+
+def oms_jitter(model, duration=4, sample_rate=0.01, pre_silent=.75, post_silent=.75, img_shape=(50,50), center=(25,25), radius=5, seed=None):
+    """
+    Plays a video of a jittered circle window onto a grating different than that of the background.
+
+    duration: float
+        length of video in seconds
+    sample_rate: float
+        sample rate of video in frames per second
+    pre_silent: float
+        duration of still image to be prepended to the jittering
+    post_silent: float
+        duration of still image to be appended to the jittering
+    img_shape: sequence of ints len 2
+        the image size (H,W)
+    center: sequence of ints len 2
+        the starting pixel coordinates of the circular window (0,0 is the upper left most pixel)
+    radius: float
+        the radius of the circular window
+    seed: int or None
+        sets the numpy random seed if int
+    """
+    assert pre_silent > 0 and post_silent > 0
+    if seed is not None:
+        np.random.seed(seed)
+    tot_frames = int(duration // sample_rate)
+    pre_frames = int(pre_silent//sample_rate)
+    post_frames = int(post_silent//sample_rate)
+    jitter_frames = int(tot_frames-pre_frames-post_frames)
+    assert jitter_frames > 0
+    jitters = stim.jittered_circle(jitter_frames, bar_size=4, foreground_jitter=.5, background_jitter=0,
+                                    image_shape=img_shape, center=center, radius=radius, 
+                                    horizontal_foreground=False, horizontal_background=False)
+    pre_vid = np.repeat(jitters[:1], pre_frames, axis=0)
+    post_vid = np.repeat(jitters[-1:], post_frames, axis=0)
+    vid = np.concatenate([pre_vid, jitters, post_vid], axis=0)
+    
+    response = model(torch.FloatTensor(stim.concat(vid)).to(DEVICE)).cpu().detach().numpy()
+    avg_response = response.mean(-1)
+
+    # generate the figure
+    fig = plt.figure(figsize=(6, 4))
+    ax = fig.add_subplot(111)
+    ax.plot(avg_response)
+    ax.axvline(x=pre_frames-40, color='r')
+    ax.axvline(x=tot_frames-post_frames, color='r')
+    return fig, vid, response
 
 def oms(duration=4, sample_rate=0.01, transition_duration=0.07, silent_duration=0.93,
         magnitude=5, space=(50, 50), center=(25, 25), object_radius=5, coherent=False, roll=False):
@@ -277,7 +462,7 @@ def motion_reversal(model, scale_factor=55, velocity=0.08, width=2):
     elif left_halfway < right_halfway:
         cutoff = right_halfway-left_halfway
         rtl = rtl[cutoff:-cutoff]
-    
+ 
     rtl_blocks = stim.concat(rtl)
     rtl_blocks = torch.from_numpy(rtl_blocks).to(DEVICE)
     resp_rtl = model(rtl_blocks).cpu().detach().numpy()
@@ -309,3 +494,185 @@ def motion_reversal(model, scale_factor=55, velocity=0.08, width=2):
 
     return (fig, ax), (speed_left, speed_right), (rtl, resp_rtl), (ltr, resp_ltr), avg_resp
 
+# Contrast adaptation figure
+# The following functions are used for the contrast adaptation figure
+#######################################################################################
+
+def requires_grad(model, state):
+    for p in model.parameters():
+        try:
+            p.requires_grad = state
+        except:
+            pass
+
+def white(time, contrast=1.0):
+    compressed_time = int(np.ceil(time/3.0))
+    compressed_stim = contrast * np.random.randn(compressed_time, 50, 50)
+    stimulus = np.repeat(compressed_stim, 3, axis=0)
+    return stimulus[:time]
+
+def get_stim_grad(model, X, layer, cell_idx, batch_size=500):
+    """
+    Gets the gradient of the model output at the specified layer and cell idx with respect
+    to the inputs (X). Returns a gradient array with the same shape as X.
+    """
+    requires_grad(model, False)
+
+    # Use hook to target appropriate layer activations
+    outsize = (batch_size, 5)
+    outs = torch.zeros(outsize).to(0)
+    def forward_hook(module, inps, outputs):
+        outs[:] = outputs
+    hook_handles = []
+    for name, module in model.named_modules():
+        if name == layer:
+            print("hook attached to " + name)
+            hook_handles.append(module.register_forward_hook(forward_hook))
+
+    # Get gradient with respect to activations
+    for i in range(0, X.shape[0], batch_size):
+        x = X[i:i+batch_size].to(0)
+        _ = model(x)
+        # Outs are the activations at the argued layer and cell idx accross the batch
+        if type(cell_idx) == type(int()):
+            fx = outs[:,cell_idx].mean()
+        elif len(cell_idx) == 1:
+            fx = outs[:,cell_idx[0]].mean()
+        else:
+            fx = outs[:,cell_idx[0], cell_idx[1], cell_idx[2]].mean()
+        fx.backward()
+        outs = torch.zeros(outsize).to(0)
+    del outs
+    del _
+    # Remove hooks to avoid memory leaks
+    for handle in hook_handles:
+        print("hook detached")
+        handle.remove()
+
+    requires_grad(model, True)
+    return X.grad.data.cpu().detach().numpy()
+
+def compute_sta(model, contrast, layer, cell_index):
+    """helper function to compute the STA using the model gradient"""
+    # generate some white noise
+    X = stim.concat(white(1040, contrast=contrast)).copy()
+    X = torch.FloatTensor(X)
+    X.requires_grad = True
+
+    # compute the gradient of the model with respect to the stimulus
+    drdx = get_stim_grad(model, X, layer, cell_index)
+
+    # average over the white noise samples
+    sta = drdx.mean(axis=0)
+
+    del X
+    return sta
+
+def normalize_filter(sta, stimulus, target_sd):
+    '''Enforces filtered stimulus to have the same standard deviation
+    as the stimulus.'''
+    def sd_difference(theta):
+        response = ft.linear_response(abs(theta) * sta, stimulus)
+        return (np.std(response) - target_sd)**2
+
+    res = minimize(sd_difference, x0=1.0)
+    theta = abs(res.x)
+    return (theta * sta, theta, res.fun)
+
+def filter_and_nonlinearity(model, contrast, layer_name='sequential.0',
+                                  unit_index=(0,15,15), nonlinearity_type='bin'):
+    print("Computing STA")
+    sta = compute_sta(model, contrast, layer_name, unit_index)
+    sta = np.flip(sta, axis=0)
+
+    print("Normalizing filter and collecting response")
+    stimulus = white(4040, contrast=contrast)
+    normed_sta, theta, error = normalize_filter(sta, stimulus, 0.35 * contrast)
+    filtered_stim = ft.linear_response(normed_sta, stimulus)
+
+    print("Inspecting model response")
+    stim_tensor = torch.FloatTensor(stim.concat(stimulus))
+    model_response = bc.batch_compute_model_response(stim_tensor, model, 500, insp_keys={layer_name})
+    if type(unit_index) == type(int()):
+        response = model_response[layer_name][:,unit_index]
+    elif len(unit_index) == 1:
+        response = model_response[layer_name][:,unit_index[0]]
+    else:
+        response = model_response[layer_name][:,unit_index[0], unit_index[1], unit_index[2]]
+
+    print("Fitting nonlinearity")
+    if nonlinearity_type == 'bin':
+        nonlinearity = Binterp(80)
+    else:
+        nonlinearity = Sigmoid()
+    nonlinearity.fit(filtered_stim[40:], response)
+
+    print("Summarizing model for plotting")
+    time = np.linspace(0.4, 0, 40)
+    _, temporal = ft.decompose(normed_sta)
+    temporal /= 0.01  # Divide by dt for y-axis to be s^{-1}
+
+    x = np.linspace(np.min(filtered_stim), np.max(filtered_stim), 40)
+    nonlinear_prediction = nonlinearity.predict(x)
+
+    return time, temporal, x, nonlinear_prediction
+
+def contrast_fig(model, contrasts, layer_name=None, unit_index=(0,15,15), nonlinearity_type='bin'):
+    """
+    Creates figure 3A from "Deeplearning Models Reveal..." paper. Much of this code has been repurposed
+    from Lane and Niru's notebooks. Significant chance of bugs...
+
+    model: torch module
+    contrasts: sequence of ints len 2
+        the sequence should be in ascending order
+    layer_name: string
+        specifies the layer of interest, if None, the final layer is used
+    unit_index: int or sequence of length 3
+        specifies the unit of interest
+    nonlinearity_type: string
+        fits the nonlinearity to the specified type. allowed args are "bin" and "sigmoid".
+    """
+    if layer_name is None:
+        layer_name = "sequential." + str(len(model.sequential)-1)
+    low_time, low_temporal, low_x, low_nl = filter_and_nonlinearity(model, contrasts[0], layer_name=layer_name, 
+                                                    unit_index=unit_index, nonlinearity_type=nonlinearity_type)
+    high_time, high_temporal, high_x, high_nl = filter_and_nonlinearity(model, contrasts[1], layer_name=layer_name,
+                                                    unit_index=unit_index, nonlinearity_type=nonlinearity_type)
+    fig = plt.figure(figsize=(8, 2))
+    plt.subplot(1, 2, 1)
+    plt.plot(low_time, low_temporal, label='Contrast = %02d%%' %(0.35 * contrasts[0] * 100), color='g')
+    plt.plot(high_time, high_temporal, label='Contrast = %02d%%' %(0.35 * contrasts[1] * 100), color='b')
+    plt.xlabel('Delay (s)', fontsize=14)
+    plt.ylabel('Filter ($s^{-1}$)', fontsize=14)
+    plt.text(0.2, -15, 'High', color='b', fontsize=18)
+    plt.text(0.2, -30, 'Low', color='g', fontsize=18)
+    
+    # plt.legend()
+    ax1 = plt.gca()
+    ax1.spines['right'].set_visible(False)
+    ax1.spines['top'].set_visible(False)
+    ax1.xaxis.set_ticks_position('bottom')
+    ax1.yaxis.set_ticks_position('left')
+    
+    
+    plt.subplot(1, 2, 2)
+    plt.plot(high_x, len(high_x) * [0], 'k--', alpha=0.4)
+    plt.plot(high_x, high_nl, linewidth=3, color='b')
+    plt.plot(low_x, low_nl, linewidth=3, color='g')
+    plt.xlabel('Filtered Input', fontsize=14)
+    plt.ylabel('Output (Hz)', fontsize=14)
+    ax1 = plt.gca()
+    ax1.spines['right'].set_visible(False)
+    ax1.spines['top'].set_visible(False)
+    ax1.xaxis.set_ticks_position('bottom')
+    ax1.yaxis.set_ticks_position('left')
+    majorLocator = MultipleLocator(1)
+    majorFormatter = FormatStrFormatter('%d')
+    minorLocator = MultipleLocator(0.5)
+    
+    ax1.xaxis.set_major_locator(majorLocator)
+    ax1.xaxis.set_major_formatter(majorFormatter)
+    ax1.xaxis.set_minor_locator(minorLocator)
+    return fig
+
+#########################################################################################################

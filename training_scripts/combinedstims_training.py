@@ -32,7 +32,7 @@ seed = 3
 np.random.seed(seed)
 torch.manual_seed(seed)
 
-def train(hyps, model, train_datas):
+def train(hyps, model, train_datas, model_hyps):
     SAVE = hyps['save_folder']
     if not os.path.exists(SAVE):
         os.mkdir(SAVE)
@@ -125,7 +125,7 @@ def train(hyps, model, train_datas):
         scheduler.step(val_loss)
 
         save_dict = {
-            "model": model,
+            "model_hyps": , model_hyps,
             "model_state_dict":model.state_dict(),
             "optim_state_dict":optimizer.state_dict(),
             "loss": avg_loss,
@@ -186,8 +186,8 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
         hyps['norm_stats'] = norm_stats
 
         # Initialize model
-        output_units = [data.y.shape[-1] for data in train_datas[::2]]
-        model_hyps = {"n_units":output_units,"noise":hyps['noise'],"bias":hyps['bias']}
+        n_units = [data.y.shape[-1] for data in train_datas[::2]]
+        model_hyps = {"n_units":n_units,"noise":hyps['noise'],"bias":hyps['bias']}
         if "chans" in hyps:
             model_hyps['chans'] = hyps['chans']
         if "adapt_gauss" in hyps:
