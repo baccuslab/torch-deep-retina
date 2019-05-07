@@ -109,7 +109,7 @@ def train(hyps, model, data, model_hyps):
         model.eval()
         val_preds = []
         val_loss = 0
-        step_size = 1000
+        step_size = 500
         n_loops = data.val_shape[0]//step_size
         for v in tqdm(range(0, n_loops*step_size, step_size)):
             temp = model(data.val_X[v:v+step_size].to(DEVICE)).detach()
