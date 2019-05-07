@@ -1,3 +1,4 @@
+
 from scipy.stats import pearsonr
 import os
 import sys
@@ -28,7 +29,7 @@ seed = 3
 np.random.seed(seed)
 torch.manual_seed(seed)
 
-def train(hyps, model, train_datas):
+def train(hyps, model, train_datas, model_hyps):
     SAVE = hyps['save_folder']
     if not os.path.exists(SAVE):
         os.mkdir(SAVE)
@@ -122,7 +123,7 @@ def train(hyps, model, train_datas):
         scheduler.step(val_loss)
 
         save_dict = {
-            "model": model,
+            "model_hyps": , model_hyps,
             "model_state_dict":model.state_dict(),
             "optim_state_dict":optimizer.state_dict(),
             "loss": avg_loss,
@@ -178,9 +179,18 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
                 train_datas.append(DataContainer(loadexpt(dataset,cells, stim_type,'train',40,0, norm_stats=norm_stats)))
                 if len(train_datas) == 1: # Simply use normalization stats from first dataset
                     norm_stats = [train_datas[-1].stats['mean'], train_datas[-1].stats['std']]                
-        output_units = [data.y.shape[-1] for data in train_datas[::2]]
-        model = hyps['model_type'](output_units, noise=hyps['noise'], bias=hyps['bias'])
-        results = train(hyps, model, train_datas)
+        n_units = [data.y.shape[-1] for data in train_datas[::2]]
+        model_hyps = {"n_units":n_units,"noise":hyps['noise'],"bias":hyps['bias']}
+        if "chans" in hyps:
+            model_hyps['chans'] = hyps['chans']
+        if "adapt_gauss" in hyps:
+            model_hyps['adapt_gauss'] = hyps['adapt_gauss']
+        fn_args = set(hyps['model_type'].__init__.__code__.co_varnames)
+        for k in model_hyps.keys():
+            if k not in fn_args:
+                del model_hyps[k]
+        model = hyps['model_type'](**model_hyps)
+        results = train(hyps, model, train_datas, model_hyps)
         with open(hyps['results_file'],'a') as f:
             if hyps['exp_num'] == hyps['starting_exp_num']:
                 f.write(str(model)+'\n\n')
@@ -204,36 +214,6 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
             hyper_search(hyps, hyp_ranges, keys, train, idx+1)
     return
 
-def set_model_type(model_str):
-    if model_str == "BNCNN":
-        return BNCNN
-    if model_str == "SSCNN":
-        return SSCNN
-    if model_str == "CNN":
-        return CNN
-    if model_str == "NormedBNCNN":
-        return NormedBNCNN
-    if model_str == "DalesBNCNN":
-        return DalesBNCNN
-    if model_str == "DalesSSCNN":
-        return DalesSSCNN
-    if model_str == "DalesHybrid":
-        return DalesHybrid
-    if model_str == "PracticalBNCNN":
-        return PracticalBNCNN
-    if model_str == "StackedBNCNN":
-        return StackedBNCNN
-    if model_str == "SkipBNCNN":
-        return SkipBNCNN
-    if model_str == "DalesSkipBNCNN":
-        return DalesSkipBNCNN
-    if model_str == "SkipBNBNCNN":
-        return SkipBNBNCNN
-    if model_str == "ParallelDataBNCNN":
-        return ParallelDataBNCNN
-    print("Invalid model type!")
-    return None
-
 def load_json(file_name):
     with open(file_name) as f:
         s = f.read()
@@ -256,7 +236,7 @@ if __name__ == "__main__":
         hyps['exp_name'] = inp
     hyp_ranges = load_json(hyperranges_file)
     print("Model type:", hyps['model_type'])
-    hyps['model_type'] = set_model_type(hyps['model_type'])
+    hyps['model_type'] = globals()[hyps['model_type']]
     keys = list(hyp_ranges.keys())
     print("Searching over:", keys)
 
