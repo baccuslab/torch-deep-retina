@@ -1,3 +1,11 @@
+"""
+Used as a general training script. Can give command line arguments to specify which json files to use
+for hyperparameters and the ranges that those hyperparameters can take on.
+
+$ python3 general_training.py params=hyperparams.json ranges=hyperranges.json
+
+Defaults to hyperparams.json and hyperranges.json if no arguments are provided
+"""
 import matplotlib
 matplotlib.use('Agg')
 from scipy.stats import pearsonr
@@ -207,6 +215,12 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
             model_hyps['chans'] = hyps['chans']
         if "adapt_gauss" in hyps:
             model_hyps['adapt_gauss'] = hyps['adapt_gauss']
+        if "bnorm_momentum" in hyps:
+            model_hyps['bnorm_momentum'] = hyps['bnorm_momentum']
+        if "linear_bias" in hyps:
+            model_hyps['linear_bias'] = hyps['linear_bias']
+        if "shift" in hyps:
+            model_hyps['shift'] = hyps['shift']
         fn_args = set(hyps['model_type'].__init__.__code__.co_varnames)
         keys = list(model_hyps.keys())
         for k in keys:
@@ -255,12 +269,30 @@ class DataContainer():
 if __name__ == "__main__":
     hyperparams_file = "hyperparams.json"
     hyperranges_file = 'hyperranges.json'
+    if len(sys.argv) > 1:
+        for i,arg in enumerate(sys.argv[1:]):
+            temp = sys.argv[1].split("=")
+            if len(temp) > 1:
+                if "params" in temp[0]:
+                    hyperparams_file = temp[1]
+                elif "ranges" in temp[0]:
+                    hyperranges_file = temp[1]
+            else:
+                if i == 0:
+                    hyperparams_file = arg
+                elif i == 1:
+                    hyperranges_file = arg
+                else:
+                    print("Too many command line args")
+                    assert False
+    print("Using hyperparams file:", hyperparams_file)
+    print("Using hyperranges file:", hyperranges_file)
+
     hyps = load_json(hyperparams_file)
-    inp = input("Last chance to change the experiment name "+
+    sleep_time = 8
+    print("You have "+str(sleep_time)+" seconds to cancel experiment name "+
                 hyps['exp_name']+" (num "+ str(hyps['starting_exp_num'])+"): ")
-    inp = inp.strip()
-    if inp is not None and inp != "":
-        hyps['exp_name'] = inp
+    time.sleep(sleep_time)
     hyp_ranges = load_json(hyperranges_file)
     print("Model type:", hyps['model_type'])
     hyps['model_type'] = globals()[hyps['model_type']]
