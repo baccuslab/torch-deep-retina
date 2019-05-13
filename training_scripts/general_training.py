@@ -289,11 +289,11 @@ if __name__ == "__main__":
     print("Using hyperranges file:", hyperranges_file)
 
     hyps = load_json(hyperparams_file)
+    hyp_ranges = load_json(hyperranges_file)
     sleep_time = 8
     print("You have "+str(sleep_time)+" seconds to cancel experiment name "+
                 hyps['exp_name']+" (num "+ str(hyps['starting_exp_num'])+"): ")
     time.sleep(sleep_time)
-    hyp_ranges = load_json(hyperranges_file)
     print("Model type:", hyps['model_type'])
     hyps['model_type'] = globals()[hyps['model_type']]
     keys = list(hyp_ranges.keys())

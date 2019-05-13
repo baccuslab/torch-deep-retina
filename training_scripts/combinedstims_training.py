@@ -125,7 +125,7 @@ def train(hyps, model, train_datas, model_hyps):
         scheduler.step(val_loss)
 
         save_dict = {
-            "model_hyps": , model_hyps,
+            "model_hyps": model_hyps,
             "model_state_dict":model.state_dict(),
             "optim_state_dict":optimizer.state_dict(),
             "loss": avg_loss,
@@ -239,12 +239,31 @@ class DataContainer():
 if __name__ == "__main__":
     hyperparams_file = "paralleldata_hyperparams.json"
     hyperranges_file = 'hyperranges.json'
+    if len(sys.argv) > 1:
+        for i,arg in enumerate(sys.argv[1:]):
+            temp = sys.argv[1].split("=")
+            if len(temp) > 1:
+                if "params" in temp[0]:
+                    hyperparams_file = temp[1]
+                elif "ranges" in temp[0]:
+                    hyperranges_file = temp[1]
+            else:
+                if i == 0:
+                    hyperparams_file = arg
+                elif i == 1:
+                    hyperranges_file = arg
+                else:
+                    print("Too many command line args")
+                    assert False
+    print("Using hyperparams file:", hyperparams_file)
+    print("Using hyperranges file:", hyperranges_file)
+
     hyps = load_json(hyperparams_file)
-    inp = input("Last chance to change the experiment name "+hyps['exp_name']+": ")
-    inp = inp.strip()
-    if inp is not None and inp != "":
-        hyps['exp_name'] = inp
     hyp_ranges = load_json(hyperranges_file)
+    sleep_time = 8
+    print("You have "+str(sleep_time)+" seconds to cancel experiment name "+
+                hyps['exp_name']+" (num "+ str(hyps['starting_exp_num'])+"): ")
+    time.sleep(sleep_time)
     print("Model type:", hyps['model_type'])
     hyps['model_type'] = globals()[hyps['model_type']]
     keys = list(hyp_ranges.keys())
