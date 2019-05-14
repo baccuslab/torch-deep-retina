@@ -81,20 +81,49 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 		y = y.float() 
 		activity_l1 = LAMBDA1 * torch.norm(y, 1).float()/y.shape[0]
 		error_gang = loss_fn(y,label) + activity_l1
-		error_gang.backward()
-		optimizer.step()
 
 		del x
 		del label
 
-		optimizer.zero_grad()
 		intra_x, intra_label = prepare_x_and_label(intraData, intraidxs)
 		intra_y = physio.inspect(intra_x, insp_keys={layer})[layer][:, celltype, sidx[0], sidx[1]]
 		error_intra = loss_fn(intra_y, intra_label)
 
+		if gradnorm:
+			if loss_intra0 is None:
+				loss_intra0 = error_intra
+				loss_gang0 = error_gang
+
+			loss = loss_weights[0]*error_gang + loss_weights[1]*error_intra
+			loss_gradients = []
+		error_gang.backward()
 		error_intra.backward()
+
+		if gradnorm:
+			loss_gradients.append(torch.norm(loss_weights[0]*torch.sum(model.sequential[11].weight), 1))
+			loss_gradients.append(torch.norm(loss_weights[1]*torch.sum(model.sequential[6].weight), 1))
+			total_loss_gradient = (loss_weights[0]*loss_gradients[0] + loss_weights[1]*loss_gradients[1])/T
+			loss_ratios = []
+			loss_ratios.append(error_gang/loss_gang0)
+			loss_ratios.append(error_intra/loss_intra0)
+			total_loss_ratio = (loss_weights[0]*loss_ratios[0] + loss_weights[1]*loss_ratios[1])/T
+			inverse_rates = []
+			inverse_rates.append(loss_ratios[0]/total_loss_ratio)
+			inverse_rates.append(loss_ratios[1]/total_loss_ratio)
+
+			L_grad = torch.zeros(1, requires_grad = True)
+			for i in range T:
+				constant = total_loss_gradient*np.power(inverse_rates[i], alpha)
+				constant.requires_grad = False
+				L_grad += torch.norm(loss_gradients[i] - constant)
+
+			L_grad.backward()
+
 		loss = error_intra + error_gang
 		optimizer.step()
+		if gradnorm:
+			normalize_coeff = T/ torch.sum(loss_weights)
+        	loss_weights = loss_weights * normalize_coeff
 		print("Loss:", loss.item()," - error_gang:", error_gang.item(), "- error_intra:", error_intra.item(), " - l1:", activity_l1.item(), " | ", int(round(batch/num_batches, 2)*100), "% done", end='               \r')
 		if math.isnan(epoch_loss) or math.isinf(epoch_loss):
 			return None
@@ -143,6 +172,7 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 			"val_loss":val_loss,
 			"val_acc":val_acc,
 			"test_pearson":avg_pearson,
+			"loss_weights":loss_weights,
 		}
 		io.save_checkpoint_dict(save_dict,SAVE,'test')
 		del val_preds
@@ -165,6 +195,7 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 	LAMBDA2 = hyps['l2']
 	EPOCHS = hyps['n_epochs']
 	batch_size = hyps['batch_size']
+	gradnorm = hyps['gradnorm']
 
 	SAVE = hyps['save_folder']
 	if not os.path.exists(SAVE):
@@ -204,8 +235,10 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 
 	# test data
 	test_x = torch.from_numpy(test_data.X)
-
-	loss_weights = [0, 0]
+	T = 2
+	loss_weights = torch.ones(T, requires_grad=True)
+	loss_intra0 = None
+	loss_gang0 = None
 
 	for epoch in range(EPOCHS):
 		model.train(mode=True)
@@ -224,10 +257,10 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 			losses = batch_loop(batch, model, optimizer)
 			if losses == None: 
 				break
-			epoch_loss_gang += loss[0]
-			epoch_loss_intra += loss[1]
+			epoch_loss_gang += losses[0]
+			epoch_loss_intra += losses[1]
 			epoch_loss = epoch_loss_gang + epoch_loss_intra
-		
+
 		avg_loss_gang = epoch_loss_gang/num_batches
 		avg_loss_intra = epoch_loss_intra/num_batches
 		avg_loss = avg_loss_gang + avg_loss_intra
@@ -278,7 +311,7 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
 											hyps['stim_type'],'train',40,0))
 		norm_stats = [train_data.stats['mean'], train_data.stats['std']] 
 		test_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],hyps['stim_type'],
-														'test',40,0, norm_stats=norm_stats))
+														'dev',40,0, norm_stats=norm_stats))
 		test_data.X = test_data.X[:500]
 		test_data.y = test_data.y[:500]
 

@@ -61,7 +61,7 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=
         data normalization
     """
     assert history > 0 and type(history) is int, "Temporal history must be a positive integer"
-    assert train_or_test in ('train', 'test'), "train_or_test must be 'train' or 'test'"
+    assert train_or_test in ('train', 'test', 'dev'), "train_or_test must be 'train' or 'test' or 'dev"
     if type(cells) == type(str()) and cells=="all":
         cells = CELLS[expt]
 
