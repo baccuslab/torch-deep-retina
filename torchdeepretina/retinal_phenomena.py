@@ -21,7 +21,8 @@ def step_response(model, duration=100, delay=50, nsamples=200, intensity=-1.):
     X_torch = torch.from_numpy(X).to(DEVICE)
     resp = model(X_torch)
     figs = viz.response1D(X[:, -1, 0, 0].copy(), resp.cpu().detach().numpy())
-    return figs, X, resp
+    (fig, (ax0,ax1)) = figs
+    return (fig, (ax0,ax1)), X, resp
 
 
 def paired_flash(model, ifis=(2, 20), duration=1, intensity=-2.0, total=100, delay=40):
@@ -69,7 +70,8 @@ def reversing_grating(model, size=5, phase=0.):
     X_torch = torch.from_numpy(X).to(DEVICE)
     resp = model(X_torch)
     figs = viz.response1D(X[:, -1, 0, 0].copy(), resp.cpu().detach().numpy())
-    return figs, X, resp
+    (fig, (ax0,ax1)) = figs
+    return (fig, (ax0,ax1)), X, resp
 
 
 def contrast_adaptation(model, c0, c1, duration=50, delay=50, nsamples=140, nrepeats=10):
@@ -85,8 +87,9 @@ def contrast_adaptation(model, c0, c1, duration=50, delay=50, nsamples=140, nrep
                           for _ in trange(nrepeats)])
 
     figs = viz.response1D(envelope[40:, 0, 0], responses.mean(axis=0))
+    (fig, (ax0,ax1)) = figs
 
-    return figs, envelope, responses
+    return (fig, (ax0,ax1)), envelope, responses
 
 def oms_random_differential(model, duration=4, sample_rate=0.01, pre_silent=.75, post_silent=.75, img_shape=(50,50), center=(25,25), radius=5, background_velocity=.4, foreground_velocity=.5, seed=None):
     """
@@ -359,7 +362,8 @@ def osr(model, duration=2, interval=10, nflashes=5, intensity=-2.0):
     X_torch = torch.from_numpy(X).to(DEVICE)
     resp = model(X_torch)
     figs = viz.response1D(X[:, -1, 0, 0].copy(), resp.cpu().detach().numpy(), figsize=(20, 8))
-    return figs, X, resp
+    (fig, (ax0,ax1)) = figs
+    return (fig, (ax0,ax1)), X, resp
 
 
 def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_duration=2):
@@ -638,14 +642,21 @@ def contrast_fig(model, contrasts, layer_name=None, unit_index=(0,15,15), nonlin
                                                     unit_index=unit_index, nonlinearity_type=nonlinearity_type)
     high_time, high_temporal, high_x, high_nl = filter_and_nonlinearity(model, contrasts[1], layer_name=layer_name,
                                                     unit_index=unit_index, nonlinearity_type=nonlinearity_type)
+    # Assure correct sign of decomp
+    mean_diff = ((high_temporal-low_temporal)**2).mean()
+    neg_mean_diff = ((high_temporal+low_temporal)**2).mean()
+    if neg_mean_diff < mean_diff:
+        low_temporal = -low_temporal
+
+    # Plot the decomp
     fig = plt.figure(figsize=(8, 2))
     plt.subplot(1, 2, 1)
     plt.plot(low_time, low_temporal, label='Contrast = %02d%%' %(0.35 * contrasts[0] * 100), color='g')
     plt.plot(high_time, high_temporal, label='Contrast = %02d%%' %(0.35 * contrasts[1] * 100), color='b')
     plt.xlabel('Delay (s)', fontsize=14)
     plt.ylabel('Filter ($s^{-1}$)', fontsize=14)
-    plt.text(0.2, -15, 'High', color='b', fontsize=18)
     plt.text(0.2, -30, 'Low', color='g', fontsize=18)
+    plt.text(0.2, -15, 'High', color='b', fontsize=18)
     
     # plt.legend()
     ax1 = plt.gca()
