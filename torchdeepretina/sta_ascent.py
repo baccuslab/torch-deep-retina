@@ -86,7 +86,7 @@ class STAAscent:
                 loss += sta_image.norm(2)*constraint
             loss.backward()
             optim.step()
-            print("Loss:", "{:.5f}".format(loss.item()), "--", i, "/", n_epochs, end='\r')
+            print("Loss:", "{:.5f}".format(loss.item()), "--", i/n_epochs, "% done", end='\r')
         sta_image = sta_image.detach().cpu().numpy().astype(np.float)
         self.remove_hook()
         return sta_image
