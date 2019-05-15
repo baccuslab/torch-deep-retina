@@ -54,6 +54,11 @@ class Physio:
             except:
                 pass
 
+    def __del__(self):
+        self.remove_refs()
+        self.remove_hooks()
+
+
 
 
 
