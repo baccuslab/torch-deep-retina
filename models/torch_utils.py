@@ -178,6 +178,8 @@ class DaleActivations(nn.Module):
     def extra_repr(self):
         return 'n_chan={}, neg_p={}, n_neg_chan={}'.format(self.n_chan, self.neg_p, self.n_neg_chan)
 
+
+
 class AbsBatchNorm1d(nn.Module):
     def __init__(self, n_units, bias=True, abs_bias=False, momentum=.1, eps=1e-5):
         super(AbsBatchNorm1d, self).__init__()
@@ -294,6 +296,46 @@ class WeightNorm(nn.Module):
     def forward(self, x):
         return self.torch_module(x)
 
+class BatchNorm1or2D(nn.Module):
+    def __init__(self, n_units2d, n_units1d, momentum=0.1, eps=1e-5):
+        super(BN1or2d, self).__init__()
+        self.n_units1d = n_units1d
+        self.n_units2d = n_units2d
+        self.momentum = momentum
+        self.eps = eps
+        self.running_mean2d = torch.zeros(n_units2d)
+        self.running_var2d = torch.ones(n_units2d)
+        self.running_mean1d = torch.zeros(n_units1d)
+        self.running_var1d = torch.ones(n_units1d)
+        self.scale1d = nn.Parameter(torch.ones(n_units1d).float())
+        self.shift1d = nn.Parameter(torch.zeros(n_units1d).float())
+        self.scale2d = nn.Parameter(torch.ones(n_units2d).float())
+        self.shift2d = nn.Paramater(torch.zeros(n_units2d).float())
+        self.twod = True
+
+    def forward(self, x):
+        if self.twod:
+            return nn.functional.batch_norm(x, self.running_mean2d, self.running_var2d, 
+                                            weight=self.scale2d, bias=self.shift2d, eps=self.eps, momentum=self.momentum, 
+                                            training=self.training)
+        else:
+            if torch.eq(self.scale1d.data,torch.ones(n_units1d).float()):
+                n_repeat = self.n_units1d/self.n_units2d
+                self.scale1d.data = torch.repeat_interleave(self.scale2d.data, n_repeat)
+                self.shift1d.data = torch.repeat_interleave(self.shift2d.data, n_repeat)
+                self.running_mean1d = torch.repeat_interleave(self.running_mean2d, n_repeat)
+                self.running_var1d = torch.repeat_interleave(self.running_var2d, n_repeat)
+            shape = x.shape
+            x = x.view(shape[0], -1)
+            x = nn.functional.batch_norm(x, self.running_mean1d, self.running_var1d, 
+                                            weight=self.scale1d, bias=self.shift1d, eps=self.eps, momentum=self.momentum, 
+                                            training=self.training)
+            return x.view(shape)
+
+
+
+
+
 class MeanOnlyBatchNorm1d(nn.Module):
     def __init__(self, n_units, momentum=.1, eps=1e-5):
         super(MeanOnlyBatchNorm1d, self).__init__()
@@ -380,6 +422,7 @@ class SkipConnectionBN(nn.Module):
     def forward(self, x):
         fx = self.sequential(x)
         return torch.cat([x,fx], dim=1)
+
 
 class DalesSkipConnection(nn.Module):
     """
