@@ -468,14 +468,14 @@ class DalesSkipConnection(nn.Module):
     Performs an absolute value conv2d and returns the output stacked with  
     the original input.
     """
-    def __init__(self, in_channels, out_channels, kernel_size, x_shape=(40,50,50), bias=True, noise=.05, neg_p=1):
+    def __init__(self, in_channels, out_channels, kernel_size, x_shape=(40,50,50), bias=True, noise=.05, neg_p=1, bnorm_momentum=0.1):
         super(DalesSkipConnection,self).__init__()
         padding = kernel_size//2
         modules = []
         modules.append(AbsConv2d(in_channels, out_channels, kernel_size, stride=1, padding=padding, bias=bias))
         diminish_weight_magnitude(modules[-1].parameters())
         modules.append(Flatten())
-        modules.append(nn.BatchNorm1d(out_channels*x_shape[-2]*x_shape[-1]))
+        modules.append(nn.BatchNorm1d(out_channels*x_shape[-2]*x_shape[-1], momentum=bnorm_momentum))
         modules.append(GaussianNoise(noise))
         modules.append(nn.ReLU())
         modules.append(Reshape((-1, out_channels,x_shape[-2],x_shape[-1])))
