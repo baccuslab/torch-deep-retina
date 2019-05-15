@@ -72,6 +72,7 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 			label = label.float()
 			label = label.to(DEVICE)
 			return x, label
+		alpha = hyps['alpha']
 		optimizer.zero_grad()
 		idxs = indices[batch_size*batch:batch_size*(batch+1)]
 		intraidxs = intraindices[intra_batchsize*batch:intra_batchsize*(batch+1)]
@@ -90,40 +91,44 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 		error_intra = loss_fn(intra_y, intra_label)
 
 		if gradnorm:
+			nonlocal loss_intra0
+			nonlocal loss_gang0
+			nonlocal loss_weights
 			if loss_intra0 is None:
 				loss_intra0 = error_intra
 				loss_gang0 = error_gang
 
-			loss = loss_weights[0]*error_gang + loss_weights[1]*error_intra
-			loss_gradients = []
-		error_gang.backward()
-		error_intra.backward()
+		weighted_loss_gang = loss_weights[0]*error_gang
+		weighted_loss_intra = loss_weights[1]*error_intra
+
+		weighted_loss_gang.backward(retain_graph=True)
+		weighted_loss_intra.backward(retain_graph=True)
 
 		if gradnorm:
-			loss_gradients.append(torch.norm(loss_weights[0]*torch.sum(model.sequential[11].weight), 1))
-			loss_gradients.append(torch.norm(loss_weights[1]*torch.sum(model.sequential[6].weight), 1))
-			total_loss_gradient = (loss_weights[0]*loss_gradients[0] + loss_weights[1]*loss_gradients[1])/T
+			loss_gradients = []
+			loss_gradients.append(torch.norm(model.sequential[11].weight.grad, 2).to(DEVICE))
+			loss_gradients.append(torch.norm(model.sequential[6].weight.grad, 2).to(DEVICE))
+			total_loss_gradient = ((loss_weights[0]*loss_gradients[0] + loss_weights[1]*loss_gradients[1])/T).to(DEVICE)
 			loss_ratios = []
-			loss_ratios.append(error_gang/loss_gang0)
-			loss_ratios.append(error_intra/loss_intra0)
-			total_loss_ratio = (loss_weights[0]*loss_ratios[0] + loss_weights[1]*loss_ratios[1])/T
+			loss_ratios.append(error_gang.detach()/loss_gang0.detach())
+			loss_ratios.append(error_intra.detach()/loss_intra0.detach())
+			total_loss_ratio = ((loss_weights[0]*loss_ratios[0] + loss_weights[1]*loss_ratios[1])/T).to(DEVICE)
 			inverse_rates = []
-			inverse_rates.append(loss_ratios[0]/total_loss_ratio)
-			inverse_rates.append(loss_ratios[1]/total_loss_ratio)
+			inverse_rates.append((loss_ratios[0]/total_loss_ratio).to(DEVICE))
+			inverse_rates.append((loss_ratios[1]/total_loss_ratio).to(DEVICE))
 
 			L_grad = torch.zeros(1, requires_grad = True)
-			for i in range T:
-				constant = total_loss_gradient*np.power(inverse_rates[i], alpha)
-				constant.requires_grad = False
-				L_grad += torch.norm(loss_gradients[i] - constant)
-
-			L_grad.backward()
+			L_grad = L_grad.to(DEVICE)
+			for i in range(T):
+				constant = total_loss_gradient*torch.pow(inverse_rates[i], alpha).cpu().detach()
+				L_grad = L_grad +  torch.norm(loss_gradients[i] - constant, 1)
+			L_grad.backward(retain_graph=True)
 
 		loss = error_intra + error_gang
 		optimizer.step()
 		if gradnorm:
 			normalize_coeff = T/ torch.sum(loss_weights)
-        	loss_weights = loss_weights * normalize_coeff
+			loss_weights = loss_weights * normalize_coeff
 		print("Loss:", loss.item()," - error_gang:", error_gang.item(), "- error_intra:", error_intra.item(), " - l1:", activity_l1.item(), " | ", int(round(batch/num_batches, 2)*100), "% done", end='               \r')
 		if math.isnan(epoch_loss) or math.isinf(epoch_loss):
 			return None
@@ -235,8 +240,10 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 
 	# test data
 	test_x = torch.from_numpy(test_data.X)
+
 	T = 2
 	loss_weights = torch.ones(T, requires_grad=True)
+	loss_weights = loss_weights.to(DEVICE)
 	loss_intra0 = None
 	loss_gang0 = None
 
@@ -268,7 +275,7 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 
 		#validate model
 		ret = validate_model(model, scheduler)
-		if ret == -1: break
+		if ret == -1: return
 
 
 	if ret != -1:
@@ -349,12 +356,12 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
 	return
 
 def set_model_type(model_str):
-	if model_str == "BNCNN":
-		return BNCNN
-	if model_str == "AbsBNBNCNN":
-		return AbsBNBNCNN
-	print("Invalid model type!")
-	return None
+    if model_str not in ["BNCNN", "BNCNN2D", "CNN", "SSCNN", "DalesBNCNN", "DalesSSCNN", "DalesHybrid", "PracticalBNCNN", 
+                            "StackedBNCNN", "NormedBNCNN", "SkipBNCNN", "DalesSkipBNCNN", "SkipBNBNCNN", "Gauss1dBNCNN", 
+                            "AbsBNBNCNN", "BNCNN1or2D"]:
+        print("Invalid model type!")
+        return None
+    return eval(model_str)
 
 def load_json(file_name):        
 
