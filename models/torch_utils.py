@@ -298,19 +298,19 @@ class WeightNorm(nn.Module):
 
 class BatchNorm1or2D(nn.Module):
     def __init__(self, n_units2d, n_units1d, momentum=0.1, eps=1e-5):
-        super(BN1or2d, self).__init__()
+        super(BatchNorm1or2D, self).__init__()
         self.n_units1d = n_units1d
         self.n_units2d = n_units2d
         self.momentum = momentum
         self.eps = eps
-        self.running_mean2d = torch.zeros(n_units2d)
-        self.running_var2d = torch.ones(n_units2d)
-        self.running_mean1d = torch.zeros(n_units1d)
-        self.running_var1d = torch.ones(n_units1d)
+        self.running_mean2d = nn.Parameter(torch.zeros(n_units2d), requires_grad = False)
+        self.running_var2d = nn.Parameter(torch.ones(n_units2d), requires_grad = False)
+        self.running_mean1d = nn.Parameter(torch.zeros(n_units1d), requires_grad = False)
+        self.running_var1d = nn.Parameter(torch.ones(n_units1d), requires_grad = False)
         self.scale1d = nn.Parameter(torch.ones(n_units1d).float())
         self.shift1d = nn.Parameter(torch.zeros(n_units1d).float())
         self.scale2d = nn.Parameter(torch.ones(n_units2d).float())
-        self.shift2d = nn.Paramater(torch.zeros(n_units2d).float())
+        self.shift2d = nn.Parameter(torch.zeros(n_units2d).float())
         self.twod = True
 
     def forward(self, x):

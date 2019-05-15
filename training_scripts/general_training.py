@@ -218,7 +218,7 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
                                             hyps['stim_type'],'train',40,0))
         norm_stats = [train_data.stats['mean'], train_data.stats['std']] 
         test_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],hyps['stim_type'],
-                                                        'test',40,0, norm_stats=norm_stats))
+                                                        'dev',40,0, norm_stats=norm_stats))
         test_data.X = test_data.X[:500]
         test_data.y = test_data.y[:500]
         data = [train_data, test_data]
