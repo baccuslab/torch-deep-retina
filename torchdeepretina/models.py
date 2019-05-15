@@ -599,13 +599,13 @@ class AbsBNStackedBNCNN(nn.Module):
         if linear_bias is None:
             linear_bias = bias
         module_list = []
-        module_list.append(StackedConv2d(40,chans[0],kernel_size=15, abs_bnorm=True))
+        module_list.append(StackedConv2d(40,chans[0],kernel_size=15, abs_bnorm=True, bias=bias))
         module_list.append(Flatten())
         module_list.append(AbsBatchNorm1d(chans[0]*36*36, eps=1e-3, momentum=.99))
         module_list.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         module_list.append(nn.ReLU())
         module_list.append(Reshape((-1,chans[0],36,36)))
-        module_list.append(StackedConv2d(chans[0],chans[1],kernel_size=11, abs_bnorm=True))
+        module_list.append(StackedConv2d(chans[0],chans[1],kernel_size=11, abs_bnorm=True, bias=bias))
         module_list.append(Flatten())
         module_list.append(AbsBatchNorm1d(chans[1]*26*26, eps=1e-3, momentum=.99))
         module_list.append(GaussianNoise(std=noise, adapt=adapt_gauss))
