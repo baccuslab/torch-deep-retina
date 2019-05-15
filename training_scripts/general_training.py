@@ -237,38 +237,11 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
     return
 
 def set_model_type(model_str):
-    if model_str == "BNCNN":
-        return BNCNN
-    if model_str == "Gauss1dBNCNN":
-        return Gauss1dBNCNN
-    if model_str == "AbsBNBNCNN":
-        return AbsBNBNCNN
-    if model_str == "SSCNN":
-        return SSCNN
-    if model_str == "CNN":
-        return CNN
-    if model_str == "NormedBNCNN":
-        return NormedBNCNN
-    if model_str == "DalesBNCNN":
-        return DalesBNCNN
-    if model_str == "DalesSSCNN":
-        return DalesSSCNN
-    if model_str == "DalesHybrid":
-        return DalesHybrid
-    if model_str == "PracticalBNCNN":
-        return PracticalBNCNN
-    if model_str == "StackedBNCNN":
-        return StackedBNCNN
-    if model_str == "SkipBNCNN":
-        return SkipBNCNN
-    if model_str == "DalesSkipBNCNN":
-        return DalesSkipBNCNN
-    if model_str == "SkipBNBNCNN":
-        return SkipBNBNCNN
-    if model_str == "BNCNN2D":
-        return BNCNN2D
-    print("Invalid model type!")
-    return None
+    if model_str not in ["BNCNN", "BNCNN2D", "CNN", "SSCNN", "DalesBNCNN", "DalesSSCNN", "DalesHybrid", "PracticalBNCNN", 
+                            "StackedBNCNN", "NormedBNCNN", "SkipBNCNN", "DalesSkipBNCNN", "SkipBNBNCNN", "Gauss1dBNCNN"]:
+        print("Invalid model type!")
+        return None
+    return eval(model_str)
 
 def load_data(dataset, cells):
     return train_data, test_data
