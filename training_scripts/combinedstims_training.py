@@ -200,7 +200,7 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
         model = hyps['model_type'](**model_hyps)
 
         # Train model and collect results
-        results = train(hyps, model, train_datas)
+        results = train(hyps, model, train_datas, model_hyps)
         with open(hyps['results_file'],'a') as f:
             if hyps['exp_num'] == hyps['starting_exp_num']:
                 f.write(str(model)+'\n\n')

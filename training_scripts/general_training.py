@@ -210,17 +210,9 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
         test_data.X = test_data.X[:500]
         test_data.y = test_data.y[:500]
         data = [train_data, test_data]
-        model_hyps = {"n_units":test_data.y.shape[-1],"noise":hyps['noise'],"bias":hyps['bias']}
-        if "chans" in hyps:
-            model_hyps['chans'] = hyps['chans']
-        if "adapt_gauss" in hyps:
-            model_hyps['adapt_gauss'] = hyps['adapt_gauss']
-        if "bnorm_momentum" in hyps:
-            model_hyps['bnorm_momentum'] = hyps['bnorm_momentum']
-        if "linear_bias" in hyps:
-            model_hyps['linear_bias'] = hyps['linear_bias']
-        if "shift" in hyps:
-            model_hyps['shift'] = hyps['shift']
+        model_hyps = {"n_units":test_data.y.shape[-1]}
+        for key in hyps.keys():
+            model_hyps[key] = hyps[key]
         fn_args = set(hyps['model_type'].__init__.__code__.co_varnames)
         keys = list(model_hyps.keys())
         for k in keys:
