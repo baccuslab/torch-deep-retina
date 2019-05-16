@@ -296,7 +296,7 @@ class AbsConv2d(nn.Module):
                                                 self.conv.dilation, self.conv.groups)
     def extra_repr(self):
         try:
-            return 'abs_bias={}'.format(self.abs_bias)
+            return 'bias={}, abs_bias={}'.format(self.bias, self.abs_bias)
         except:
             return "abs_bias={}".format(True)
 
@@ -304,7 +304,7 @@ class AbsLinear(nn.Module):
     def __init__(self, in_features, out_features, bias=True, abs_bias=False):
         super(AbsLinear, self).__init__()
         self.bias = bias
-        self.abs_bias = bias
+        self.abs_bias = abs_bias
         self.linear = nn.Linear(in_features, out_features, bias=bias)
 
     def forward(self, x):
@@ -325,17 +325,17 @@ class StackedConv2d(nn.Module):
     '''
     Builds argued kernel out of multiple 3x3 kernels.
     '''
-    def __init__(self, in_channels, out_channels, kernel_size, bias=True, abs_bnorm=False):
+    def __init__(self, in_channels, out_channels, kernel_size, bias=True, abs_bnorm=False, conv_bias=False):
         super(StackedConv2d, self).__init__()
         self.bias = bias
         n_filters = int((kernel_size-1)/2)
         if n_filters > 1:
-            convs = [nn.Conv2d(in_channels, out_channels, 3, bias=False), nn.BatchNorm2d(out_channels), nn.ReLU()]
+            convs = [nn.Conv2d(in_channels, out_channels, 3, bias=conv_bias), nn.BatchNorm2d(out_channels), nn.ReLU()]
             for i in range(n_filters-1):
                 if i == n_filters-2:
                     convs.append(nn.Conv2d(out_channels, out_channels, 3, bias=bias))
                 else:
-                    convs.append(nn.Conv2d(out_channels, out_channels, 3, bias=False))
+                    convs.append(nn.Conv2d(out_channels, out_channels, 3, bias=conv_bias))
                 convs.append(nn.ReLU())
                 if abs_bnorm:
                     convs.append(AbsBatchNorm2d(out_channels))
