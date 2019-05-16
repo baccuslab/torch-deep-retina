@@ -142,15 +142,16 @@ class CNN(nn.Module):
         return self.sequential(x)
 
 class DalesBNCNN(nn.Module):
-    def __init__(self, n_units=5, bias=True, linear_bias=None, noise=0.1, adapt_gauss=False, chans=[8,8], neg_p=0.5, bnorm_momentum=0.1):
+    def __init__(self, n_units=5, bias=True, linear_bias=None, noise=0.1, adapt_gauss=False, chans=[8,8], neg_p=0.5, bnorm_momentum=0.1, abs_bias=True):
         super(DalesBNCNN,self).__init__()
         self.name = 'DaleNet'
         self.chans = chans
         self.adapt_gauss = adapt_gauss
+        self.abs_bias = abs_bias
         if linear_bias is None:
             linear_bias = bias
         modules = []
-        modules.append(AbsConv2d(40,chans[0],kernel_size=15, bias=bias, abs_bias=False))
+        modules.append(AbsConv2d(40,chans[0],kernel_size=15, bias=bias, abs_bias=abs_bias))
         self.diminish_weight_magnitude(modules[-1].parameters())
         modules.append(Flatten())
         modules.append(nn.BatchNorm1d(chans[0]*36*36, eps=1e-3, momentum=bnorm_momentum))
@@ -158,7 +159,7 @@ class DalesBNCNN(nn.Module):
         modules.append(nn.ReLU())
         modules.append(Reshape((-1,chans[0],36,36)))
         modules.append(DaleActivations(chans[0], neg_p))
-        modules.append(AbsConv2d(chans[0],chans[1],kernel_size=11, bias=bias, abs_bias=False))
+        modules.append(AbsConv2d(chans[0],chans[1],kernel_size=11, bias=bias, abs_bias=abs_bias))
         self.diminish_weight_magnitude(modules[-1].parameters())
         modules.append(Flatten())
         modules.append(nn.BatchNorm1d(chans[1]*26*26, eps=1e-3, momentum=bnorm_momentum))
@@ -167,7 +168,7 @@ class DalesBNCNN(nn.Module):
         modules.append(Reshape((-1,chans[1],26,26)))
         modules.append(DaleActivations(chans[1], neg_p))
         modules.append(Flatten())
-        modules.append(AbsLinear(chans[1]*26*26,n_units, bias=linear_bias, abs_bias=False))
+        modules.append(AbsLinear(chans[1]*26*26,n_units, bias=linear_bias, abs_bias=abs_bias))
         self.diminish_weight_magnitude(modules[-1].parameters())
         modules.append(nn.BatchNorm1d(n_units, momentum=bnorm_momentum))
         modules.append(nn.Softplus())
