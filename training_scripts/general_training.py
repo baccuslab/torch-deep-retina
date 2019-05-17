@@ -15,6 +15,7 @@ from time import sleep
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.nn import PoissonNLLLoss, MSELoss
 import h5py as h5
 import os.path as path
 import sys
@@ -58,7 +59,7 @@ def train(hyps, model, data, model_hyps):
     print(model)
     model = model.to(DEVICE)
 
-    loss_fn = torch.nn.PoissonNLLLoss()
+    loss_fn = hyps['lossfxn']()
     optimizer = torch.optim.Adam(model.parameters(), lr = LR, weight_decay = LAMBDA2)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.2*LR)
 
@@ -210,6 +211,8 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
         test_data.X = test_data.X[:500]
         test_data.y = test_data.y[:500]
         data = [train_data, test_data]
+
+        # Make model
         model_hyps = {"n_units":test_data.y.shape[-1]}
         for key in hyps.keys():
             model_hyps[key] = hyps[key]
@@ -219,6 +222,14 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
             if k not in fn_args:
                 del model_hyps[k]
         model = hyps['model_type'](**model_hyps)
+
+        # Make lossfxn
+        if 'lossfxn' in hyps:
+            hyps['lossfxn'] = globals()[hyps['lossfxn']]
+        else:
+            hyps['lossfxn'] = globals()["PoissonNLLLoss"]
+        
+        # Train and collect results
         results = train(hyps, model, data, model_hyps)
         with open(hyps['results_file'],'a') as f:
             if hyps['exp_num'] == hyps['starting_exp_num']:
@@ -259,8 +270,8 @@ class DataContainer():
         self.stats = data.stats
 
 if __name__ == "__main__":
-    hyperparams_file = "hyperparams.json"
-    hyperranges_file = 'hyperranges.json'
+    hyperparams_file = "hyps/hyperparams.json"
+    hyperranges_file = 'hyps/hyperranges.json'
     if len(sys.argv) > 1:
         for i,arg in enumerate(sys.argv[1:]):
             temp = sys.argv[1].split("=")
