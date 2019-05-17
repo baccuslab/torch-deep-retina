@@ -80,12 +80,12 @@ def make_data_frame(model_stats, headers):
             data[k].append(None)
     return pd.DataFrame(data)
 
-def load_model(folder, pth):
+def load_model(folder, data):
     try:
         hyps=get_hyps(folder)
         hyps['model_type'] = hyps['model_type'].split(".")[-1].split("\'")[0].strip()
         hyps['model_type'] = globals()[hyps['model_type']]
-        bn_cnn = hyps['model_type'](**temp['model_hyps'])
+        bn_cnn = hyps['model_type'](**data['model_hyps'])
     except Exception as e:
         model_hyps = {"n_units":5,"noise":float(hyps['noise'])}
         if "bias" in hyps:
@@ -111,3 +111,35 @@ def get_hyps(folder):
                 if len(splt) > 1:
                     hyps[splt[0]] = splt[1].strip()
     return hyps
+
+def read_model(folder):
+    i = 0
+    while True:
+        file = "../training_scripts/"+folder.strip()+"/test_epoch_{0}.pth".format(i)
+        try:
+            with open(file, "rb") as fd:
+                data = torch.load(fd)
+        except Exception as e:
+            break
+        i += 1
+    try:
+        model = data['model']
+    except Exception as e:
+        model = load_model(folder, data)
+    try:
+        model.load_state_dict(data['model_state_dict'])
+    except RuntimeError as e:
+        keys = list(data['model_state_dict'].keys())
+        for key in keys:
+            if "cuda_param" in key:
+                new_key = key.replace("cuda_param", "sigma")
+                data['model_state_dict'][new_key] = data['model_state_dict'][key]
+                del data['model_state_dict'][key]
+        model.load_state_dict(data['model_state_dict'])
+    try:
+        chans = data['model_hyps']['chans']
+    except:
+        chans=[8,8]
+    model = model.to(DEVICE)
+    model.eval()
+    return model
