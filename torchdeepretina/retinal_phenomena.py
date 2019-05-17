@@ -587,7 +587,7 @@ def filter_and_nonlinearity(model, contrast, layer_name='sequential.0',
                                   unit_index=(0,15,15), nonlinearity_type='bin'):
     print("Computing STA")
     sta = compute_sta(model, contrast, layer_name, unit_index)
-    sta = np.flip(sta, axis=0)
+    #sta = np.flip(sta, axis=0)
 
     print("Normalizing filter and collecting response")
     stimulus = white(4040, contrast=contrast)
@@ -646,7 +646,7 @@ def contrast_fig(model, contrasts, layer_name=None, unit_index=(0,15,15), nonlin
     mean_diff = ((high_temporal-low_temporal)**2).mean()
     neg_mean_diff = ((high_temporal+low_temporal)**2).mean()
     if neg_mean_diff < mean_diff:
-        low_temporal = -low_temporal
+        high_temporal = -high_temporal
 
     # Plot the decomp
     fig = plt.figure(figsize=(8, 2))
