@@ -213,15 +213,16 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
         data = [train_data, test_data]
 
         # Make model
+        model_class = globals()[hyps['model_type']]
         model_hyps = {"n_units":test_data.y.shape[-1]}
         for key in hyps.keys():
             model_hyps[key] = hyps[key]
-        fn_args = set(hyps['model_type'].__init__.__code__.co_varnames)
+        fn_args = set(model_class.__init__.__code__.co_varnames)
         keys = list(model_hyps.keys())
         for k in keys:
             if k not in fn_args:
                 del model_hyps[k]
-        model = hyps['model_type'](**model_hyps)
+        model = model_class(**model_hyps)
 
         # Make lossfxn
         if 'lossfxn' in hyps:
@@ -298,7 +299,6 @@ if __name__ == "__main__":
                 hyps['exp_name']+" (num "+ str(hyps['starting_exp_num'])+"): ")
     time.sleep(sleep_time)
     print("Model type:", hyps['model_type'])
-    hyps['model_type'] = globals()[hyps['model_type']]
     keys = list(hyp_ranges.keys())
     print("Searching over:", keys)
 
