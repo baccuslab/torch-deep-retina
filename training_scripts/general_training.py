@@ -224,8 +224,8 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
         model = hyps['model_type'](**model_hyps)
 
         # Make lossfxn
-        if 'lossfxn' in hyps:
-            hyps['lossfxn'] = globals()[hyps['lossfxn']]
+        if 'lossfxn_name' in hyps:
+            hyps['lossfxn'] = globals()[hyps['lossfxn_name']]
         else:
             hyps['lossfxn'] = globals()["PoissonNLLLoss"]
         
@@ -288,19 +288,28 @@ if __name__ == "__main__":
                 else:
                     print("Too many command line args")
                     assert False
+    print()
     print("Using hyperparams file:", hyperparams_file)
     print("Using hyperranges file:", hyperranges_file)
 
     hyps = load_json(hyperparams_file)
     hyp_ranges = load_json(hyperranges_file)
+    print("Model type:", hyps['model_type'])
+    hyps['model_type'] = globals()[hyps['model_type']]
+    hps = ""
+    for k,v in hyps.items():
+        if k not in hyp_ranges:
+            hps += "{}: {}\n".format(k,v)
+    print("Hyperparameters:")
+    print(hps)
+    print("\nSearching over:")
+    print("\n".join(["{}: {}".format(k,v) for k,v in hyp_ranges.items()]))
+
     sleep_time = 8
     print("You have "+str(sleep_time)+" seconds to cancel experiment name "+
                 hyps['exp_name']+" (num "+ str(hyps['starting_exp_num'])+"): ")
     time.sleep(sleep_time)
-    print("Model type:", hyps['model_type'])
-    hyps['model_type'] = globals()[hyps['model_type']]
-    keys = list(hyp_ranges.keys())
-    print("Searching over:", keys)
 
+    keys = list(hyp_ranges.keys())
     hyper_search(hyps, hyp_ranges, keys, train, 0)
 
