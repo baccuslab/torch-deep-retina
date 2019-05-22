@@ -59,7 +59,7 @@ def train(hyps, model, data, model_hyps):
     print(model)
     model = model.to(DEVICE)
 
-    loss_fn = hyps['lossfxn']()
+    loss_fn = globals()[hyps['lossfxn']]()
     optimizer = torch.optim.Adam(model.parameters(), lr = LR, weight_decay = LAMBDA2)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.2*LR)
 
@@ -225,10 +225,8 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
         model = model_class(**model_hyps)
 
         # Make lossfxn
-        if 'lossfxn' in hyps:
-            hyps['lossfxn'] = globals()[hyps['lossfxn']]
-        else:
-            hyps['lossfxn'] = globals()["PoissonNLLLoss"]
+        if 'lossfxn' not in hyps:
+            hyps['lossfxn'] = "PoissonNLLLoss"
         
         # Train and collect results
         results = train(hyps, model, data, model_hyps)
@@ -289,18 +287,26 @@ if __name__ == "__main__":
                 else:
                     print("Too many command line args")
                     assert False
+    print()
     print("Using hyperparams file:", hyperparams_file)
     print("Using hyperranges file:", hyperranges_file)
 
     hyps = load_json(hyperparams_file)
     hyp_ranges = load_json(hyperranges_file)
+    hyps_str = ""
+    for k,v in hyps.items():
+        if k not in hyp_ranges:
+            hyps_str += "{}: {}\n".format(k,v)
+    print("Hyperparameters:")
+    print(hyps_str)
+    print("\nSearching over:")
+    print("\n".join(["{}: {}".format(k,v) for k,v in hyp_ranges.items()]))
+
     sleep_time = 8
     print("You have "+str(sleep_time)+" seconds to cancel experiment name "+
                 hyps['exp_name']+" (num "+ str(hyps['starting_exp_num'])+"): ")
     time.sleep(sleep_time)
-    print("Model type:", hyps['model_type'])
-    keys = list(hyp_ranges.keys())
-    print("Searching over:", keys)
 
+    keys = list(hyp_ranges.keys())
     hyper_search(hyps, hyp_ranges, keys, train, 0)
 

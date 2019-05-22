@@ -4,12 +4,20 @@ import numpy as np
 
 DEVICE = torch.device("cuda:0")
 
-
 def diminish_weight_magnitude(params):
     for param in params:
         divisor = float(np.prod(param.data.shape))/2
         if param.data is not None and divisor >= 0:
             param.data = param.data/divisor
+
+class ScaledSoftplus(nn.Module):
+    def __init__(self):
+        super(ScaledSoftplus, self).__init__()
+        self.scale = nn.Parameter(torch.ones(1))
+        self.Softplus = nn.Softplus()
+
+    def forward(self, x):
+        return self.scale*self.Softplus(x)
 
 class GaussianNoise(nn.Module):
     def __init__(self, std=0.1, trainable=False, adapt=False, momentum=.95):
@@ -40,7 +48,7 @@ class GaussianNoise(nn.Module):
         self.momentum = momentum
     
     def forward(self, x):
-        if not self.training: # No noise during evaluation
+        if not self.training or self.std == 0: # No noise during evaluation
             return x
         if self.adapt:
             xstd = x.std().item()
