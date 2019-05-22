@@ -37,6 +37,39 @@ class BNCNN(nn.Module):
         except:
             pass
 
+class ScaledSoftplusBNCNN(nn.Module):
+    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=.01):
+        super(ScaledSoftplusBNCNN,self).__init__()
+        self.name = 'McNiruNet'
+        self.chans = chans
+        if linear_bias is None:
+            linear_bias = bias
+        modules = []
+        modules.append(nn.Conv2d(40,chans[0],kernel_size=15, bias=bias))
+        modules.append(Flatten())
+        modules.append(nn.BatchNorm1d(chans[0]*36*36, eps=1e-3, momentum=bnorm_momentum))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
+        modules.append(nn.ReLU())
+        modules.append(Reshape((-1,chans[0],36,36)))
+        modules.append(nn.Conv2d(chans[0],chans[1],kernel_size=11, bias=bias))
+        modules.append(Flatten())
+        modules.append(nn.BatchNorm1d(chans[1]*26*26, eps=1e-3, momentum=bnorm_momentum))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
+        modules.append(nn.ReLU())
+        modules.append(nn.Linear(chans[1]*26*26,n_units, bias=linear_bias))
+        modules.append(nn.BatchNorm1d(n_units))
+        modules.append(ScaledSoftplus())
+        self.sequential = nn.Sequential(*modules)
+        
+    def forward(self, x):
+        return self.sequential(x)
+
+    def extra_repr(self):
+        try:
+            return 'adapt_gauss={}'.format(self.adapt_gauss)
+        except:
+            pass
+
 class AbsBNBNCNN(nn.Module):
     def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1):
         super(AbsBNBNCNN,self).__init__()
