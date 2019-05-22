@@ -2,6 +2,13 @@ import numpy as np
 import copy
 import torch
 
+def freeze_weights(model, unfreeze=False):
+    for p in model.parameters():
+        try:
+            p.requires_grad = unfreeze
+        except:
+            pass
+
 def parallel_shuffle(arrays, set_seed=-1):
     """
     Parameters:

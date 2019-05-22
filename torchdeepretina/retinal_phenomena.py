@@ -585,16 +585,16 @@ def normalize_filter(sta, stimulus, target_sd):
 
 def filter_and_nonlinearity(model, contrast, layer_name='sequential.0',
                                   unit_index=(0,15,15), nonlinearity_type='bin'):
-    print("Computing STA")
+    # Computing STA
     sta = compute_sta(model, contrast, layer_name, unit_index)
-    #sta = np.flip(sta, axis=0)
+    sta = np.flip(sta, axis=0)
 
     print("Normalizing filter and collecting response")
     stimulus = white(4040, contrast=contrast)
     normed_sta, theta, error = normalize_filter(sta, stimulus, 0.35 * contrast)
     filtered_stim = ft.linear_response(normed_sta, stimulus)
 
-    print("Inspecting model response")
+    # Inspecting model response
     stim_tensor = torch.FloatTensor(stim.concat(stimulus))
     model_response = bc.batch_compute_model_response(stim_tensor, model, 500, insp_keys={layer_name})
     if type(unit_index) == type(int()):
@@ -604,16 +604,15 @@ def filter_and_nonlinearity(model, contrast, layer_name='sequential.0',
     else:
         response = model_response[layer_name][:,unit_index[0], unit_index[1], unit_index[2]]
 
-    print("Fitting nonlinearity")
+    # Fitting nonlinearity
     if nonlinearity_type == 'bin':
         nonlinearity = Binterp(80)
     else:
         nonlinearity = Sigmoid()
     nonlinearity.fit(filtered_stim[40:], response)
 
-    print("Summarizing model for plotting")
     time = np.linspace(0.4, 0, 40)
-    _, temporal = ft.decompose(normed_sta)
+    _, temporal = ft.decompose(np.flip(normed_sta, axis=0))
     temporal /= 0.01  # Divide by dt for y-axis to be s^{-1}
 
     x = np.linspace(np.min(filtered_stim), np.max(filtered_stim), 40)
