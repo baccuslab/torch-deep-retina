@@ -59,7 +59,10 @@ def train(hyps, model, data, model_hyps):
     print(model)
     model = model.to(DEVICE)
 
-    loss_fn = globals()[hyps['lossfxn']]()
+    if hyps['lossfxn'] == "PoissonNLLLoss" and 'log_poisson' in hyps:
+        loss_fn = globals()[hyps['lossfxn']](log_input=hyps['log_poisson'])
+    else:
+        loss_fn = globals()[hyps['lossfxn']]()
     optimizer = torch.optim.Adam(model.parameters(), lr = LR, weight_decay = LAMBDA2)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.2*LR)
 
