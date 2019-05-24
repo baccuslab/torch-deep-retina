@@ -308,6 +308,24 @@ class AbsConv2d(nn.Module):
         except:
             return "abs_bias={}".format(True)
 
+class DecoupledLinear(nn.Module):
+    def __init__(self, in_features, out_features, bias=True, eps=1e-5):
+        super(DecoupledLinear, self).__init__()
+        self.eps = eps
+        linear = nn.Linear(in_features, out_features, bias=bias)
+        self.weight = nn.Parameter(linear.weight.transpose(1,0))
+        self.bias = nn.Parameter(linear.bias)
+        self.scale = nn.Parameter(torch.ones(out_features))
+
+    def forward(self, x):
+        norms = torch.norm(self.weight, 2, dim=0)
+        normed_weight = (self.weight / (norms + self.eps)).transpose(1,0)
+        fx = nn.functional.linear(x, normed_weight, self.bias)
+        return fx*self.scale
+    
+    def extra_repr(self):
+        return "bias={}".format(self.bias is not None)
+
 class AbsLinear(nn.Module):
     def __init__(self, in_features, out_features, bias=True, abs_bias=False):
         super(AbsLinear, self).__init__()
