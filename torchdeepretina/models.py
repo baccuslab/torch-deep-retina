@@ -28,6 +28,8 @@ class BNCNN(nn.Module):
         modules.append(nn.BatchNorm1d(n_units))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
@@ -62,6 +64,8 @@ class LinearDecoupBNCNN(nn.Module):
         modules.append(DecoupledLinear(chans[1]*26*26, n_units, bias=linear_bias))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
@@ -95,6 +99,8 @@ class NoFinalBNBNCNN(nn.Module):
         modules.append(nn.Linear(chans[1]*26*26,n_units, bias=linear_bias))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
@@ -193,6 +199,8 @@ class AbsBNBNCNN(nn.Module):
         modules.append(AbsBatchNorm1d(n_units, momentum=bnorm_momentum))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
@@ -220,6 +228,8 @@ class AbsSSSSCNN(nn.Module):
         modules.append(AbsScaleShift(n_units))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
@@ -249,6 +259,8 @@ class BNCNN2D(nn.Module):
         modules.append(nn.BatchNorm1d(n_units, momentum=bnorm_momentum))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
@@ -273,6 +285,8 @@ class CNN(nn.Module):
         modules.append(nn.Linear(chans[1]*26*26,n_units, bias=linear_bias))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
@@ -310,6 +324,8 @@ class DalesBNCNN(nn.Module):
         modules.append(nn.BatchNorm1d(n_units, momentum=bnorm_momentum))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
@@ -352,6 +368,8 @@ class AbsBNDalesBNCNN(nn.Module):
         modules.append(AbsBatchNorm1d(n_units, momentum=bnorm_momentum))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
@@ -397,6 +415,8 @@ class DalesSkipBNCNN(nn.Module):
         modules.append(nn.BatchNorm1d(n_units, momentum=bnorm_momentum))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
@@ -429,6 +449,8 @@ class DalesDoubleSkipBNCNN(nn.Module):
         modules.append(nn.BatchNorm1d(n_units, momentum=bnorm_momentum))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
@@ -462,6 +484,8 @@ class DalesSSCNN(nn.Module):
         modules.append(ScaleShift(n_units, scale=scale, shift=shift))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
@@ -496,6 +520,8 @@ class Gauss1dBNCNN(nn.Module):
         modules.append(nn.BatchNorm1d(n_units, momentum=bnorm_momentum))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
@@ -531,6 +557,8 @@ class ParallelDataBNCNN(nn.Module):
             modules.append(nn.BatchNorm1d(n_units, momentum=bnorm_momentum))
             if softplus:
                 modules.append(nn.Softplus())
+            else:
+                modules.append(Exponential(train_off=True))
             self.output_layers.append(nn.Sequential(*modules))
         
     def forward(self, x, output_idx):
@@ -579,6 +607,8 @@ class ParallelDataStackedBNCNN(nn.Module):
             modules.append(nn.BatchNorm1d(n_units, momentum=bnorm_momentum))
             if softplus:
                 modules.append(nn.Softplus())
+            else:
+                modules.append(Exponential(train_off=True))
             self.output_layers.append(nn.Sequential(*modules))
         
     def forward(self, x, output_idx):
@@ -619,6 +649,8 @@ class AbsBNPracticalBNCNN(nn.Module):
         modules.append(nn.BatchNorm1d(n_units, momentum=bnorm_momentum))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
@@ -646,6 +678,8 @@ class PracticalMeanBNCNN(nn.Module):
         modules.append(nn.BatchNorm1d(n_units, momentum=bnorm_momentum))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
@@ -673,6 +707,8 @@ class PracticalBNCNN(nn.Module):
         modules.append(nn.BatchNorm1d(n_units, momentum=bnorm_momentum))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
@@ -701,6 +737,8 @@ class PracticalBNCNN2D(nn.Module):
         modules.append(nn.BatchNorm1d(n_units, momentum=bnorm_momentum))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
@@ -731,6 +769,8 @@ class SkipBNBNCNN(nn.Module):
         modules.append(nn.BatchNorm1d(n_units))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
@@ -758,6 +798,8 @@ class SSCNN(nn.Module):
         modules.append(ScaleShift(n_units))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
@@ -786,6 +828,8 @@ class StackedBNCNN(nn.Module):
         module_list.append(nn.BatchNorm1d(n_units, eps=1e-3, momentum=bnorm_momentum))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*module_list)
 
     def forward(self, x):
@@ -814,6 +858,8 @@ class AbsBNStackedBNCNN(nn.Module):
         module_list.append(AbsBatchNorm1d(n_units, eps=1e-3, momentum=bnorm_momentum))
         if softplus:
             modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*module_list)
 
     def forward(self, x):

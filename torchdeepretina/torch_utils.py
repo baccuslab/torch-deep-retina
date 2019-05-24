@@ -19,6 +19,19 @@ class ScaledSoftplus(nn.Module):
     def forward(self, x):
         return self.scale*self.Softplus(x)
 
+class Exponential(nn.Module):
+    def __init__(self, train_off=True):
+        super(Exponential, self).__init__()
+        self.train_off = train_off # When train_off is true, exponential is not used during training
+    
+    def forward(self, x):
+        if self.training and self.train_off: # Only used in eval mode when train_off is true
+            return x
+        return torch.exp(x)
+
+    def extra_repr(self):
+        return 'train_off={}'.format(self.train_off)
+
 class GaussianNoise(nn.Module):
     def __init__(self, std=0.1, trainable=False, adapt=False, momentum=.95):
         """
