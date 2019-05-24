@@ -115,7 +115,7 @@ def get_hyps(folder):
 def read_model(folder):
     i = 0
     while True:
-        file = "../training_scripts/"+folder.strip()+"/test_epoch_{0}.pth".format(i)
+        file = os.path.join(folder.strip(),"test_epoch_{0}.pth".format(i))
         try:
             with open(file, "rb") as fd:
                 data = torch.load(fd)
@@ -136,10 +136,5 @@ def read_model(folder):
                 data['model_state_dict'][new_key] = data['model_state_dict'][key]
                 del data['model_state_dict'][key]
         model.load_state_dict(data['model_state_dict'])
-    try:
-        chans = data['model_hyps']['chans']
-    except:
-        chans=[8,8]
     model = model.to(DEVICE)
-    model.eval()
     return model
