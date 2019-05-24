@@ -19,40 +19,162 @@ import numpy as np
 from skimage.filters import gaussian
 from skimage.transform import downscale_local_mean
 import skimage.draw
+import cv2
 
 from deepretina.experiments import rolling_window
 
 __all__ = ['concat', 'white', 'contrast_steps', 'flash', 'spatialize', 'bar',
            'driftingbar', 'cmask', 'paired_flashes']
 
-def stripes(img_shape, bar_size, horizontal=False, white_black=(1,0)):
+def extend_to_edge(img_shape, pt1, pt2):
     """
-    Returns a single frame of white, black alternating stripes.
+    Finds the points that cross at the x=0 and x=img_shape[0] along the line
+    defined by the shortest distance between the two argued points.
+    (Assists in drawing a line across the whole image using cv2)
+
+    img_shape: tuple of ints with len 2
+    pt1: tuple of ints with len 2
+    pt2: tuple of ints with len 2
+    """
+    m = (pt1[1]-pt2[1])/(pt1[0]-pt2[0])
+    b = pt1[1]-m*pt1[0]
+    new_pt1 = (0,int(b))
+    y = m*img_shape[1]+b
+    new_pt2 = (img_shape[1], int(y))
+    return new_pt1, new_pt2
+
+def center_line_coords(img_shape, angle=0):
+    """
+    Finds two points that define a line across the center of the image
+    with a slope defined by the angle from the rightward horizontal.
+    (These points can be used with the cv2.line fxn to draw a line
+    with the desired slope crossing through the center of the image)
+
+    img_shape: tuple of ints with len 2
+    angle: float or int
+        defines the slope of the virtual line in degrees
+    """
+    img_center = np.array([img_shape[0]//2, img_shape[1]//2])
+    # Horizontal
+    if angle % 180 == 0:
+        coords = [(0, img_center[0]), (img_shape[1], img_center[0])]
+    # Vertical
+    elif angle % 180 == 90:
+        coords = [(img_center[1], 0), (img_center[1], img_shape[0])]
+    else:
+        rads = (angle-90)*np.pi/180
+        vec = np.array([np.sin(rads), np.cos(rads)])
+        pt1, pt2 = extend_to_edge(img_shape, np.flip(img_center), np.flip(img_center)+vec)
+        coords = [pt1, pt2]
+    return coords
+
+def line_thru_center(img, bar_size, angle=0):
+    """
+    Draws a line through the center of the image with a slope defined
+    by the angle and a line width defined by the barsize.
+
+    img: numpy ndarray with shape (H,W)
+        the image to have a line drawn on it
+    bar_size: int or float
+        defines the width of the line
+    angle: int or float
+        defines the slope of the line in degrees
+    """
+    coords = center_line_coords(img.shape, angle)
+    cv2.line(img, coords[0], coords[1], 1, bar_size)
+    return img
+
+def stripes(img_shape, bar_size, angle=0):
+    """
+    Returns a single frame of white, black alternating stripes angled
+    from the rightward horizontal.
 
     Inputs:
         img_shape: sequence of ints with length 2
             the size of the image to be returned
-        bar_size: int 
+        bar_size: int
             the size of the stripes in terms of pixels
-        horizontal: bool
-            true: the stripes are drawn horizontally
-            false: the stripes are drawn vertically
-        white_black: sequence of floats with length 2
-            the intensity values of white and black respectively
+        angle: float
+            the stripes are drawn according to the specified
+            angle on the unit circle
     """
-    bar_size = int(bar_size)
-    white, black = white_black
+    assert img_shape[0] >= 2*bar_size and img_shape[1] >= 2*bar_size
+    angle = angle % 360
+    if angle % 180 == 0:
+        img = np.zeros((bar_size*2, img_shape[1]))
+        img[:bar_size] = 1
+        img = np.tile(img, (img_shape[0]//(bar_size*2), 1))
+        if img.shape[0] < img_shape[0]:
+            img = np.concatenate([img, np.ones((img_shape[0]-img.shape[0], img_shape[1]))])
+        return img
+    elif angle % 90 == 0 and angle % 180 == 90:
+        img = np.zeros((bar_size*2, img_shape[0]))
+        img[:bar_size] = 1
+        img = np.tile(img, (img_shape[1]//(bar_size*2), 1))
+        if img.shape[0] < img_shape[1]:
+            img = np.concatenate([img, np.ones((img_shape[1]-img.shape[0], img_shape[0]))])
+        return img.T
+    assert bar_size >= 4 # Sorry, no inherent reason why, just easier to code
+    assert img_shape[0] >= 2*bar_size and img_shape[1] >= 2*bar_size
+    coords = center_line_coords(img_shape, angle)
+    temp_angle = 90-(angle%180)
+    y_step = round(bar_size*np.sin(temp_angle*np.pi/180))
+    x_step = round(bar_size*np.cos(temp_angle*np.pi/180))
+    n_steps_half_x = abs((img_shape[1]//x_step)//2)
+    n_steps_half_y = abs((img_shape[0]//y_step)//2)
+    n_steps_half = max(n_steps_half_x, n_steps_half_y)
+    start_xs = [-x_step*n_steps_half+c[0] for c in coords]
+    start_ys = [-y_step*n_steps_half+c[1] for c in coords]
     img = np.zeros(img_shape)
-    step = 0
-    if horizontal:
-        for i in range(0, img.shape[-2], bar_size):
-            step += 1
-            img[i:i+bar_size,:] = black if (step % 2) == 0 else white
-    else:
-        for i in range(0, img.shape[-1], bar_size):
-            step += 1
-            img[:,i:i+bar_size] = black if (step % 2) == 0 else white
+    for i in range(0,int(2*n_steps_half)+1,2):
+        new_xs = [int(x+i*x_step) for x in start_xs]
+        new_ys = [int(y+i*y_step) for y in start_ys]
+        pt1, pt2 = extend_to_edge(img_shape, (new_xs[0], new_ys[0]), (new_xs[1], new_ys[1]))
+        cv2.line(img, pt1, pt2, 1, bar_size)
     return img
+
+def motion_reversal(img_shape, start_pt=(0,0), horz_vel=0.5, vert_vel=0, angle=90, 
+                                            bar_size=4, n_frames=None, rev_pt=None):
+    """
+
+    """
+
+    if rev_pt is None:
+        rev_pt = (img_shape[0]//2, img_shape[1]//2)
+    img = np.zeros(img_shape)
+    pt1, pt2 = center_line_coords(img_shape, angle)
+    cv2.line(img, pt1, pt2, 1, bar_size)
+
+    top_pt = pt1 if pt1[1] < pt2[1] else pt2
+    if horz_vel != 0:
+        n_shifts = top_pt[0]-start_pt[0]
+        start_img = np.roll(img, n_shifts, axis=1)
+    if vert_vel != 0:
+        n_shifts = top_pt[1]-start_pt[1]
+        start_img = np.roll(start_img, n_shifts, axis=0)
+
+    if n_frames is None:
+        n_frames = abs(int((rev_pt[0]-start_pt[0])/horz_vel*2))
+
+    frames = []
+    cumu_horz = 0
+    cumu_vert = 0
+    horz_flip = False
+    vert_flip = False
+    for i in range(n_frames):
+        cumu_horz += horz_vel
+        new_img = np.roll(start_img, int(cumu_horz), axis=1)
+        cumu_vert += vert_vel
+        new_img = np.roll(new_img, int(cumu_vert), axis=0)
+        new_pt = ((start_pt[0]+cumu_horz)%img_shape[0], (start_pt[1]+cumu_vert)%img_shape[1])
+        if horz_vel*new_pt[0] >= horz_vel*rev_pt[0] and not horz_flip:
+            horz_vel = -horz_vel
+            horz_flip = True
+        if vert_vel*new_pt[1] >= vert_vel*rev_pt[1] and not vert_flip:
+            vert_vel = -vert_vel
+            vert_flip = True
+        frames.append(new_img)
+    return np.asarray(frames)
 
 def circle_mask(center, radius, mask_shape=(50,50)):
     """
@@ -90,7 +212,7 @@ def paste_circle(foreground, background, radius, center):
 
 def random_differential_circle(n_frames=100, bar_size=4, foreground_velocity=0.5, sync_jitters=False, 
                         background_velocity=0.4, image_shape=(50,50), center=(25,25), radius=5,
-                        white_black=(1,0), horizontal_foreground=False, horizontal_background=False):
+                        horizontal_foreground=False, horizontal_background=False):
     """
     Creates circle window onto a grating with a background grating.
     The foreground and background gratings jitter at different rates.
@@ -115,8 +237,6 @@ def random_differential_circle(n_frames=100, bar_size=4, foreground_velocity=0.5
             the center coordinates of the foreground circle. 0,0 is the upper leftmost part of the image.
         radius: float
             the radius of the forground circle
-        white_black: sequence of floats with length 2
-            the intensity values of white and black respectively
         horizontal_foreground: bool
             True: the stripes of the foreground are horizontal
             False: the stripes of the foreground are vertical
@@ -129,8 +249,10 @@ def random_differential_circle(n_frames=100, bar_size=4, foreground_velocity=0.5
 
     """
     bar_size=int(bar_size)
-    circle_grating = stripes(image_shape, bar_size, horizontal=horizontal_foreground, white_black=white_black)
-    background_grating = stripes(image_shape, bar_size, horizontal=horizontal_background, white_black=white_black)
+    angle = 0 if horizontal_foreground else 90
+    circle_grating = stripes(image_shape, bar_size, angle=angle)
+    angle = 0 if horizontal_background else 90
+    background_grating = stripes(image_shape, bar_size, angle=angle)
     background_steps = np.random.randint(-1,2,n_frames)
     if sync_jitters:
         foreground_steps = background_steps 
@@ -158,7 +280,7 @@ def random_differential_circle(n_frames=100, bar_size=4, foreground_velocity=0.5
 
 def differential_circle(n_frames=100, bar_size=4, foreground_velocity=0.5, background_velocity=0, 
                         image_shape=(50,50), center=(25,25), radius=5, init_offset=0,
-                        white_black=(1,0), horizontal_foreground=False, horizontal_background=False):
+                        horizontal_foreground=False, horizontal_background=False):
     """
     Creates circle window onto a grating that has stripes perpendicular to the background.
     The grating behind this window then rolls differently than the background grating.
@@ -182,8 +304,6 @@ def differential_circle(n_frames=100, bar_size=4, foreground_velocity=0.5, backg
             the radius of the forground circle
         init_offset: int
             the initial offset of the foreground grating from the background grating
-        white_black: sequence of floats with length 2
-            the intensity values of white and black respectively
         horizontal_foreground: bool
             True: the stripes of the foreground are horizontal
             False: the stripes of the foreground are vertical
@@ -196,9 +316,11 @@ def differential_circle(n_frames=100, bar_size=4, foreground_velocity=0.5, backg
 
     """
     bar_size=int(bar_size)
-    circle_grating = stripes(image_shape, bar_size, horizontal=horizontal_foreground, white_black=white_black)
+    angle = 0 if horizontal_foreground else 90
+    circle_grating = stripes(image_shape, bar_size, angle=angle)
     circle_grating = np.roll(circle_grating, init_offset, axis=1)
-    background_grating = stripes(image_shape, bar_size, horizontal=horizontal_background, white_black=white_black)
+    angle = 0 if horizontal_background else 90
+    background_grating = stripes(image_shape, bar_size, angle=angle)
     row_coords, col_coords = skimage.draw.circle(*center, radius, image_shape)
     #mask = circle_mask(center, radius, image_shape)
     frames = []
@@ -220,7 +342,7 @@ def differential_circle(n_frames=100, bar_size=4, foreground_velocity=0.5, backg
 
 def jittered_circle(n_frames=100, bar_size=4, foreground_jitter=0.5, background_jitter=0, 
                         image_shape=(50,50), center=(25,25), radius=5, 
-                        white_black=(1,0), horizontal_foreground=False, horizontal_background=False):
+                        horizontal_foreground=False, horizontal_background=False):
     """
     Creates circle window onto a grating that has stripes perpendicular to the background.
     This window then jitters differently than the background grating.
@@ -242,8 +364,6 @@ def jittered_circle(n_frames=100, bar_size=4, foreground_jitter=0.5, background_
             the center coordinates of the foreground circle. 0,0 is the upper leftmost part of the image.
         radius: float
             the radius of the forground circle
-        white_black: sequence of floats with length 2
-            the intensity values of white and black respectively
         horizontal_foreground: bool
             True: the stripes of the foreground are horizontal
             False: the stripes of the foreground are vertical
@@ -258,12 +378,14 @@ def jittered_circle(n_frames=100, bar_size=4, foreground_jitter=0.5, background_
     bar_size = int(bar_size)
     foreground_jitter = abs(foreground_jitter)
     background_jitter = abs(background_jitter)
-    circle_grating = stripes(image_shape, bar_size, horizontal=horizontal_foreground, white_black=white_black)
+    angle = 0 if horizontal_foreground else 90
+    circle_grating = stripes(image_shape, bar_size, angle=angle)
     circle_grating = np.roll(circle_grating, 2, axis=1) # Roll to start with unaligned gratings
     row_shifts, col_shifts = np.random.randint(-1,2, n_frames), np.random.randint(-1,2,n_frames) # Make random center shifts
     row_coords, col_coords = skimage.draw.circle(*center, radius, image_shape)
 
-    background_grating = stripes(image_shape, bar_size, horizontal=horizontal_background, white_black=white_black)
+    angle = 0 if horizontal_background else 90
+    background_grating = stripes(image_shape, bar_size, angle=angle)
     background_shifts = np.random.randint(-1, 2, n_frames) # Make random background shifts
 
     frames = []
@@ -285,7 +407,7 @@ def jittered_circle(n_frames=100, bar_size=4, foreground_jitter=0.5, background_
 
 def moving_circle(n_frames=100, bar_size=4, foreground_velocity=0.5, background_velocity=0, 
                         image_shape=(50,50), center=(25,25), radius=5, 
-                        white_black=(1,0), horizontal_background=False):
+                        horizontal_background=False):
     """
     Creates circle window onto a grating that has stripes perpendicular to the background.
     This window then translates differently than the background grating.
@@ -307,8 +429,6 @@ def moving_circle(n_frames=100, bar_size=4, foreground_velocity=0.5, background_
             the center coordinates of the foreground circle. 0,0 is the upper leftmost part of the image.
         radius: float
             the radius of the forground circle
-        white_black: sequence of floats with length 2
-            the intensity values of white and black respectively
         horizontal_background: bool
             True: the stripes of the background are horizontal
             False: the stripes of the background are vertical
@@ -318,8 +438,10 @@ def moving_circle(n_frames=100, bar_size=4, foreground_velocity=0.5, background_
 
     """
     bar_size=int(bar_size)
-    circle_grating = stripes(image_shape, bar_size, horizontal=not horizontal_background, white_black=white_black)
-    background_grating = stripes(image_shape, bar_size, horizontal=horizontal_background, white_black=white_black)
+    angle = 90 if horizontal_background else 0
+    circle_grating = stripes(image_shape, bar_size, angle=angle)
+    angle = (angle+90)%180
+    background_grating = stripes(image_shape, bar_size, angle=angle)
     row_coords, col_coords = skimage.draw.circle(*center, radius, image_shape)
     #mask = circle_mask(center, radius, image_shape)
     frames = []

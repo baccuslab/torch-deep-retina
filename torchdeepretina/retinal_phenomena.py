@@ -91,7 +91,7 @@ def contrast_adaptation(model, c0, c1, duration=50, delay=50, nsamples=140, nrep
 
     return (fig, (ax0,ax1)), envelope, responses
 
-def oms_random_differential(model, duration=4, sample_rate=0.01, pre_silent=.75, post_silent=.75, img_shape=(50,50), center=(25,25), radius=5, background_velocity=.4, foreground_velocity=.5, seed=None):
+def oms_random_differential(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=8, background_velocity=.3, foreground_velocity=.5, seed=None, bar_size=2):
     """
     Plays a video of differential motion by keeping a circular window fixed in space on a 2d background grating.
     A grating exists behind the circular window that moves counter to the background grating. Each grating is jittered
@@ -101,10 +101,10 @@ def oms_random_differential(model, duration=4, sample_rate=0.01, pre_silent=.75,
         length of video in seconds
     sample_rate: float
         sample rate of video in frames per second
-    pre_silent: float
-        duration of still image to be prepended to the jittering
-    post_silent: float
-        duration of still image to be appended to the jittering
+    pre_frames: int
+        number of frames of still image to be prepended to the jittering
+    post_frames: int
+        number of frames of still image to be appended to the jittering
     img_shape: sequence of ints len 2
         the image size (H,W)
     center: sequence of ints len 2
@@ -117,15 +117,15 @@ def oms_random_differential(model, duration=4, sample_rate=0.01, pre_silent=.75,
         the intensity of the horizontal jittering of the foreground grating
     seed: int or None
         sets the numpy random seed if int
+    bar_size: int
+        size of stripes. Min value is 3
     """
     if seed is not None:
         np.random.seed(seed)
-    tot_frames = int(duration // sample_rate)
-    pre_frames = int(pre_silent//sample_rate)
-    post_frames = int(post_silent//sample_rate)
+    tot_frames = int(duration * sample_rate)
     diff_frames = int(tot_frames-pre_frames-post_frames)
     assert diff_frames > 0
-    differential = stim.random_differential_circle(diff_frames, bar_size=4, 
+    differential = stim.random_differential_circle(diff_frames, bar_size=bar_size, 
                                     foreground_velocity=foreground_velocity, 
                                     background_velocity=background_velocity,
                                     image_shape=img_shape, center=center, radius=radius) 
@@ -133,9 +133,10 @@ def oms_random_differential(model, duration=4, sample_rate=0.01, pre_silent=.75,
     post_vid = np.repeat(differential[-1:], post_frames, axis=0)
     diff_vid = np.concatenate([pre_vid, differential, post_vid], axis=0)
 
-    global_ = stim.random_differential_circle(diff_frames, bar_size=4, 
-                                    foreground_velocity=foreground_velocity, sync_jitters=True,
-                                    background_velocity=foreground_velocity, 
+    global_velocity = foreground_velocity if foreground_velocity != 0 else background_velocity
+    global_ = stim.random_differential_circle(diff_frames, bar_size=bar_size, 
+                                    foreground_velocity=global_velocity, sync_jitters=True,
+                                    background_velocity=global_velocity, 
                                     image_shape=img_shape, center=center, radius=radius, 
                                     horizontal_foreground=False, horizontal_background=False)
     pre_vid = np.repeat(global_[:1], pre_frames, axis=0)
@@ -151,13 +152,11 @@ def oms_random_differential(model, duration=4, sample_rate=0.01, pre_silent=.75,
     ax.plot(diff_response.mean(-1), color="g")
     ax.plot(global_response.mean(-1), color="b")
     ax.legend(["diff", "global"])
-    ax.axvline(x=pre_frames-40, color='r')
-    ax.axvline(x=tot_frames-post_frames, color='r')
     diff_response = diff_response[pre_frames-40:tot_frames-post_frames]
     global_response = global_response[pre_frames-40:tot_frames-post_frames]
     return fig, diff_vid, global_vid, diff_response, global_response
 
-def oms_differential(model, duration=4, sample_rate=0.01, pre_silent=.75, post_silent=.75, img_shape=(50,50), center=(25,25), radius=5, background_velocity=0, foreground_velocity=.5, seed=None):
+def oms_differential(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=8, background_velocity=0, foreground_velocity=.5, seed=None, bar_size=2):
     """
     Plays a video of differential motion by keeping a circular window fixed in space on a 2d background grating.
     A grating exists behind the circular window that moves counter to the background grating. 
@@ -166,10 +165,10 @@ def oms_differential(model, duration=4, sample_rate=0.01, pre_silent=.75, post_s
         length of video in seconds
     sample_rate: float
         sample rate of video in frames per second
-    pre_silent: float
-        duration of still image to be prepended to the jittering
-    post_silent: float
-        duration of still image to be appended to the jittering
+    pre_frames: int
+        number of frames of still image to be prepended to the jittering
+    post_frames: int
+        number of frames of still image to be appended to the jittering
     img_shape: sequence of ints len 2
         the image size (H,W)
     center: sequence of ints len 2
@@ -182,15 +181,15 @@ def oms_differential(model, duration=4, sample_rate=0.01, pre_silent=.75, post_s
         the magnitude of horizontal movement of the foreground grating in pixels per frame
     seed: int or None
         sets the numpy random seed if int
+    bar_size: int
+        size of stripes. Min value is 3
     """
     if seed is not None:
         np.random.seed(seed)
-    tot_frames = int(duration // sample_rate)
-    pre_frames = int(pre_silent//sample_rate)
-    post_frames = int(post_silent//sample_rate)
+    tot_frames = int(duration * sample_rate)
     diff_frames = int(tot_frames-pre_frames-post_frames)
     assert diff_frames > 0
-    differential = stim.differential_circle(diff_frames, bar_size=4, 
+    differential = stim.differential_circle(diff_frames, bar_size=bar_size, 
                                     foreground_velocity=foreground_velocity, 
                                     background_velocity=background_velocity,
                                     image_shape=img_shape, center=center, radius=radius, 
@@ -199,9 +198,10 @@ def oms_differential(model, duration=4, sample_rate=0.01, pre_silent=.75, post_s
     post_vid = np.repeat(differential[-1:], post_frames, axis=0)
     diff_vid = np.concatenate([pre_vid, differential, post_vid], axis=0)
 
-    global_ = stim.differential_circle(diff_frames, bar_size=4, 
-                                    foreground_velocity=foreground_velocity,
-                                    background_velocity=foreground_velocity, # Note the foreground velocity
+    global_velocity = foreground_velocity if foreground_velocity != 0 else background_velocity
+    global_ = stim.differential_circle(diff_frames, bar_size=bar_size, 
+                                    foreground_velocity=global_velocity,
+                                    background_velocity=global_velocity, 
                                     image_shape=img_shape, center=center, radius=radius, 
                                     horizontal_foreground=False, horizontal_background=False)
     pre_vid = np.repeat(global_[:1], pre_frames, axis=0)
@@ -217,13 +217,11 @@ def oms_differential(model, duration=4, sample_rate=0.01, pre_silent=.75, post_s
     ax.plot(diff_response.mean(-1), color="g")
     ax.plot(global_response.mean(-1), color="b")
     ax.legend(["diff", "global"])
-    ax.axvline(x=pre_frames-40, color='r')
-    ax.axvline(x=tot_frames-post_frames, color='r')
     diff_response = diff_response[pre_frames-40:tot_frames-post_frames]
     global_response = global_response[pre_frames-40:tot_frames-post_frames]
     return fig, diff_vid, global_vid, diff_response, global_response
 
-def oms_jitter(model, duration=4, sample_rate=0.01, pre_silent=.75, post_silent=.75, img_shape=(50,50), center=(25,25), radius=5, seed=None):
+def oms_jitter(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=5, seed=None, bar_size=2):
     """
     Plays a video of a jittered circle window onto a grating different than that of the background.
 
@@ -231,10 +229,10 @@ def oms_jitter(model, duration=4, sample_rate=0.01, pre_silent=.75, post_silent=
         length of video in seconds
     sample_rate: float
         sample rate of video in frames per second
-    pre_silent: float
-        duration of still image to be prepended to the jittering
-    post_silent: float
-        duration of still image to be appended to the jittering
+    pre_frames: int
+        number of frames of still image to be prepended to the jittering
+    post_frames: int
+        number of frames of still image to be appended to the jittering
     img_shape: sequence of ints len 2
         the image size (H,W)
     center: sequence of ints len 2
@@ -243,16 +241,16 @@ def oms_jitter(model, duration=4, sample_rate=0.01, pre_silent=.75, post_silent=
         the radius of the circular window
     seed: int or None
         sets the numpy random seed if int
+    bar_size: int
+        size of stripes. Min value is 3
     """
-    assert pre_silent > 0 and post_silent > 0
+    assert pre_frames > 0 and post_frames > 0
     if seed is not None:
         np.random.seed(seed)
-    tot_frames = int(duration // sample_rate)
-    pre_frames = int(pre_silent//sample_rate)
-    post_frames = int(post_silent//sample_rate)
+    tot_frames = int(duration * sample_rate)
     jitter_frames = int(tot_frames-pre_frames-post_frames)
     assert jitter_frames > 0
-    jitters = stim.jittered_circle(jitter_frames, bar_size=4, foreground_jitter=.5, background_jitter=0,
+    jitters = stim.jittered_circle(jitter_frames, bar_size=bar_size, foreground_jitter=.5, background_jitter=0,
                                     image_shape=img_shape, center=center, radius=radius, 
                                     horizontal_foreground=False, horizontal_background=False)
     pre_vid = np.repeat(jitters[:1], pre_frames, axis=0)
@@ -266,11 +264,9 @@ def oms_jitter(model, duration=4, sample_rate=0.01, pre_silent=.75, post_silent=
     fig = plt.figure(figsize=(6, 4))
     ax = fig.add_subplot(111)
     ax.plot(avg_response)
-    ax.axvline(x=pre_frames-40, color='r')
-    ax.axvline(x=tot_frames-post_frames, color='r')
     return fig, vid, response
 
-def oms(duration=4, sample_rate=0.01, transition_duration=0.07, silent_duration=0.93,
+def oms(duration=5, sample_rate=0.01, transition_duration=0.07, silent_duration=0.93,
         magnitude=5, space=(50, 50), center=(25, 25), object_radius=5, coherent=False, roll=False):
     """
     Object motion sensitivity stimulus, where an object moves differentially
