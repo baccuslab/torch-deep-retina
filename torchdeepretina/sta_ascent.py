@@ -5,19 +5,13 @@ import sys
 import json
 import pickle
 import numpy as np
+from .miscellaneous import freeze_weights
 
 def load_json(json_file):
     with open(json_file) as f:
         s = f.read()
         j = json.loads(s)
     return j
-
-def freeze_weights(model, unfreeze=False):
-    for p in model.parameters():
-        try:
-            p.requires_grad = unfreeze
-        except:
-            pass
 
 def cuda_if(x):
     if torch.cuda.is_available:
