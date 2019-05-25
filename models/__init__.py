@@ -1,5 +1,8 @@
 import models.torch_utils
 from models.CNN import CNN
+from models.CNN_2layer import CNN_2layer
+from models.CNNfull import CNNfull
+from models.CNNfull_2layer import CNNfull_2layer
 from models.BN_CNN import BNCNN
 from models.AbsBN_BN_CNN import AbsBNBNCNN
 from models.Gauss1d_BN_CNN import Gauss1dBNCNN

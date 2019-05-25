@@ -14,7 +14,7 @@ import resource
 sys.path.append('../')
 sys.path.append('../utils/')
 from utils.miscellaneous import ShuffledDataSplit
-from models import BNCNN, BNCNN2D, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN, DalesSkipBNCNN, SkipBNBNCNN, Gauss1dBNCNN, AbsBNBNCNN
+from models import BNCNN, BNCNN2D, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN, DalesSkipBNCNN, SkipBNBNCNN, Gauss1dBNCNN, AbsBNBNCNN, CNNfull, CNNfull_2layer, CNN_2layer
 import retio as io
 import argparse
 import time
@@ -247,6 +247,12 @@ def set_model_type(model_str):
         return SSCNN
     if model_str == "CNN":
         return CNN
+    if model_str == "CNNfull":
+        return CNNfull
+    if model_str == "CNNfull_2layer":
+        return CNNfull_2layer
+    if model_str == "CNN_2layer":
+        return CNN_2layer
     if model_str == "NormedBNCNN":
         return NormedBNCNN
     if model_str == "DalesBNCNN":
