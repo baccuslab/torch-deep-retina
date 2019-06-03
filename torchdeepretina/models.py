@@ -592,7 +592,7 @@ class ParallelDataStackedBNCNN(nn.Module):
         modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
         modules.append(Reshape((-1,chans[0],36,36)))
-        module_list.append(StackedConv2d(chans[0],chans[1],kernel_size=11, bias=bias))
+        modules.append(StackedConv2d(chans[0],chans[1],kernel_size=11, bias=bias))
         modules.append(Flatten())
         modules.append(nn.BatchNorm1d(chans[1]*26*26, eps=1e-3, momentum=bnorm_momentum))
         modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
@@ -812,25 +812,25 @@ class StackedBNCNN(nn.Module):
         self.chans = chans
         if linear_bias is None:
             linear_bias = bias
-        module_list = []
-        module_list.append(StackedConv2d(40,chans[0],kernel_size=15, bias=bias))
-        module_list.append(Flatten())
-        module_list.append(nn.BatchNorm1d(chans[0]*36*36, eps=1e-3, momentum=bnorm_momentum))
-        module_list.append(GaussianNoise(std=noise, adapt=adapt_gauss))
-        module_list.append(nn.ReLU())
-        module_list.append(Reshape((-1,chans[0],36,36)))
-        module_list.append(StackedConv2d(chans[0],chans[1],kernel_size=11, bias=bias))
-        module_list.append(Flatten())
-        module_list.append(nn.BatchNorm1d(chans[1]*26*26, eps=1e-3, momentum=bnorm_momentum))
-        module_list.append(GaussianNoise(std=noise, adapt=adapt_gauss))
-        module_list.append(nn.ReLU())
-        module_list.append(nn.Linear(chans[1]*26*26,n_units, bias=linear_bias))
-        module_list.append(nn.BatchNorm1d(n_units, eps=1e-3, momentum=bnorm_momentum))
+        modules = []
+        modules.append(StackedConv2d(40,chans[0],kernel_size=15, bias=bias))
+        modules.append(Flatten())
+        modules.append(nn.BatchNorm1d(chans[0]*36*36, eps=1e-3, momentum=bnorm_momentum))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
+        modules.append(nn.ReLU())
+        modules.append(Reshape((-1,chans[0],36,36)))
+        modules.append(StackedConv2d(chans[0],chans[1],kernel_size=11, bias=bias))
+        modules.append(Flatten())
+        modules.append(nn.BatchNorm1d(chans[1]*26*26, eps=1e-3, momentum=bnorm_momentum))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
+        modules.append(nn.ReLU())
+        modules.append(nn.Linear(chans[1]*26*26,n_units, bias=linear_bias))
+        modules.append(nn.BatchNorm1d(n_units, eps=1e-3, momentum=bnorm_momentum))
         if softplus:
             modules.append(nn.Softplus())
         else:
             modules.append(Exponential(train_off=True))
-        self.sequential = nn.Sequential(*module_list)
+        self.sequential = nn.Sequential(*modules)
 
     def forward(self, x):
         return self.sequential(x)
@@ -842,25 +842,25 @@ class AbsBNStackedBNCNN(nn.Module):
         self.chans = chans
         if linear_bias is None:
             linear_bias = bias
-        module_list = []
-        module_list.append(StackedConv2d(40,chans[0],kernel_size=15, abs_bnorm=True, bias=bias))
-        module_list.append(Flatten())
-        module_list.append(AbsBatchNorm1d(chans[0]*36*36, eps=1e-3, momentum=bnorm_momentum))
-        module_list.append(GaussianNoise(std=noise, adapt=adapt_gauss))
-        module_list.append(nn.ReLU())
-        module_list.append(Reshape((-1,chans[0],36,36)))
-        module_list.append(StackedConv2d(chans[0],chans[1],kernel_size=11, abs_bnorm=True, bias=bias))
-        module_list.append(Flatten())
-        module_list.append(AbsBatchNorm1d(chans[1]*26*26, eps=1e-3, momentum=bnorm_momentum))
-        module_list.append(GaussianNoise(std=noise, adapt=adapt_gauss))
-        module_list.append(nn.ReLU())
-        module_list.append(nn.Linear(chans[1]*26*26,n_units, bias=linear_bias))
-        module_list.append(AbsBatchNorm1d(n_units, eps=1e-3, momentum=bnorm_momentum))
+        modules = []
+        modules.append(StackedConv2d(40,chans[0],kernel_size=15, abs_bnorm=True, bias=bias))
+        modules.append(Flatten())
+        modules.append(AbsBatchNorm1d(chans[0]*36*36, eps=1e-3, momentum=bnorm_momentum))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
+        modules.append(nn.ReLU())
+        modules.append(Reshape((-1,chans[0],36,36)))
+        modules.append(StackedConv2d(chans[0],chans[1],kernel_size=11, abs_bnorm=True, bias=bias))
+        modules.append(Flatten())
+        modules.append(AbsBatchNorm1d(chans[1]*26*26, eps=1e-3, momentum=bnorm_momentum))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
+        modules.append(nn.ReLU())
+        modules.append(nn.Linear(chans[1]*26*26,n_units, bias=linear_bias))
+        modules.append(AbsBatchNorm1d(n_units, eps=1e-3, momentum=bnorm_momentum))
         if softplus:
             modules.append(nn.Softplus())
         else:
             modules.append(Exponential(train_off=True))
-        self.sequential = nn.Sequential(*module_list)
+        self.sequential = nn.Sequential(*modules)
 
     def forward(self, x):
         return self.sequential(x)
