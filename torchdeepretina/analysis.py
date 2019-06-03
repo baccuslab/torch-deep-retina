@@ -46,12 +46,32 @@ def prepare_stim(stim, stim_type):
         assert False
     
 def index_of(arg, arr):
+    """
+    Used to find the index of the argument in the array.
+    """
     for i in range(len(arr)):
         if arg == arr[i]:
             return i
     return -1
 
-def make_data_frame(model_stats, headers):
+def make_intrnrn_frame(model_stats, headers, main_dir="../training_scripts"):
+    data = dict()
+    for header in headers:
+        data[header] = []
+    for folder in model_stats.keys():
+        if "intrnrn_info" in model_stats[folder]:
+            intrnrn_info = model_stats[folder]['intrnrn_info'] # list of data dicts for each interneuron cell
+            for info in intrnrn_info:
+                untouched_keys = set(data.keys())
+                for key in info.keys():
+                    if key in data:
+                        untouched_keys.remove(key)
+                        data[key].append(info[key])
+                for k in list(untouched_keys):
+                    data[k].append(None)
+    return pd.DataFrame(data)
+
+def make_model_frame(model_stats, headers, main_dir="../training_scripts"):
     data = dict()
     for header in headers:
         data[header] = []
@@ -62,7 +82,7 @@ def make_data_frame(model_stats, headers):
                 data[k].append(model_stats[folder][k])
                 if k in untouched_keys:
                     untouched_keys.remove(k)
-        with open("../training_scripts/" + folder+"/hyperparams.txt") as f:
+        with open(os.path.join(main_dir, folder, "hyperparams.txt")) as f:
             architecture = []
             for i,line in enumerate(f):
                 if "(" in line or ")" in line:
@@ -80,31 +100,38 @@ def make_data_frame(model_stats, headers):
             data[k].append(None)
     return pd.DataFrame(data)
 
-def load_model(folder, data):
+def get_architecture(folder, data, hyps=None, main_dir="../training_scripts/"):
+    # load_model changed to get_architecture
     try:
-        hyps=get_hyps(folder)
+        hyps= hyps if hyps is not None else get_hyps(folder, main_dir)
         hyps['model_type'] = hyps['model_type'].split(".")[-1].split("\'")[0].strip()
         hyps['model_type'] = globals()[hyps['model_type']]
-        bn_cnn = hyps['model_type'](**data['model_hyps'])
+        model = hyps['model_type'](**data['model_hyps'])
     except Exception as e:
         model_hyps = {"n_units":5,"noise":float(hyps['noise'])}
         if "bias" in hyps:
-            model_hyps['bias'] = bool(hyps['bias'])
+            model_hyps['bias'] = hyps['bias'] == "True"
         if "chans" in hyps:
-            model_hyps['chans'] = [int(x) for x in 
+            model_hyps['chans'] = [int(x) for x in
                                    hyps['chans'].replace("[", "").replace("]", "").strip().split(",")]
         if "adapt_gauss" in hyps:
-            model_hyps['adapt_gauss'] = hyps['adapt_gauss']
+            model_hyps['adapt_gauss'] = hyps['adapt_gauss'] == "True"
+        if "linear_bias" in hyps:
+            model_hyps['linear_bias'] = hyps['linear_bias'] == "True"
+        if "softplus" in hyps:
+            model_hyps['softplus'] = hyps['softplus'] == "True"
+        if "abs_bias" in hyps:
+            model_hyps['abs_bias'] = hyps['abs_bias'] == "True"
         fn_args = set(hyps['model_type'].__init__.__code__.co_varnames)
         for k in model_hyps.keys():
             if k not in fn_args:
                 del model_hyps[k]
-        bn_cnn = hyps['model_type'](**model_hyps)
-    return bn_cnn
+        model = hyps['model_type'](**model_hyps)
+    return model
 
-def get_hyps(folder):
+def get_hyps(folder, main_dir="../training_scripts"):
     hyps = dict()
-    with open(os.path.join(folder, "hyperparams.txt")) as f:
+    with open(os.path.join(main_dir, folder, "hyperparams.txt")) as f:
         for line in f:
             if "(" not in line and ")" not in line:
                 splt = line.strip().split(":")

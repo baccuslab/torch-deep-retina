@@ -494,8 +494,8 @@ def motion_reversal(model, scale_factor=55, velocity=0.08, width=2):
 
     return (fig, ax), (speed_left, speed_right), (rtl, resp_rtl), (ltr, resp_ltr), avg_resp
 
-# Contrast adaptation figure
-# The following functions are used for the contrast adaptation figure
+# Fast Contrast adaptation figure
+# The following functions are used for the fast contrast adaptation figure
 #######################################################################################
 
 def requires_grad(model, state):
