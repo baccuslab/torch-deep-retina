@@ -115,8 +115,8 @@ def train(hyps, model, data):
             model_out_val = model(data.val_X[v:v+step_size].to(DEVICE)).detach()
             val_loss += loss_fn(model_out_val, data.val_y[v:v+step_size].to(DEVICE)).item()
             if LAMBDA1 > 0:
-                val_loss += (LAMBDA1 * torch.norm(mode_out_val, 1).float()/mode_out_val.shape[0]).item()
-            val_preds.append(mode_out_val.cpu().numpy())
+                val_loss += (LAMBDA1 * torch.norm(model_out_val, 1).float()/model_out_val.shape[0]).item()
+            val_preds.append(model_out_val.cpu().numpy())
         val_loss = val_loss/n_loops
         val_preds = np.concatenate(val_preds, axis=0)
         #
@@ -151,10 +151,11 @@ def train(hyps, model, data):
             "val_pearson":val_pearson,
             "test_pearson":test_pearson,
             "norm_stats":train_data.stats,
+	    "hyps":hyps,
         }
         io.save_checkpoint_dict(save_dict,SAVE,'test')
         del val_preds
-        del mode_out_val
+        del model_out_val
         print()
         # If loss is nan, training is futile
         if math.isnan(avg_loss) or math.isinf(avg_loss):
