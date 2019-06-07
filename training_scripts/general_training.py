@@ -50,11 +50,11 @@ def train(hyps, model, data):
     print(model)
     model = model.to(DEVICE)
 
-    loss_fn = torch.nn.PoissonNLLLoss()
+    loss_fn = torch.nn.PoissonNLLLoss(log_input=True)
     optimizer = torch.optim.Adam(model.parameters(), lr = LR, weight_decay = LAMBDA2)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.2*LR)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.1, patience = 7)
 
-    # train/val split
+    # One more split: train data into train/val
     num_val = 20000
     data = ShuffledDataSplit(train_data, num_val)
     data.torch()
@@ -112,32 +112,33 @@ def train(hyps, model, data):
         step_size = 2500
         n_loops = data.val_shape[0]//step_size
         for v in tqdm(range(0, n_loops*step_size, step_size)):
-            temp = model(data.val_X[v:v+step_size].to(DEVICE)).detach()
-            val_loss += loss_fn(temp, data.val_y[v:v+step_size].to(DEVICE)).item()
+            model_out_val = model(data.val_X[v:v+step_size].to(DEVICE)).detach()
+            val_loss += loss_fn(model_out_val, data.val_y[v:v+step_size].to(DEVICE)).item()
             if LAMBDA1 > 0:
-                val_loss += (LAMBDA1 * torch.norm(temp, 1).float()/temp.shape[0]).item()
-            val_preds.append(temp.cpu().numpy())
+                val_loss += (LAMBDA1 * torch.norm(mode_out_val, 1).float()/mode_out_val.shape[0]).item()
+            val_preds.append(mode_out_val.cpu().numpy())
         val_loss = val_loss/n_loops
         val_preds = np.concatenate(val_preds, axis=0)
+        #
         pearsons = []
         for cell in range(val_preds.shape[-1]):
             pearsons.append(pearsonr(val_preds[:, cell], data.val_y[:val_preds.shape[0]][:,cell].numpy())[0])
         print("Val Cell Pearsons:", " - ".join([str(p) for p in pearsons]))
-        val_acc = np.mean(pearsons)
-        print("Avg Val Pearson:", val_acc, " -- Val Loss:", val_loss, " | SaveFolder:", SAVE)
+        val_pearson = np.mean(pearsons)
+        print("Avg Val Pearson:", val_pearson, " -- Val Loss:", val_loss, " | SaveFolder:", SAVE)
         scheduler.step(val_loss)
 
-        test_obs = model(test_x.to(DEVICE)).cpu().detach().numpy()
+        model_out_test = model(test_x.to(DEVICE)).cpu().detach().numpy()
 
-        avg_pearson = 0
-        for cell in range(test_obs.shape[-1]):
-            obs = test_obs[:,cell]
+        test_pearson = 0
+        for cell in range(model_out_test.shape[-1]):
+            obs = model_out_test[:,cell]
             lab = test_data.y[:,cell]
             r,p = pearsonr(obs,lab)
-            avg_pearson += r
+            test_pearson += r
             print('Cell ' + str(cell) + ': ')
             print('-----> pearsonr: ' + str(r))
-        avg_pearson = avg_pearson / float(test_obs.shape[-1])
+        test_pearson = test_pearson / float(model_out_test.shape[-1])
         print("Avg Test Pearson")
 
         save_dict = {
@@ -147,19 +148,19 @@ def train(hyps, model, data):
             "loss": avg_loss,
             "epoch":epoch,
             "val_loss":val_loss,
-            "val_acc":val_acc,
-            "test_pearson":avg_pearson,
+            "val_pearson":val_pearson,
+            "test_pearson":test_pearson,
             "norm_stats":train_data.stats,
         }
         io.save_checkpoint_dict(save_dict,SAVE,'test')
         del val_preds
-        del temp
+        del mode_out_val
         print()
         # If loss is nan, training is futile
         if math.isnan(avg_loss) or math.isinf(avg_loss):
             break
     
-    results = {"Loss":avg_loss, "ValAcc":val_acc, "ValLoss":val_loss, "TestPearson":avg_pearson}
+    results = {"Loss":avg_loss, "ValPearson":val_pearson, "ValLoss":val_loss, "TestPearson":test_pearson}
     with open(SAVE + "/hyperparams.txt",'a') as f:
         f.write("\n" + " ".join([k+":"+str(results[k]) for k in sorted(results.keys())]) + '\n')
     return results

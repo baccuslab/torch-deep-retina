@@ -58,7 +58,7 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=
 
     norm_stats : listlike of floats i.e. [mean, std], optional
         If a list of len 2 is argued, idx 0 will be used as the mean and idx 1 the std for
-        data normalization
+        data (stimulus only) normalization. Default('None') will normalize stimulus onto [0 1]
     """
     assert history > 0 and type(history) is int, "Temporal history must be a positive integer"
     assert train_or_test in ('train', 'test'), "train_or_test must be 'train' or 'test'"
@@ -86,10 +86,16 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=
         if norm_stats is not None:
             stats['mean'] = norm_stats[0]
             stats['std'] = norm_stats[1]
+            # normalized by given norm_stats
+            stim = (stim-stats['mean'])/stats['std']
         else:
             stats['mean'] = stim.mean()
             stats['std'] = stim.std()+1e-7
-        stim = (stim-stats['mean'])/stats['std']
+            stats['max'] = stim.max()+1e-7
+            stats['min'] = stim.min()
+            #stim = (stim-stats['mean'])/stats['std']
+            # normalized to [0 1]
+            stim = (stim-stats['min'])/stats['max']
 
         # apply clipping to remove the stimulus just after transitions
         num_blocks = NUM_BLOCKS[expt] if train_or_test == 'train' and nskip > 0 else 1
