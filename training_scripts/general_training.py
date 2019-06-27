@@ -50,9 +50,9 @@ def train(hyps, model, data):
     print(model)
     model = model.to(DEVICE)
 
-    loss_fn = torch.nn.PoissonNLLLoss(log_input=True)
+    loss_fn = torch.nn.PoissonNLLLoss(log_input=False, eps=1e-06)
     optimizer = torch.optim.Adam(model.parameters(), lr = LR, weight_decay = LAMBDA2)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.1, patience = 7)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.1, patience = 10)
 
     # One more split: train data into train/val
     num_val = 20000
@@ -198,6 +198,7 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
         train_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],
                                             hyps['stim_type'],'train',40,0))
         norm_stats = [train_data.stats['mean'], train_data.stats['std']] 
+	# Normalization of test_data? normed to [-.5 .5], the same input range with trainig data
         test_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],hyps['stim_type'],
                                                         'test',40,0, norm_stats=norm_stats))
         test_data.X = test_data.X[:500]
