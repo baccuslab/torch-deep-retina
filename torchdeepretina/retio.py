@@ -6,20 +6,15 @@ import torch
 import numpy as np
 import torch.nn as nn
 
-def save_checkpoint(model,epoch, loss, optimizer, path, exp_id, state_dict=True, hyps=None):
-    path = os.path.join(path,exp_id + '_epoch_' + str(epoch)) + '.pth'
-    path = os.path.abspath(os.path.expanduser(path))
-    torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'loss': loss,
-                'model': model,
-                'hyps': hyps
-                }, path)
-    print('Saved!')
-
-def save_checkpoint_dict(save_dict, path, exp_id):
+def save_checkpoint_dict(save_dict, path, exp_id, del_prev=False):
+    if del_prev:
+        prev_path = os.path.join(path, exp_id + "_epoch_" + str(save_dict['epoch']-1) + '.pth')
+        if os.path.exists(prev_path):
+            data = torch.load(prev_path)
+            keys = list(data.keys())
+            for key in keys:
+                if "state_dict" in key:
+                    del data[key]
     path = os.path.join(path,exp_id + '_epoch_' + str(save_dict['epoch'])) + '.pth'
     path = os.path.abspath(os.path.expanduser(path))
     torch.save(save_dict, path)
