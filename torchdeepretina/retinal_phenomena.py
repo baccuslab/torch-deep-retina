@@ -91,7 +91,7 @@ def contrast_adaptation(model, c0, c1, duration=50, delay=50, nsamples=140, nrep
 
     return (fig, (ax0,ax1)), envelope, responses
 
-def oms_random_differential(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=8, background_velocity=.3, foreground_velocity=.5, seed=None, bar_size=2):
+def oms_random_differential(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=8, background_velocity=.3, foreground_velocity=.5, seed=None, bar_size=2, inner_bar_size=None):
     """
     Plays a video of differential motion by keeping a circular window fixed in space on a 2d background grating.
     A grating exists behind the circular window that moves counter to the background grating. Each grating is jittered
@@ -119,13 +119,15 @@ def oms_random_differential(model, duration=5, sample_rate=30, pre_frames=40, po
         sets the numpy random seed if int
     bar_size: int
         size of stripes. Min value is 3
+    inner_bar_size: int
+        size of grating bars inside circle. If None, set to bar_size
     """
     if seed is not None:
         np.random.seed(seed)
     tot_frames = int(duration * sample_rate)
     diff_frames = int(tot_frames-pre_frames-post_frames)
     assert diff_frames > 0
-    differential = stim.random_differential_circle(diff_frames, bar_size=bar_size, 
+    differential, _, _ = stim.random_differential_circle(diff_frames, bar_size=bar_size, inner_bar_size=inner_bar_size,
                                     foreground_velocity=foreground_velocity, 
                                     background_velocity=background_velocity,
                                     image_shape=img_shape, center=center, radius=radius) 
@@ -134,7 +136,7 @@ def oms_random_differential(model, duration=5, sample_rate=30, pre_frames=40, po
     diff_vid = np.concatenate([pre_vid, differential, post_vid], axis=0)
 
     global_velocity = foreground_velocity if foreground_velocity != 0 else background_velocity
-    global_ = stim.random_differential_circle(diff_frames, bar_size=bar_size, 
+    global_, _, _ = stim.random_differential_circle(diff_frames, bar_size=bar_size, inner_bar_size=inner_bar_size,
                                     foreground_velocity=global_velocity, sync_jitters=True,
                                     background_velocity=global_velocity, 
                                     image_shape=img_shape, center=center, radius=radius, 
@@ -143,20 +145,97 @@ def oms_random_differential(model, duration=5, sample_rate=30, pre_frames=40, po
     post_vid = np.repeat(global_[-1:], post_frames, axis=0)
     global_vid = np.concatenate([pre_vid, global_, post_vid], axis=0)
     
-    diff_response = model(torch.FloatTensor(stim.concat(diff_vid)).to(DEVICE)).cpu().detach().numpy()
-    global_response = model(torch.FloatTensor(stim.concat(global_vid)).to(DEVICE)).cpu().detach().numpy()
+    if model is None:
+        fig = None
+        diff_response = None
+        global_response = None
+    else:
+        diff_response = model(torch.FloatTensor(stim.concat(diff_vid)).to(DEVICE)).cpu().detach().numpy()
+        global_response = model(torch.FloatTensor(stim.concat(global_vid)).to(DEVICE)).cpu().detach().numpy()
 
-    # generate the figure
-    fig = plt.figure(figsize=(6, 4))
-    ax = fig.add_subplot(111)
-    ax.plot(diff_response.mean(-1), color="g")
-    ax.plot(global_response.mean(-1), color="b")
-    ax.legend(["diff", "global"])
-    diff_response = diff_response[pre_frames-40:tot_frames-post_frames]
-    global_response = global_response[pre_frames-40:tot_frames-post_frames]
+        # generate the figure
+        fig = plt.figure(figsize=(6, 4))
+        ax = fig.add_subplot(111)
+        ax.plot(diff_response.mean(-1), color="g")
+        ax.plot(global_response.mean(-1), color="b")
+        ax.legend(["diff", "global"])
+        diff_response = diff_response[pre_frames-40:tot_frames-post_frames]
+        global_response = global_response[pre_frames-40:tot_frames-post_frames]
     return fig, diff_vid, global_vid, diff_response, global_response
 
-def oms_differential(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=8, background_velocity=0, foreground_velocity=.5, seed=None, bar_size=2):
+def random_differential(duration=5, sample_rate=30, pre_frames=40, 
+                        post_frames=40, img_shape=(50,50), center=(25,25),     
+                        radius=8, background_velocity=1, foreground_velocity=1, 
+                        seed=None, bar_size=2, n_loops=5):
+    if seed is not None:
+        np.random.seed(seed)
+    tot_frames = int(duration * sample_rate)
+    diff_frames = int(tot_frames-pre_frames-post_frames)
+    assert diff_frames > 0
+    back_grate = stripes(img_shape, bar_size, angle=0)
+    circ_grate = stripes(img_shape, bar_size, angle=0)
+    vid = []
+    for i in range(n_loops):
+        differential, back_grate, circ_grate = stim.random_differential_circle(diff_frames, 
+                                                    bar_size=bar_size,
+                                                    foreground_velocity=foreground_velocity, 
+                                                    background_velocity=background_velocity,
+                                                    horizontal_background=True, horizontal_foreground=True,
+                                                    image_shape=img_shape, center=center, radius=radius,
+                                                    background_grating=back_grate, circle_grating=circ_grate)
+        post_vid = np.tile(back_grate[None], (post_frames,1,1))
+        if i == 0:
+            pre_vid = np.repeat(differential[:1], pre_frames, axis=0)
+            diff_vid = np.concatenate([pre_vid, differential, post_vid], axis=0)            
+        else:
+            diff_vid = np.concatenate([differential, post_vid], axis=0)
+        vid.append(diff_vid)
+
+        global_velocity = foreground_velocity if foreground_velocity != 0 else background_velocity
+        global_, back_grate, circ_grate = stim.random_differential_circle(diff_frames, bar_size=bar_size, 
+                                        foreground_velocity=global_velocity, sync_jitters=True,
+                                        background_velocity=global_velocity, 
+                                        image_shape=img_shape, center=center, radius=radius, 
+                                        horizontal_foreground=True, horizontal_background=True,
+                                        background_grating=back_grate, circle_grating=back_grate.copy())
+        post_vid = np.repeat(global_[-1:], post_frames, axis=0)
+        global_vid = np.concatenate([global_, post_vid], axis=0)
+        vid.append(global_vid)
+    return np.concatenate(vid, axis=0)
+
+def periodic_differential(duration=5, sample_rate=30, pre_frames=40, 
+                        post_frames=40, img_shape=(50,50), center=(25,25),     
+                        radius=8, period_dur=30, bar_size=2, n_loops=5, n_steps=3):
+    tot_frames = int(duration * sample_rate)
+    diff_frames = int(tot_frames-pre_frames-post_frames)
+    assert diff_frames > 0
+    back_grate = stripes(img_shape, bar_size, angle=0)
+    circ_grate = stripes(img_shape, bar_size, angle=0)
+    vid = []
+    for i in range(n_loops):
+        differential, back_grate, circ_grate = stim.periodic_differential_circle(n_frames=diff_frames, 
+                                                    period_dur=30, sync_periods=False, image_shape=img_shape,
+                                                    center=center, radius=radius, horizontal_background=True,
+                                                    horizontal_foreground=True, background_grating=back_grate, 
+                                                    circle_grating=circ_grate, n_steps=n_steps)
+        post_vid = np.tile(back_grate[None], (post_frames,1,1))
+        if i == 0:
+            pre_vid = np.repeat(differential[:1], pre_frames, axis=0)
+            diff_vid = np.concatenate([pre_vid, differential, post_vid], axis=0)            
+        else:
+            diff_vid = np.concatenate([differential, post_vid], axis=0)
+        vid.append(diff_vid)
+        global_, back_grate, circ_grate = stim.periodic_differential_circle(n_frames=diff_frames, 
+                                                    period_dur=30, sync_periods=True, image_shape=img_shape,
+                                                    center=center, radius=radius, horizontal_background=True,
+                                                    horizontal_foreground=True, background_grating=back_grate, 
+                                                    circle_grating=back_grate.copy(), n_steps=n_steps)
+        post_vid = np.repeat(global_[-1:], post_frames, axis=0)
+        global_vid = np.concatenate([global_, post_vid], axis=0)
+        vid.append(global_vid)
+    return np.concatenate(vid, axis=0)
+
+def oms_differential(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=8, background_velocity=0, foreground_velocity=.5, seed=None, bar_size=2, inner_bar_size=None):
     """
     Plays a video of differential motion by keeping a circular window fixed in space on a 2d background grating.
     A grating exists behind the circular window that moves counter to the background grating. 
@@ -183,13 +262,15 @@ def oms_differential(model, duration=5, sample_rate=30, pre_frames=40, post_fram
         sets the numpy random seed if int
     bar_size: int
         size of stripes. Min value is 3
+    inner_bar_size: int
+        size of grating bars inside circle. If None, set to bar_size
     """
     if seed is not None:
         np.random.seed(seed)
     tot_frames = int(duration * sample_rate)
     diff_frames = int(tot_frames-pre_frames-post_frames)
     assert diff_frames > 0
-    differential = stim.differential_circle(diff_frames, bar_size=bar_size, 
+    differential, _, _ = stim.differential_circle(diff_frames, bar_size=bar_size, inner_bar_size=inner_bar_size,
                                     foreground_velocity=foreground_velocity, 
                                     background_velocity=background_velocity,
                                     image_shape=img_shape, center=center, radius=radius, 
@@ -199,7 +280,7 @@ def oms_differential(model, duration=5, sample_rate=30, pre_frames=40, post_fram
     diff_vid = np.concatenate([pre_vid, differential, post_vid], axis=0)
 
     global_velocity = foreground_velocity if foreground_velocity != 0 else background_velocity
-    global_ = stim.differential_circle(diff_frames, bar_size=bar_size, 
+    global_, _, _ = stim.differential_circle(diff_frames, bar_size=bar_size, inner_bar_size=inner_bar_size,
                                     foreground_velocity=global_velocity,
                                     background_velocity=global_velocity, 
                                     image_shape=img_shape, center=center, radius=radius, 
@@ -208,20 +289,25 @@ def oms_differential(model, duration=5, sample_rate=30, pre_frames=40, post_fram
     post_vid = np.repeat(global_[-1:], post_frames, axis=0)
     global_vid = np.concatenate([pre_vid, global_, post_vid], axis=0)
     
-    diff_response = model(torch.FloatTensor(stim.concat(diff_vid)).to(DEVICE)).cpu().detach().numpy()
-    global_response = model(torch.FloatTensor(stim.concat(global_vid)).to(DEVICE)).cpu().detach().numpy()
+    if model is None:
+        fig = None
+        diff_response = None
+        global_response = None
+    else:
+        diff_response = model(torch.FloatTensor(stim.concat(diff_vid)).to(DEVICE)).cpu().detach().numpy()
+        global_response = model(torch.FloatTensor(stim.concat(global_vid)).to(DEVICE)).cpu().detach().numpy()
 
-    # generate the figure
-    fig = plt.figure(figsize=(6, 4))
-    ax = fig.add_subplot(111)
-    ax.plot(diff_response.mean(-1), color="g")
-    ax.plot(global_response.mean(-1), color="b")
-    ax.legend(["diff", "global"])
-    diff_response = diff_response[pre_frames-40:tot_frames-post_frames]
-    global_response = global_response[pre_frames-40:tot_frames-post_frames]
+        # generate the figure
+        fig = plt.figure(figsize=(6, 4))
+        ax = fig.add_subplot(111)
+        ax.plot(diff_response.mean(-1), color="g")
+        ax.plot(global_response.mean(-1), color="b")
+        ax.legend(["diff", "global"])
+        diff_response = diff_response[pre_frames-40:tot_frames-post_frames]
+        global_response = global_response[pre_frames-40:tot_frames-post_frames]
     return fig, diff_vid, global_vid, diff_response, global_response
 
-def oms_jitter(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=5, seed=None, bar_size=2):
+def oms_jitter(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=5, seed=None, bar_size=2, inner_bar_size=None, jitter_freq=.5, step_size=1):
     """
     Plays a video of a jittered circle window onto a grating different than that of the background.
 
@@ -243,6 +329,12 @@ def oms_jitter(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40,
         sets the numpy random seed if int
     bar_size: int
         size of stripes. Min value is 3
+    inner_bar_size: int
+        size of stripes inside circle. Min value is 3. If none, same as bar_size
+    jitter_freq: float between 0 and 1
+        the frequency of jittered movements
+    step_size: int
+        largest magnitude jitter movements in pixels
     """
     assert pre_frames > 0 and post_frames > 0
     if seed is not None:
@@ -250,20 +342,25 @@ def oms_jitter(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40,
     tot_frames = int(duration * sample_rate)
     jitter_frames = int(tot_frames-pre_frames-post_frames)
     assert jitter_frames > 0
-    jitters = stim.jittered_circle(jitter_frames, bar_size=bar_size, foreground_jitter=.5, background_jitter=0,
+    jitters, _, _ = stim.jittered_circle(jitter_frames, bar_size=bar_size, inner_bar_size=inner_bar_size, 
+                                    foreground_jitter=jitter_freq, background_jitter=0, step_size=step_size,
                                     image_shape=img_shape, center=center, radius=radius, 
                                     horizontal_foreground=False, horizontal_background=False)
     pre_vid = np.repeat(jitters[:1], pre_frames, axis=0)
     post_vid = np.repeat(jitters[-1:], post_frames, axis=0)
     vid = np.concatenate([pre_vid, jitters, post_vid], axis=0)
     
-    response = model(torch.FloatTensor(stim.concat(vid)).to(DEVICE)).cpu().detach().numpy()
-    avg_response = response.mean(-1)
+    if model is None:
+        fig = None
+        response = None
+    else:
+        response = model(torch.FloatTensor(stim.concat(vid)).to(DEVICE)).cpu().detach().numpy()
+        avg_response = response.mean(-1)
 
-    # generate the figure
-    fig = plt.figure(figsize=(6, 4))
-    ax = fig.add_subplot(111)
-    ax.plot(avg_response)
+        # generate the figure
+        fig = plt.figure(figsize=(6, 4))
+        ax = fig.add_subplot(111)
+        ax.plot(avg_response)
     return fig, vid, response
 
 def oms(duration=5, sample_rate=0.01, transition_duration=0.07, silent_duration=0.93,
@@ -335,7 +432,7 @@ def oms(duration=5, sample_rate=0.01, transition_duration=0.07, silent_duration=
     return movie
 
 
-def osr(model, duration=2, interval=10, nflashes=5, intensity=-2.0):
+def osr(model=None, duration=2, interval=10, nflashes=5, intensity=-2.0):
     """Omitted stimulus response
     Parameters
     ----------
@@ -355,12 +452,30 @@ def osr(model, duration=2, interval=10, nflashes=5, intensity=-2.0):
     flash_group = list(repeat(single_flash, nflashes))
     zero_pad = np.zeros((interval, 1, 1))
     X = stim.concat(zero_pad, *flash_group, omitted_flash, *flash_group, nx=50, nh=40)
-    X_torch = torch.from_numpy(X).to(DEVICE)
-    resp = model(X_torch)
-    figs = viz.response1D(X[:, -1, 0, 0].copy(), resp.cpu().detach().numpy(), figsize=(20, 8))
-    (fig, (ax0,ax1)) = figs
-    return (fig, (ax0,ax1)), X, resp
+    X[X!=0] = 1
+    if model is not None:
+        X_torch = torch.from_numpy(X).to(DEVICE)
+        resp = model(X_torch).cpu().detach().numpy()
+        figs = viz.response1D(X[:, -1, 0, 0].copy(), resp, figsize=(20, 8))
+        (fig, (ax0,ax1)) = figs
 
+        # Table Metrics
+        n_full_responses = len(resp)//len(single_flash)
+        responses = [resp[i*len(single_flash):(i+1)*len(single_flash)] for i in range(n_full_responses)]
+        flash_resps = np.zeros((len(responses), *responses[0].shape))
+        for i,resp in enumerate(responses):
+            if i != len(flash_group):
+                flash_resps[i] = resp
+        omitted_resp = np.asarray(responses[len(flash_group)])
+        avg_flash_resp = np.mean(flash_resps, axis=0)
+        resp_ratio = (omitted_resp.sum(0)/avg_flash_resp.sum(0)).mean()
+    else:
+        fig = None
+        ax0,ax1 = None, None
+        resp = None
+        resp_ratio = None
+
+    return (fig, (ax0,ax1)), X, resp, resp_ratio
 
 def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_duration=2):
     """Generates the Berry motion anticipation stimulus
@@ -380,7 +495,8 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
     flashes : array_like
     """
     # moving bar stimulus and responses
-    c_right, speed_right, stim_right = stim.driftingbar(velocity, width)
+    # c_right and c_left are the center positions of the bar
+    c_right, speed_right, stim_right = stim.driftingbar(velocity, width, x=(-30, 30))
     resp_right = model(torch.from_numpy(stim_right).to(DEVICE)).cpu().detach().numpy()
 
     c_left, speed_left, stim_left = stim.driftingbar(-velocity, width, x=(30, -30))
@@ -419,7 +535,30 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
     ax.set_ylabel('Scaled firing rate')
     ax.set_xlim(-735, 135)
 
-    return (fig, ax), (speed_left, speed_right), (c_right, stim_right, resp_right), (c_left, stim_left, resp_left), (flash_centers, flash_responses)
+    """
+    Table metrics
+    symmetry: measure of the symmetry of the flash response (vals range from 0 to 1, 1 is better)
+    continuity: measure of flash response curve direction continuity (vals range from 0 to 1, 1 is better)
+    peak_height: measure of height of flash response peak (vals range from 0 to 1, 1 is better)
+    right_anticipation: measure of anticipation response on rightward moving bar (larger values are better
+    left_anticipation: measure of anticipation response on leftward moving bar (larger values are better
+    """
+    #flash_left_idxs = (flash_centers<0)
+    #flash_right_idxs = (flash_centers>0)
+    #symmetry = 1-(avg_resp_flash[flash_left_idxs] - avg_resp_flash[flash_right_idxs]).mean()
+    #cont_left = avg_resp_flash[flash_left_idxs][1:]-avg_resp_flash[flash_left_idxs][:-1]
+    #cont_right = avg_resp_flash[flash_right_idxs][:-1]-avg_resp_flash[flash_right_idxs][1:]
+    #continuity = ((cont_left>0).mean()+(cont_right>0).mean())/2                 # Continuity
+    #peak_height = avg_resp_flash.max()-avg_resp_flash.min()                          # Spread
+    #print("flash",avg_resp_flash.shape)
+    #print("right", avg_resp_right.shape)
+    #print("left", avg_resp_left.shape)
+    #left_idxs = (c_right[40:]<0)
+    #right_idxs = (c_right[40:]>0)
+    #right_anticipation = (avg_resp_flash[flash_left_idxs] - avg_resp_right[left_idxs]) + (avg_resp_right[right_idxs]-avg_resp_flash[right_idxs])
+    #left_anticipation = (avg_resp_left[left_idxs] - avg_resp_flash[left_idxs]) + (avg_resp_flash[right_idxs]-avg_resp_left[right_idxs])
+
+    return (fig, ax), (speed_left, speed_right), (c_right, stim_right, resp_right),(c_left, stim_left, resp_left), (flash_centers, flash_responses)#, (symmetry, continuity, peak_height, right_anticipation, left_anticipation)
 
 def motion_reversal(model, scale_factor=55, velocity=0.08, width=2):
     """
@@ -494,6 +633,11 @@ def motion_reversal(model, scale_factor=55, velocity=0.08, width=2):
 
     return (fig, ax), (speed_left, speed_right), (rtl, resp_rtl), (ltr, resp_ltr), avg_resp
 
+def ds(img_shape=(500,500), bar_width=20, angle=0, step_size=10, n_repeats=3):
+    frames = stim.dir_select_vid(img_shape, bar_width=bar_width, angle=angle, step_size=step_size)
+    ones = [1 for i in range(len(frames.shape[1:]))]
+    return np.tile(frames, (n_repeats, *ones))
+
 # Fast Contrast adaptation figure
 # The following functions are used for the fast contrast adaptation figure
 #######################################################################################
@@ -518,8 +662,7 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500):
     """
     requires_grad(model, False)
 
-    # Use hook to target appropriate layer activations
-    outsize = (batch_size, 5)
+    outsize = (batch_size, model.n_units)
     outs = torch.zeros(outsize).to(0)
     def forward_hook(module, inps, outputs):
         outs[:] = outputs
@@ -659,7 +802,6 @@ def contrast_fig(model, contrasts, layer_name=None, unit_index=(0,15,15), nonlin
     ax1.spines['top'].set_visible(False)
     ax1.xaxis.set_ticks_position('bottom')
     ax1.yaxis.set_ticks_position('left')
-    
     
     plt.subplot(1, 2, 2)
     plt.plot(high_x, len(high_x) * [0], 'k--', alpha=0.4)
