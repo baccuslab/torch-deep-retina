@@ -1,6 +1,43 @@
 import numpy as np
 import copy
 import torch
+import subprocess
+import json
+
+def load_json(file_name):
+    with open(file_name) as f:
+        s = f.read()
+        j = json.loads(s)
+    return j
+
+def get_cuda_info():
+    """
+    Get the current gpu usage. 
+
+    Partial credit to https://discuss.pytorch.org/t/access-gpu-memory-usage-in-pytorch/3192/3
+
+    Returns
+    -------
+    usage: dict
+        Keys are device ids as integers.
+        Values are memory usage as integers in MB.
+    """
+    result = subprocess.check_output(
+        [
+            'nvidia-smi', '--query-gpu=memory.used',
+            '--format=csv,nounits,noheader'
+        ], encoding='utf-8')
+    # Convert lines into a dictionary
+    gpu_memory = [int(x) for x in result.strip().split('\n')]
+    cuda_info = []
+    for i,used_mem in zip(range(len(gpu_memory)), gpu_memory):
+        info = dict()
+        tot_mem = torch.cuda.get_device_properties(i).total_memory/1028**2
+        info['total_mem'] = tot_mem
+        info['used_mem'] = used_mem
+        info['remaining_mem'] = tot_mem-used_mem
+        cuda_info.append(info)
+    return cuda_info
 
 def freeze_weights(model, unfreeze=False):
     for p in model.parameters():
@@ -8,6 +45,25 @@ def freeze_weights(model, unfreeze=False):
             p.requires_grad = unfreeze
         except:
             pass
+
+def find_local_maxima(array):
+    if len(array) == 2 and array[0] > array[1]:
+        return [0]
+    if len(array) == 2 and array[0] < array[1]:
+        return [1]
+    if len(array) <= 2:
+        return [0]
+
+    maxima = []
+    if array[0] > array[1]:
+        maxima.append(0)
+    for i in range(1,len(array)-1):
+        if array[i-1] < array[i] and array[i+1] < array[i]:
+            maxima.append(i)
+    if array[-2] < array[-1]:
+        maxima.append(len(array)-1)
+
+    return maxima
 
 def parallel_shuffle(arrays, set_seed=-1):
     """
