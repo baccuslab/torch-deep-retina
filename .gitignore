@@ -118,3 +118,4 @@ delete_me.py
 */*_results.txt
 jupyter-notebooks/*.ipynb
 */hyps/*
+.DS_Store
