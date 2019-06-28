@@ -137,6 +137,8 @@ def get_hyps(folder, main_dir="../training_scripts"):
                 splt = line.strip().split(":")
                 if len(splt) > 1:
                     hyps[splt[0]] = splt[1].strip()
+                    if splt[0] == "log_poisson":
+                        hyps[splt[0]] = hyps[splt[0]] == "True"
     return hyps
 
 def read_model(folder):
