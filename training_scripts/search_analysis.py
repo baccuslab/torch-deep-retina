@@ -40,46 +40,55 @@ def normalize(x):
 def retinal_phenomena_figs(model):
     figs = []
     fig_names = []
+    metrics = dict()
 
-    #(fig, (ax0,ax1)), X, resp = rp.step_response(model)
-    #figs.append(fig)
-    #fig_names.append("step_response")
+    (fig, (ax0,ax1)), X, resp = rp.step_response(model)
+    figs.append(fig)
+    fig_names.append("step_response")
+    metrics['step_response'] = None
 
-    #(fig, (ax0,ax1)), X, resp = rp.osr(model, duration=1)
-    #figs.append(fig)
-    #fig_names.append("osr")
+    (fig, (ax0,ax1)), X, resp, osr_resp_proportion = rp.osr(model, duration=1)
+    figs.append(fig)
+    fig_names.append("osr")
+    metrics['osr'] = osr_resp_proportion 
 
-    #(fig, (ax0,ax1)), X, resp = rp.reversing_grating(model)
-    #figs.append(fig)
-    #fig_names.append("reversing_grating")
+    (fig, (ax0,ax1)), X, resp = rp.reversing_grating(model)
+    figs.append(fig)
+    fig_names.append("reversing_grating")
+    metrics['reversing_grating'] = None
 
-    #(fig, (ax0,ax1)), envelope, responses = rp.contrast_adaptation(model, .35, .05)
-    #figs.append(fig)
-    #fig_names.append("contrast_adaptation")
+    (fig, (ax0,ax1)), envelope, responses = rp.contrast_adaptation(model, .35, .05)
+    figs.append(fig)
+    fig_names.append("contrast_adaptation")
+    metrics['contrast_adaptation'] = None
 
-    #contrasts = [0.5, 1.2]
-    #unit = 0
-    #layer = "sequential."+str(len(model.sequential)-1)
-    #fig = rp.contrast_fig(model, contrasts, unit_index=unit, nonlinearity_type="bin")
-    #figs.append(fig)
-    #fig_names.append("contrast_fig")
+    contrasts = [0.5, 1.2]
+    unit = 0
+    layer = "sequential."+str(len(model.sequential)-1)
+    fig = rp.contrast_fig(model, contrasts, unit_index=unit, nonlinearity_type="bin")
+    figs.append(fig)
+    fig_names.append("contrast_fig")
+    metrics['contrast_fig'] = None
 
-    #(fig, ax), (speed_left, speed_right), (rtl, resp_rtl), (ltr, resp_ltr), avg_resp = rp.motion_reversal(model)
-    #figs.append(fig)
-    #fig_names.append("motion_reversal")
+    (fig, ax), (speed_left, speed_right), (rtl, resp_rtl), (ltr, resp_ltr), avg_resp = rp.motion_reversal(model)
+    figs.append(fig)
+    fig_names.append("motion_reversal")
+    metrics['motion_reversal'] = None
 
-    #tup = rp.motion_anticipation(model)
-    #(fig, ax), (speed_left, speed_right), (c_right, stim_right, resp_right), (c_left, stim_left, resp_left), (flash_centers, flash_responses) = tup
-    #figs.append(fig)
-    #fig_names.append("motion_anticipation")
+    tup = rp.motion_anticipation(model)
+    (fig, ax), (speed_left, speed_right), (c_right, stim_right, resp_right), (c_left, stim_left, resp_left), (flash_centers, flash_responses) = tup
+    figs.append(fig)
+    fig_names.append("motion_anticipation")
+    #metrics['motion_anticipation'] = (symmetry, continuity, peak_height, right_anticipation, left_anticipation)
+    metrics['motion_anticipation'] = None
 
     fig, diff_vid, global_vid, diff_response, global_response = rp.oms_random_differential(model)
     figs.append(fig)
     fig_names.append("oms")
-    
     oms_ratios = global_response.mean(0)/diff_response.mean(0)
+    metrics['oms'] = oms_ratios
 
-    return figs, fig_names, oms_ratios
+    return figs, fig_names, metrics
 
 def get_insp_layers(model, hyps):
     try:
@@ -94,7 +103,7 @@ def get_insp_layers(model, hyps):
         if len(insp_layers) >= 2:
             return insp_layers
     return ['sequential.2', 'sequential.8']
-    
+
 def load_interneuron_data(root_path="~/interneuron_data/"):
     # Load data
     # num_pots stores the number of cells per stimulus
@@ -156,9 +165,14 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
         try:
             with open(f_name, "rb") as fd:
                 data = torch.load(fd)
-            losses.append(data['loss'])
-            val_losses.append(data['val_loss'])
-            val_accs.append(data['val_acc'])
+            try:
+                losses.append(data['loss'])
+                val_losses.append(data['val_loss'])
+                val_accs.append(data['val_acc'])
+            except:
+                losses.append(0)
+                val_losses.append(0)
+                val_accs.append(.5)
             # Remove legacy saving system
             if 'model' in data:
                 model = data['model']
@@ -204,7 +218,9 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
         new_seq = [m for m in model.sequential] + [Exponential()]
         noexp_seq = model.sequential
         noexp_seq.eval()
-        print("Old model:")
+        # Old model is model without final exponential
+        # Models during inference have an exponential
+        print("Old model:") 
         print(noexp_seq)
         model.sequential = nn.Sequential(*new_seq)
 
@@ -231,8 +247,7 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
     except:
         norm_stats = [51.49175, 53.62663279042969]
 
-    if test_data is None:
-        test_data = loadexpt(dataset,cells,stim_type,'test',40,0, norm_stats=norm_stats)
+    test_data = loadexpt(dataset,cells,stim_type,'test',40,0, norm_stats=norm_stats)
     test_x = torch.from_numpy(test_data.X)
     
     stats['FinalLoss'] = losses[-1]
@@ -243,7 +258,8 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
         print("NaN results, continuing...\n")
         return stats
     
-    model_response = bc.batch_compute_model_response(test_data.X, model, batch_compute_size, 
+    with torch.no_grad():
+        model_response = bc.batch_compute_model_response(test_data.X, model, batch_compute_size, 
                                                      insp_keys=set(insp_layers))
 
     # Collect test data pearson correlation
@@ -266,6 +282,8 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
         print("Old test acc:", noexp_avg_acc)
         print("New minus old:", avg_test_acc - noexp_avg_acc)
         stats['OldTestAcc'] = noexp_avg_acc
+        if math.isnan(avg_test_acc):
+            avg_test_acc = noexp_avg_acc
         del noexp_modresp
         del noexp_seq
     
@@ -278,13 +296,13 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
         print("Results too low, continuing...\n")
         return stats
     
-    ## Plot firing rate sample
-    #fig = plt.figure()
-    #plt.plot(normalize(model_response['output'][:400, 0]))
-    #plt.plot(normalize(test_data.y[:400,0]), alpha=.7)
-    #plt.legend(["model", "data"])
-    #plt.title("Firing Rate")
-    #plt.savefig(os.path.join(folder, "firing_rate_sample.png"))
+    # Plot firing rate sample
+    fig = plt.figure()
+    plt.plot(normalize(model_response['output'][:400, 0]))
+    plt.plot(normalize(test_data.y[:400,0]), alpha=.7)
+    plt.legend(["model", "data"])
+    plt.title("Firing Rate")
+    plt.savefig(os.path.join(folder, "firing_rate_sample.png"))
     #
     ## Plot loss curve
     #fig = plt.figure()
@@ -295,10 +313,12 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
     #plt.savefig(os.path.join(folder, "loss_curve.png"))
     
     # Get retinal phenomena plots
-    figs, fig_names, oms_ratios = retinal_phenomena_figs(model)
-    #for fig, name in zip(figs, fig_names):
-    #    save_name = name + ".png"
-    #    fig.savefig(os.path.join(folder, save_name))
+    figs, fig_names, metrics = retinal_phenomena_figs(model)
+
+    for fig, name in zip(figs, fig_names):
+        save_name = name + ".png"
+        fig.savefig(os.path.join(folder, save_name))
+    oms_ratios = metrics['oms']
     for i, cell in enumerate(test_data.cells):
         stats["oms_ratio_cell"+str(cell)] = oms_ratios[i]
     stats['avg_oms_ratio'] = np.mean(oms_ratios)
@@ -512,7 +532,12 @@ if __name__ == "__main__":
         _, model_folders, _ = next(os.walk(exp_folder))
         for i,folder in enumerate(model_folders):
             model_folders[i] = os.path.join(grand_folder,folder)
-        model_folders = sorted(model_folders, key=lambda x: int(x.split("_")[1]))
+
+        try:
+            model_folders = sorted(model_folders, key=lambda x: int(x.split("_")[1]))
+        except IndexError as e:
+            print("index error for", grand_folder)
+            print("Using model_folders:", model_folders)
         analyze_models(model_folders)
     
     
