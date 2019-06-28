@@ -22,7 +22,7 @@ import sys
 from torch.distributions import normal
 import gc
 import resource
-from torchdeepretina.miscellaneous import ShuffledDataSplit
+from torchdeepretina.utils import ShuffledDataSplit
 from torchdeepretina.deepretina_loader import loadexpt
 from torchdeepretina.models import *
 import torchdeepretina.retio as io

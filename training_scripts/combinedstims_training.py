@@ -15,7 +15,7 @@ import sys
 from torch.distributions import normal
 import gc
 import resource
-from torchdeepretina.miscellaneous import ShuffledDataSplit
+from torchdeepretina.utils import ShuffledDataSplit
 from torchdeepretina.models import *
 import torchdeepretina.retio as io
 import argparse
@@ -134,7 +134,7 @@ def train(hyps, model, train_datas, model_hyps):
             "val_accs":val_accs,
             "norm_stats":hyps['norm_stats'],
         }
-        io.save_checkpoint_dict(save_dict,SAVE,'test')
+        io.save_checkpoint_dict(save_dict,SAVE,'test', del_prev=True)
         del val_preds
         del temp
         print()

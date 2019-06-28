@@ -5,7 +5,7 @@ import sys
 import json
 import pickle
 import numpy as np
-from .miscellaneous import freeze_weights
+from .utils import freeze_weights
 
 def load_json(json_file):
     with open(json_file) as f:

@@ -6,8 +6,6 @@ $ python3 general_training.py params=hyperparams.json ranges=hyperranges.json
 
 Defaults to hyperparams.json and hyperranges.json if no arguments are provided
 """
-import matplotlib
-matplotlib.use('Agg')
 from scipy.stats import pearsonr
 import os
 import sys
@@ -16,17 +14,11 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn import PoissonNLLLoss, MSELoss
-import h5py as h5
 import os.path as path
-import sys
-from torch.distributions import normal
-import gc
-import resource
-from torchdeepretina.miscellaneous import ShuffledDataSplit
+from torchdeepretina.utils import ShuffledDataSplit
 from torchdeepretina.deepretina_loader import loadexpt
 from torchdeepretina.models import *
 import torchdeepretina.retio as io
-import argparse
 import time
 from tqdm import tqdm
 import json
@@ -64,7 +56,7 @@ def train(hyps, model, data, model_hyps):
     else:
         loss_fn = globals()[hyps['lossfxn']]()
     optimizer = torch.optim.Adam(model.parameters(), lr = LR, weight_decay = LAMBDA2)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.2*LR)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.1)
 
     # train/val split
     num_val = 20000
@@ -136,10 +128,18 @@ def train(hyps, model, data, model_hyps):
             pearsons.append(pearsonr(val_preds[:, cell], data.val_y[:val_preds.shape[0]][:,cell].numpy())[0])
         print("Val Cell Pearsons:", " - ".join([str(p) for p in pearsons]))
         val_acc = np.mean(pearsons)
-        print("Avg Val Pearson:", val_acc, " -- Val Loss:", val_loss, " | SaveFolder:", SAVE)
+        exp_val_acc = None
+        if hyps["log_poisson"] and hyps['softplus'] and not model.infr_exp:
+            val_preds = np.exp(val_preds)
+            for cell in range(val_preds.shape[-1]):
+                pearsons.append(pearsonr(val_preds[:, cell], data.val_y[:val_preds.shape[0]][:,cell].numpy())[0])
+            exp_val_acc = np.mean(pearsons)
+        print("Avg Val Pearson:", val_acc, " -- Val Loss:", val_loss, " -- Exp Val:", exp_val_acc)
+        print("SaveFolder:", SAVE)
         scheduler.step(val_loss)
         del val_preds
         del temp
+
 
         test_obs = model(test_x.to(DEVICE)).cpu().detach().numpy()
 
@@ -163,10 +163,11 @@ def train(hyps, model, data, model_hyps):
             "epoch":epoch,
             "val_loss":val_loss,
             "val_acc":val_acc,
+            "exp_val_acc":exp_val_acc,
             "test_pearson":avg_pearson,
             "norm_stats":train_data.stats,
         }
-        io.save_checkpoint_dict(save_dict,SAVE,'test')
+        io.save_checkpoint_dict(save_dict, SAVE, 'test', del_prev=True)
         print()
         # If loss is nan, training is futile
         if math.isnan(avg_loss) or math.isinf(avg_loss):
@@ -231,11 +232,8 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
         if 'lossfxn' not in hyps:
             hyps['lossfxn'] = "PoissonNLLLoss"
         
-        # Train and collect results
-        results = train(hyps, model, data, model_hyps)
-        with open(hyps['results_file'],'a') as f:
-            if hyps['exp_num'] == hyps['starting_exp_num']:
-                f.write(str(model)+'\n\n')
+        if hyps['exp_num'] == hyps['starting_exp_num']:
+            with open(hyps['results_file'],'a') as f:
                 f.write("Hyperparameters:\n")
                 for k in hyps.keys():
                     if k not in hyp_ranges:
@@ -244,6 +242,10 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
                 for k in hyp_ranges.keys():
                     f.write(str(k) + ": [" + ",".join([str(v) for v in hyp_ranges[k]])+']\n')
                 f.write('\n')
+
+        # Train and collect results
+        results = train(hyps, model, data, model_hyps)
+        with open(hyps['results_file'],'a') as f:
             results = " ".join([k+":"+str(results[k]) for k in sorted(results.keys())])
             f.write(hyps['save_folder'].split("/")[-1] + ":\n\t" + results +"\n\n")
         hyps['exp_num'] += 1
