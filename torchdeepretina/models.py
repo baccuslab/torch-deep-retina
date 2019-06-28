@@ -5,11 +5,13 @@ import numpy as np
 
 # Use for bncnnbnormmomentum folder
 class BNCNN(nn.Module):
-    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=.01, softplus=True):
+    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=.01, softplus=True, inference_exp=False):
         super(BNCNN,self).__init__()
         self.name = 'McNiruNet'
         self.chans = chans
         self.softplus = softplus
+        self.infr_exp = inference_exp
+        self.n_units = n_units
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -33,6 +35,8 @@ class BNCNN(nn.Module):
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
 
     def extra_repr(self):
@@ -42,11 +46,13 @@ class BNCNN(nn.Module):
             pass
 
 class LinearDecoupBNCNN(nn.Module):
-    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=.01, softplus=True):
+    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=.01, softplus=True, inference_exp=False):
         super(LinearDecoupBNCNN,self).__init__()
         self.name = 'McNiruNet'
+        self.n_units = n_units
         self.chans = chans
         self.softplus = softplus
+        self.infr_exp = inference_exp
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -69,6 +75,8 @@ class LinearDecoupBNCNN(nn.Module):
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
 
     def extra_repr(self):
@@ -78,10 +86,12 @@ class LinearDecoupBNCNN(nn.Module):
             pass
 
 class NoFinalBNBNCNN(nn.Module):
-    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=.01, softplus=True):
+    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=.01, softplus=True, inference_exp=False):
         super(NoBNSoftplusBNCNN,self).__init__()
         self.name = 'McNiruNet'
+        self.n_units = n_units
         self.chans = chans
+        self.infr_exp = inference_exp
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -104,37 +114,8 @@ class NoFinalBNBNCNN(nn.Module):
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
-        return self.sequential(x)
-
-    def extra_repr(self):
-        try:
-            return 'adapt_gauss={}'.format(self.adapt_gauss)
-        except:
-            pass
-
-class NoBNNoSoftplusBNCNN(nn.Module):
-    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=.01):
-        super(NoBNNoSoftplusBNCNN,self).__init__()
-        self.name = 'McNiruNet'
-        self.chans = chans
-        if linear_bias is None:
-            linear_bias = bias
-        modules = []
-        modules.append(nn.Conv2d(40,chans[0],kernel_size=15, bias=bias))
-        modules.append(Flatten())
-        modules.append(nn.BatchNorm1d(chans[0]*36*36, eps=1e-3, momentum=bnorm_momentum))
-        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
-        modules.append(nn.ReLU())
-        modules.append(Reshape((-1,chans[0],36,36)))
-        modules.append(nn.Conv2d(chans[0],chans[1],kernel_size=11, bias=bias))
-        modules.append(Flatten())
-        modules.append(nn.BatchNorm1d(chans[1]*26*26, eps=1e-3, momentum=bnorm_momentum))
-        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
-        modules.append(nn.ReLU())
-        modules.append(nn.Linear(chans[1]*26*26,n_units, bias=linear_bias))
-        self.sequential = nn.Sequential(*modules)
-        
-    def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
 
     def extra_repr(self):
@@ -144,10 +125,12 @@ class NoBNNoSoftplusBNCNN(nn.Module):
             pass
 
 class ScaledSoftplusBNCNN(nn.Module):
-    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=.01):
+    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=.01, inference_exp=False):
         super(ScaledSoftplusBNCNN,self).__init__()
         self.name = 'McNiruNet'
+        self.n_units = n_units
         self.chans = chans
+        self.infr_exp = inference_exp
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -168,6 +151,8 @@ class ScaledSoftplusBNCNN(nn.Module):
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
 
     def extra_repr(self):
@@ -177,11 +162,13 @@ class ScaledSoftplusBNCNN(nn.Module):
             pass
 
 class AbsBNBNCNN(nn.Module):
-    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True):
+    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True, inference_exp=False):
         super(AbsBNBNCNN,self).__init__()
         self.name = 'McNiruNet'
+        self.n_units = n_units
         modules = []
         self.chans = chans
+        self.infr_exp = inference_exp
         if linear_bias is None:
             linear_bias = bias
         modules.append(nn.Conv2d(40,chans[0],kernel_size=15, bias=bias))
@@ -204,14 +191,18 @@ class AbsBNBNCNN(nn.Module):
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
 
 class AbsSSSSCNN(nn.Module):
     def __init__(self, n_units, scale=True, shift=False, bias=True, linear_bias=None,
-                                                noise=0.05, adapt_gauss=False, chans=[8,8], softplus=True):
+                        noise=0.05, adapt_gauss=False, chans=[8,8], softplus=True, inference_exp=False):
         super(AbsSSSSCNN,self).__init__()
         self.name = 'McNiruNet'
+        self.n_units = n_units
         self.chans=[8,8]
+        self.infr_exp = inference_exp
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -233,12 +224,16 @@ class AbsSSSSCNN(nn.Module):
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
 
 class BNCNN2D(nn.Module):
-    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True):
+    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True, inference_exp=False):
         super(BNCNN2D,self).__init__()
         self.name = 'McNiruNet'
+        self.n_units = n_units
+        self.infr_exp = inference_exp
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -264,14 +259,18 @@ class BNCNN2D(nn.Module):
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
 
 class CNN(nn.Module):
-    def __init__(self, n_units, bias=False, linear_bias=None, noise=0.05, adapt_gauss=False, chans=[8,8], softplus=True):
+    def __init__(self, n_units, bias=False, linear_bias=None, noise=0.05, adapt_gauss=False, chans=[8,8], softplus=True, inference_exp=False):
         super(CNN,self).__init__()
         self.name = 'McNiruNet'
+        self.n_units = n_units
         self.chans = chans
         self.adapt_gauss = adapt_gauss
+        self.infr_exp = inference_exp
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -290,15 +289,19 @@ class CNN(nn.Module):
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
 
 class DalesBNCNN(nn.Module):
-    def __init__(self, n_units=5, bias=True, linear_bias=None, noise=0.1, adapt_gauss=False, chans=[8,8], neg_p=0.5, bnorm_momentum=0.1, abs_bias=True, softplus=True):
+    def __init__(self, n_units=5, bias=True, linear_bias=None, noise=0.1, adapt_gauss=False, chans=[8,8], neg_p=0.5, bnorm_momentum=0.1, abs_bias=True, softplus=True, inference_exp=False):
         super(DalesBNCNN,self).__init__()
         self.name = 'DaleNet'
+        self.n_units = n_units
         self.chans = chans
         self.adapt_gauss = adapt_gauss
         self.abs_bias = abs_bias
+        self.infr_exp = inference_exp
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -329,6 +332,8 @@ class DalesBNCNN(nn.Module):
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
     
     def diminish_weight_magnitude(self, params):
@@ -338,11 +343,13 @@ class DalesBNCNN(nn.Module):
                 param.data = param.data/divisor
 
 class AbsBNDalesBNCNN(nn.Module):
-    def __init__(self, n_units=5, bias=True, linear_bias=None, noise=0.1, adapt_gauss=False, chans=[8,8], neg_p=0.5, bnorm_momentum=0.1, softplus=True):
+    def __init__(self, n_units=5, bias=True, linear_bias=None, noise=0.1, adapt_gauss=False, chans=[8,8], neg_p=0.5, bnorm_momentum=0.1, softplus=True, inference_exp=False):
         super(AbsBNDalesBNCNN,self).__init__()
         self.name = 'DaleNet'
+        self.n_units = n_units
         self.chans = chans
         self.adapt_gauss = adapt_gauss
+        self.infr_exp = inference_exp
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -373,6 +380,8 @@ class AbsBNDalesBNCNN(nn.Module):
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
     
     def diminish_weight_magnitude(self, params):
@@ -383,11 +392,13 @@ class AbsBNDalesBNCNN(nn.Module):
 
 class DalesSkipBNCNN(nn.Module):
     def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None,x_shape=(40,50,50), skip_depth=2, 
-                                                neg_p=.5, adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True):
+                        neg_p=.5, adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True, inference_exp=False):
         super(DalesSkipBNCNN,self).__init__()
         self.name = 'SkipNet'
+        self.n_units = n_units
         self.chans=chans
         self.adapt_gauss=adapt_gauss
+        self.infr_exp = inference_exp
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -420,15 +431,19 @@ class DalesSkipBNCNN(nn.Module):
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
 
 class DalesDoubleSkipBNCNN(nn.Module):
     def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None,x_shape=(40,50,50), skip_depth=2, 
-                                                neg_p=.5, adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True):
+                      neg_p=.5, adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True, inference_exp=False):
         super(DalesDoubleSkipBNCNN,self).__init__()
         self.name = 'SkipNet'
+        self.n_units = n_units
         self.chans=chans
         self.adapt_gauss=adapt_gauss
+        self.infr_exp = inference_exp
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -454,15 +469,19 @@ class DalesDoubleSkipBNCNN(nn.Module):
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
 
 class DalesSSCNN(nn.Module):
     def __init__(self, n_units=5, bias=True, linear_bias=None,noise=0.1, neg_p=0.5, scale=True, shift=True,
-                                                        adapt_gauss=False, chans=[8,8], softplus=True):
+                                         adapt_gauss=False, chans=[8,8], softplus=True, inference_exp=False):
         super(DalesSSCNN,self).__init__()
         self.name = 'DaleNet'
+        self.n_units = n_units
         self.chans=chans
         self.adapt_gauss = adapt_gauss
+        self.infr_exp = inference_exp
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -489,6 +508,8 @@ class DalesSSCNN(nn.Module):
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
     
     def diminish_weight_magnitude(self, params):
@@ -498,10 +519,12 @@ class DalesSSCNN(nn.Module):
                 param.data = param.data/divisor
 
 class Gauss1dBNCNN(nn.Module):
-    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None,adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True):
+    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None,adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True, inference_exp=False):
         super(Gauss1dBNCNN,self).__init__()
         self.name = 'McNiruNet'
+        self.n_units = n_units
         self.chans=chans
+        self.infr_exp = inference_exp
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -525,13 +548,17 @@ class Gauss1dBNCNN(nn.Module):
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
 
 class ParallelDataBNCNN(nn.Module):
-    def __init__(self, n_units=[5], noise=.05, bias=True, linear_bias=None,adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True):
+    def __init__(self, n_units=[5], noise=.05, bias=True, linear_bias=None,adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True, inference_exp=False):
         super(ParallelDataBNCNN,self).__init__()
         self.name = 'McNiruNet'
+        self.n_units = n_units
         self.chans=chans
+        self.infr_exp = inference_exp
         if linear_bias is None:
             linear_bias = bias
         # Create base of model
@@ -563,6 +590,8 @@ class ParallelDataBNCNN(nn.Module):
         
     def forward(self, x, output_idx):
         feats = self.features(x)
+        if not self.training and self.infr_exp:
+            return torch.exp(self.output_layers[output_idx](feats))
         return self.output_layers[output_idx](feats)
 
     def req_grad(self, mode):
@@ -578,10 +607,12 @@ class ParallelDataBNCNN(nn.Module):
                 pass
  
 class ParallelDataStackedBNCNN(nn.Module):
-    def __init__(self, n_units=[5], noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True):
+    def __init__(self, n_units=[5], noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True, inference_exp=False):
         super(ParallelDataStackedBNCNN,self).__init__()
         self.name = 'McNiruNet'
+        self.n_units = n_units
         self.chans=chans
+        self.infr_exp = inference_exp
         if linear_bias is None:
             linear_bias = bias
         # Create base of model
@@ -613,6 +644,8 @@ class ParallelDataStackedBNCNN(nn.Module):
         
     def forward(self, x, output_idx):
         feats = self.features(x)
+        if not self.training and self.infr_exp:
+            return torch.exp(self.output_layers[output_idx](feats))
         return self.output_layers[output_idx](feats)
 
     def req_grad(self, mode):
@@ -628,9 +661,11 @@ class ParallelDataStackedBNCNN(nn.Module):
                 pass
 
 class AbsBNPracticalBNCNN(nn.Module):
-    def __init__(self, n_units=5, noise=.1, bias=True, linear_bias=None,chans=[8,8], bnorm_momentum=0.1, softplus=True):
+    def __init__(self, n_units=5, noise=.1, bias=True, linear_bias=None,chans=[8,8], bnorm_momentum=0.1, softplus=True, inference_exp=False):
         super(AbsBNPracticalBNCNN,self).__init__()
         self.chans=chans
+        self.infr_exp = inference_exp
+        self.n_units = n_units
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -654,12 +689,16 @@ class AbsBNPracticalBNCNN(nn.Module):
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
         
 class PracticalMeanBNCNN(nn.Module):
-    def __init__(self, n_units=5, noise=.1, bias=True, linear_bias=None,chans=[8,8], bnorm_momentum=0.1, softplus=True):
+    def __init__(self, n_units=5, noise=.1, bias=True, linear_bias=None,chans=[8,8], bnorm_momentum=0.1, softplus=True, inference_exp=False):
         super(PracticalMeanBNCNN,self).__init__()
         self.chans=chans
+        self.infr_exp = inference_exp
+        self.n_units = n_units
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -683,12 +722,16 @@ class PracticalMeanBNCNN(nn.Module):
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
 
 class PracticalBNCNN(nn.Module):
-    def __init__(self, n_units=5, noise=.1, bias=True, linear_bias=None,chans=[8,8], bnorm_momentum=0.1, softplus=True):
+    def __init__(self, n_units=5, noise=.1, bias=True, linear_bias=None,chans=[8,8], bnorm_momentum=0.1, softplus=True, inference_exp=False):
         super(PracticalBNCNN,self).__init__()
         self.chans=chans
+        self.infr_exp = inference_exp
+        self.n_units = n_units
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -712,13 +755,17 @@ class PracticalBNCNN(nn.Module):
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
 
 class PracticalBNCNN2D(nn.Module):
-    def __init__(self, n_units=5, noise=.3, bias=True, linear_bias=None,chans=[8,8], bnorm_momentum=0.1, softplus=True):
+    def __init__(self, n_units=5, noise=.3, bias=True, linear_bias=None,chans=[8,8], bnorm_momentum=0.1, softplus=True, inference_exp=False):
         super(PracticalBNCNN2D,self).__init__()
         self.name = 'McNiruNet'
         self.chans=[8,8]
+        self.infr_exp = inference_exp
+        self.n_units = n_units
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -742,13 +789,17 @@ class PracticalBNCNN2D(nn.Module):
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
 
 class SkipBNBNCNN(nn.Module):
-    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None,x_shape=(40,50,50), chans=[8,8], adapt_gauss=False, bnorm_momentum=0.1, softplus=True):
+    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None,x_shape=(40,50,50), chans=[8,8], adapt_gauss=False, bnorm_momentum=0.1, softplus=True, inference_exp=False):
         super(SkipBNBNCNN,self).__init__()
         self.name = 'SkipNet'
         self.chans = chans
+        self.n_units = n_units
+        self.infr_exp = inference_exp
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -774,14 +825,18 @@ class SkipBNBNCNN(nn.Module):
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
 
 class SSCNN(nn.Module):
     def __init__(self, n_units, scale=True, shift=False, bias=True, linear_bias=None, 
-                                                noise=0.05, chans=[8,8], adapt_gauss=False, softplus=True):
+                             noise=0.05, chans=[8,8], adapt_gauss=False, softplus=True, inference_exp=False):
         super(SSCNN,self).__init__()
         self.name = 'McNiruNet'
         self.chans=chans
+        self.n_units = n_units
+        self.infr_exp = inference_exp
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -803,13 +858,17 @@ class SSCNN(nn.Module):
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
 
 class StackedBNCNN(nn.Module):
-    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, bnorm_momentum=0.1, adapt_gauss=False, chans=[8,8], softplus=True):
+    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, bnorm_momentum=0.1, adapt_gauss=False, chans=[8,8], softplus=True, inference_exp=False):
         super(StackedBNCNN,self).__init__()
         self.name = 'StackedNet'
         self.chans = chans
+        self.n_units = n_units
+        self.infr_exp = inference_exp
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -833,13 +892,17 @@ class StackedBNCNN(nn.Module):
         self.sequential = nn.Sequential(*modules)
 
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
     
 class AbsBNStackedBNCNN(nn.Module):
-    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None,adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True):
+    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None,adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True, inference_exp=False):
         super(AbsBNStackedBNCNN,self).__init__()
         self.name = 'StackedNet'
         self.chans = chans
+        self.n_units = n_units
+        self.infr_exp = inference_exp
         if linear_bias is None:
             linear_bias = bias
         modules = []
@@ -863,5 +926,7 @@ class AbsBNStackedBNCNN(nn.Module):
         self.sequential = nn.Sequential(*modules)
 
     def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
         return self.sequential(x)
     
