@@ -13,7 +13,7 @@ import os
 import sys
 import pickle
 from torchdeepretina.models import *
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 from torchdeepretina.deepretina_loader import loadexpt
 from torchdeepretina.physiology import Physio
 import torchdeepretina.intracellular as intracellular
@@ -153,8 +153,10 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
     stats = dict()
     print("folder:", folder)
     hyps = analysis.get_hyps(folder)
-    n_epochs = int(hyps['n_epochs'])
-    
+    try:
+        n_epochs = int(hyps['n_epochs'])
+    except:
+        n_epochs = 1
     # Prep
     losses = []
     val_losses = []
@@ -523,8 +525,13 @@ def analyze_models(model_folders):
         model_frame.to_csv(table_path, header=write_header, mode='a', sep="!", index=False)
 
 if __name__ == "__main__":
+    start_idx = None
     if len(sys.argv) >= 2:
-        grand_folders = sys.argv[1:]
+        try:
+            start_idx = int(sys.argv[1])
+            grand_folders = sys.argv[2:]
+        except:
+            grand_folders = sys.argv[1:]
     DEVICE = torch.device("cuda:0")
     torch.cuda.empty_cache()
     for grand_folder in grand_folders:
@@ -533,8 +540,16 @@ if __name__ == "__main__":
         for i,folder in enumerate(model_folders):
             model_folders[i] = os.path.join(grand_folder,folder)
 
+        # Sort model folders and select folders above start_idx if argued
         try:
             model_folders = sorted(model_folders, key=lambda x: int(x.split("_")[1]))
+            if start_idx is not None:
+                for i in range(len(model_folders)):
+                    if i == start_idx:
+                        model_folders = model_folders[i:]
+                        break
+            print("Model Folders:")
+            print("\n".join(model_folders))
         except IndexError as e:
             print("index error for", grand_folder)
             print("Using model_folders:", model_folders)
