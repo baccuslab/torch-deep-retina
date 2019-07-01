@@ -12,8 +12,10 @@ import numpy as np
 import torch
 from torchdeepretina.training import mp_hyper_search
 from torchdeepretina.utils import load_json
+import torch.multiprocessing as mp
 
 if __name__ == "__main__":
+    mp.set_start_method('forkserver')
     hyperparams_file = "hyps/hyperparams.json"
     hyperranges_file = 'hyps/hyperranges.json'
     visible_devices = {0,1,2,3}
