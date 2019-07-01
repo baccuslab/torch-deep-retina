@@ -18,9 +18,27 @@ import torch.multiprocessing as mp
 import psutil
 
 class Trainer:
-    def __init__(self, run_q, return_q):
+    def __init__(self, run_q, return_q, early_stopping=20):
         self.run_q = run_q
         self.ret_q = return_q
+        self.early_stopping = early_stopping
+        self.prev_val = None
+
+    def stop_early(self, acc, tolerance=0.0001):
+        if self.early_stopping <= 0:
+            return False # use 0 as way to cancel early stopping
+        if self.prev_acc is None:
+            self.prev_acc = acc
+            self.stop_count = 0
+            return False
+        if acc-self.prev_acc < tolerance:
+            self.stop_count += 1
+            if self.stop_count >= self.early_stopping:
+                return True
+        self.stop_count = 0
+        self.prev_acc = acc
+        return False
+
 
     def loop_training(self):
         train_args = self.run_q.get()
@@ -29,8 +47,8 @@ class Trainer:
                 results = self.train(*train_args)
                 self.ret_q.put([results])
                 train_args = self.run_q.get()
-            except MemoryError as e:
-                print("Caught MemoryError", train_args[0]['exp_num'], "will retry in 100 seconds...")
+            except:
+                print("Caught error",e,"on", train_args[0]['exp_num'], "will retry in 100 seconds...")
                 sleep(100)
 
     def train(self, hyps, model_hyps, device):
@@ -139,6 +157,7 @@ class Trainer:
                     pearsons.append(pearsonr(val_preds[:, cell], data.val_y[:val_preds.shape[0]][:,cell].numpy())[0])
                 stats_string += "Val Cell Pearsons:" + " - ".join([str(p) for p in pearsons])+'\n'
                 val_acc = np.mean(pearsons)
+                stop = self.stop_early(val_acc)
                 exp_val_acc = None
                 if hyps["log_poisson"] and hyps['softplus'] and not model.infr_exp:
                     val_preds = np.exp(val_preds)
@@ -177,9 +196,8 @@ class Trainer:
             }
             io.save_checkpoint_dict(save_dict, SAVE, 'test', del_prev=True)
             print(stats_string)
-            print()
             # If loss is nan, training is futile
-            if math.isnan(avg_loss) or math.isinf(avg_loss):
+            if math.isnan(avg_loss) or math.isinf(avg_loss) or stop:
                 break
         
         del model
@@ -295,6 +313,7 @@ def mp_hyper_search(hyps, hyp_ranges, keys, n_workers=4, visible_devices={0,1,2,
             hyperset.append(device)
             print("Loading...")
             run_q.put(hyperset)
+            time.sleep(5) # Timer to ensure ram measurements are completed appropriately
             print("Loaded", hyperset[0]["exp_num"])
         else:
             print("Waiting...")
@@ -308,5 +327,4 @@ def mp_hyper_search(hyps, hyp_ranges, keys, n_workers=4, visible_devices={0,1,2,
     for proc in procs:
         proc.terminate()
         proc.join(timeout=1.0)
-
 
