@@ -31,8 +31,6 @@ import resource
 import time
 import math
 import pandas as pd
-sys.path.append(os.path.expanduser("~/ml/torch-deep-retina/"))
-import models
 
 def normalize(x):
     return (x-x.mean())/(x.std()+1e-7)
@@ -391,7 +389,7 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
                 info['stim_type'] = k
                 info['cellfile'] = intrnrn_files[i]
                 info['cell_type'] = cell_types[y_true[i]]
-                info['model_file'] = folder
+                info['save_folder'] = folder
                 info['cell_idx'] = j
                 info['layer'] = layer
                 info['channel'] = channel
@@ -492,7 +490,7 @@ def analyze_models(model_folders):
         "amacrine_intr_cor","horizontal_intr_cor",'avg_oms_ratio','std_oms_ratio'
     ]
     intrnrn_headers = [
-        "cellfile", "cell_idx", "cell_type", "stim_type", "model_file", 
+        "cellfile", "cell_idx", "cell_type", "stim_type", "save_folder", 
         "correlation", "layer", "channel", "row", "col"
     ]
 
