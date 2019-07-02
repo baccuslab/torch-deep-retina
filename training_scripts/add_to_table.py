@@ -9,8 +9,8 @@ import numpy as np
 import os
 import sys
 
-def add_to_frame(frame, fname):
-    new_frame = pd.read_csv(fname, delimiter="!")
+def add_to_frame(frame, fname, delim="!"):
+    new_frame = pd.read_csv(fname, delimiter=delim)
     if frame is None:
         return new_frame
     new_frame.reindex(frame.columns, axis=1)
@@ -27,13 +27,15 @@ def add_to_frame(frame, fname):
             print()
             print()
             print()
+    new_frame = new_frame.loc[~new_frame["save_folder"].isin(set(frame['save_folder']))]
     frame = frame.append(new_frame)
     return frame
 
 if __name__ == "__main__":
     assert len(sys.argv) >= 3
-    main_frame = pd.read_csv(sys.argv[1], delimiter="!")
-    main_frame.to_csv(sys.argv[1]+".backup", header=True, index=False, sep="!")
-    for arg in sys.argv[2:]:
-        main_frame = add_to_frame(main_frame, arg)
-    main_frame.to_csv(sys.argv[1], header=True, index=False, sep="!")
+    delim = "!"
+    main_frame = pd.read_csv(sys.argv[1], delimiter=delim)
+    main_frame.to_csv(sys.argv[1]+".backup", header=True, index=False, sep=delim)
+    for sub_frame_fname in sys.argv[2:]:
+        main_frame = add_to_frame(main_frame, sub_frame_fname, delim)
+    main_frame.to_csv(sys.argv[1], header=True, index=False, sep=delim)
