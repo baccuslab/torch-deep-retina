@@ -111,6 +111,8 @@ training_scripts/*/
 
 # Miscellaneous
 */hyperparams.txt
+*/hyperparams.json
+*/hyperranges.json
 */description.txt
 delete_me.py
 */*_results.txt
