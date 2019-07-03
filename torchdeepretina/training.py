@@ -22,7 +22,7 @@ class Trainer:
         self.run_q = run_q
         self.ret_q = return_q
         self.early_stopping = early_stopping
-        self.prev_val = None
+        self.prev_acc = None
 
     def stop_early(self, acc, tolerance=0.0001):
         if self.early_stopping <= 0:
@@ -47,7 +47,7 @@ class Trainer:
                 results = self.train(*train_args)
                 self.ret_q.put([results])
                 train_args = self.run_q.get()
-            except:
+            except Exception as e:
                 print("Caught error",e,"on", train_args[0]['exp_num'], "will retry in 100 seconds...")
                 sleep(100)
 
@@ -310,10 +310,13 @@ def mp_hyper_search(hyps, hyp_ranges, keys, n_workers=4, visible_devices={0,1,2,
         device = get_device(visible_devices, cuda_buffer)
         enough_ram = psutil.virtual_memory().free//1028**2 > ram_buffer
         # must be careful not to threadlock here
-        if device != -1 and enough_ram and not hyper_q.empty() and not run_q.full():
+        if (not enough_ram or device <= -1) and hyper_q.qsize() >= total_searches:
+            print("RAM shortage or no devices available, sleeping for 20s")
+            time.sleep(20)
+        elif not hyper_q.empty() and not run_q.full():
             hyperset = hyper_q.get()
             hyperset.append(device)
-            print("Loading...")
+            print("Loading hyperset...")
             run_q.put(hyperset)
             time.sleep(5) # Timer to ensure ram measurements are completed appropriately
             print("Loaded", hyperset[0]["exp_num"])
