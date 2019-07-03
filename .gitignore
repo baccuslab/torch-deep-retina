@@ -113,8 +113,6 @@ training_scripts/*/
 */hyperparams.txt
 */description.txt
 delete_me.py
-*/hyperparams.json
-*/hyperranges.json
 */*_results.txt
 jupyter-notebooks/*.ipynb
 */hyps/*
