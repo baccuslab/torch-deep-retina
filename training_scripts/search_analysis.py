@@ -543,7 +543,8 @@ if __name__ == "__main__":
             model_folders = sorted(model_folders, key=lambda x: int(x.split("_")[1]))
             if start_idx is not None:
                 for i in range(len(model_folders)):
-                    if i == start_idx:
+                    folder_idx = int(model_folders[i].split("_")[1])
+                    if folder_idx == start_idx:
                         model_folders = model_folders[i:]
                         break
             print("Model Folders:")
