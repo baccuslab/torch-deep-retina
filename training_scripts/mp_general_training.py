@@ -21,7 +21,7 @@ if __name__ == "__main__":
     visible_devices = {0,1,2,3}
     cuda_buffer = 3000
     ram_buffer = 6000
-    n_workers = 4
+    n_workers = 2
     if len(sys.argv) > 1:
         for i,arg in enumerate(sys.argv[1:]):
             temp = sys.argv[1].split("=")
@@ -71,10 +71,10 @@ if __name__ == "__main__":
     torch.manual_seed(seed)
 
 
-    #sleep_time = 8
-    #print("You have "+str(sleep_time)+" seconds to cancel experiment name "+
-    #            hyps['exp_name']+" (num "+ str(hyps['starting_exp_num'])+"): ")
-    #time.sleep(sleep_time)
+    sleep_time = 8
+    print("You have "+str(sleep_time)+" seconds to cancel experiment name "+
+                hyps['exp_name']+" (num "+ str(hyps['starting_exp_num'])+"): ")
+    time.sleep(sleep_time)
 
     keys = list(hyp_ranges.keys())
     start_time = time.time()
