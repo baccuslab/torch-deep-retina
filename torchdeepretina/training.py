@@ -18,7 +18,7 @@ import torch.multiprocessing as mp
 import psutil
 
 class Trainer:
-    def __init__(self, run_q, return_q, early_stopping=20):
+    def __init__(self, run_q, return_q, early_stopping=10):
         self.run_q = run_q
         self.ret_q = return_q
         self.early_stopping = early_stopping
@@ -269,6 +269,7 @@ class DataContainer():
         self.stats = data.stats
 
 def mp_hyper_search(hyps, hyp_ranges, keys, n_workers=4, visible_devices={0,1,2,3,4,5}, cuda_buffer=3000, ram_buffer=6000):
+    starttime = time.time()
     # Make results file
     if not os.path.exists(hyps['exp_name']):
         os.mkdir(hyps['exp_name'])
@@ -305,6 +306,7 @@ def mp_hyper_search(hyps, hyp_ranges, keys, n_workers=4, visible_devices={0,1,2,
     result_count = 0
     print("Starting Hyperloop")
     while result_count < total_searches:
+        print("Running Time:", time.time()-starttime)
         device = get_device(visible_devices, cuda_buffer)
         enough_ram = psutil.virtual_memory().free//1028**2 > ram_buffer
         # must be careful not to threadlock here
