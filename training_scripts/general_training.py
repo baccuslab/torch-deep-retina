@@ -14,7 +14,7 @@ import resource
 sys.path.append('../')
 sys.path.append('../utils/')
 from utils.miscellaneous import ShuffledDataSplit
-from models import BNCNN, BNCNN2D, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN, DalesSkipBNCNN, SkipBNBNCNN, Gauss1dBNCNN, AbsBNBNCNN, CNNfull, CNNfull_2layer, CNN_2layer
+from models import BNCNN, BNCNN2D, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN, DalesSkipBNCNN, SkipBNBNCNN, Gauss1dBNCNN, AbsBNBNCNN, CNNfull, CNNfull_2layer, CNN_2layer, BNCNN2D_v1
 import retio as io
 import argparse
 import time
@@ -193,7 +193,7 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
             hyps['results_file'] = hyps['exp_name']+"/results.txt"
         hyps['save_folder'] = hyps['exp_name'] + "/" + hyps['exp_name'] +"_"+ str(hyps['exp_num']) 
         for k in keys:
-            hyps['save_folder'] += "_" + str(k)+str(hyps[k])
+            hyps['save_folder'] += "_" + '%03d' % k +str(hyps[k])
         print("Loading", hyps['stim_type'],"using Cells:", hyps['cells'], "from dataset:", hyps['dataset'])
         train_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],
                                             hyps['stim_type'],'train',40,0))
@@ -276,6 +276,9 @@ def set_model_type(model_str):
         return SkipBNBNCNN
     if model_str == "BNCNN2D":
         return BNCNN2D
+    if model_str == "BNCNN2D_v1":
+        return BNCNN2D_v1
+
     print("Invalid model type!")
     return None
 

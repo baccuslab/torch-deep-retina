@@ -58,7 +58,7 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=
 
     norm_stats : listlike of floats i.e. [mean, std], optional
         If a list of len 2 is argued, idx 0 will be used as the mean and idx 1 the std for
-        data (stimulus only) normalization. Default('None') will normalize stimulus onto [-.5 .5]
+        data (stimulus only) normalization.
     """
     assert history > 0 and type(history) is int, "Temporal history must be a positive integer"
     assert train_or_test in ('train', 'test'), "train_or_test must be 'train' or 'test'"

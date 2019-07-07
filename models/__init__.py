@@ -7,6 +7,7 @@ from models.BN_CNN import BNCNN
 from models.AbsBN_BN_CNN import AbsBNBNCNN
 from models.Gauss1d_BN_CNN import Gauss1dBNCNN
 from models.BN_CNN_2D import BNCNN2D
+from models.BN_CNN_2D_v1 import BNCNN2D_v1
 from models.SS_CNN import SSCNN
 from models.Dales_BN_CNN import DalesBNCNN
 from models.Dales_SS_CNN import DalesSSCNN
