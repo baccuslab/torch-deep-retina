@@ -10,7 +10,8 @@ def save_checkpoint_dict(save_dict, path, exp_id, del_prev=False):
     if del_prev:
         prev_path = os.path.join(path, exp_id + "_epoch_" + str(save_dict['epoch']-1) + '.pth')
         if os.path.exists(prev_path):
-            data = torch.load(prev_path)
+            device = torch.device("cpu")
+            data = torch.load(prev_path, map_location=device)
             keys = list(data.keys())
             for key in keys:
                 if "state_dict" in key:

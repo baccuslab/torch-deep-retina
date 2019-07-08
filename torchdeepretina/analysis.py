@@ -44,6 +44,28 @@ def prepare_stim(stim, stim_type):
     else:
         print("Invalid stim type")
         assert False
+
+def make_correlation_frame(model_stats):
+    """
+    model_stats: dict
+        keys should be model save folders
+    """
+    keys = ['stim_type', 'cellfile', 'cell_type', 'save_folder', 'cell_idx',
+                            'layer', 'channel', 'row', 'col', 'cor_coef']
+    frame = {k:[] for k in keys}
+    for folder in model_stats.keys():
+        if 'intrnrn_info' not in model_stats[folder]:
+            continue
+        infos = model_stats[folder]['intrnrn_info']
+        for info in infos:
+            const_vals = [info[k] for k in keys[:5]]
+            for cor in info['all_correlations']:
+                layer, channel, (row, col), cor_coef = cor
+                vals = const_vals + [layer, channel, row, col, cor_coef]
+                for k,v in zip(keys, vals):
+                    frame[k].append(v)
+    return pd.DataFrame(frame)
+
     
 def index_of(arg, arr):
     """
