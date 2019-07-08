@@ -15,30 +15,31 @@ import time
 from tqdm import tqdm
 import math
 import torch.multiprocessing as mp
+from queue import Queue
 import psutil
 
 class Trainer:
-    def __init__(self, run_q, return_q, early_stopping=10):
+    def __init__(self, run_q=None, return_q=None, early_stopping=10, stop_tolerance=0.01):
         self.run_q = run_q
         self.ret_q = return_q
         self.early_stopping = early_stopping
+        self.tolerance = stop_tolerance
         self.prev_acc = None
 
-    def stop_early(self, acc, tolerance=0.0001):
+    def stop_early(self, acc):
         if self.early_stopping <= 0:
             return False # use 0 as way to cancel early stopping
         if self.prev_acc is None:
             self.prev_acc = acc
             self.stop_count = 0
             return False
-        if acc-self.prev_acc < tolerance:
+        if acc-self.prev_acc < self.tolerance:
             self.stop_count += 1
             if self.stop_count >= self.early_stopping:
                 return True
         self.stop_count = 0
         self.prev_acc = acc
         return False
-
 
     def loop_training(self):
         train_args = self.run_q.get()
@@ -51,7 +52,7 @@ class Trainer:
                 print("Caught error",e,"on", train_args[0]['exp_num'], "will retry in 100 seconds...")
                 sleep(100)
 
-    def train(self, hyps, model_hyps, device):
+    def train(self, hyps, model_hyps, device, verbose=False):
         # Get Data
         train_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],
                                             hyps['stim_type'],'train',40,0))
@@ -100,7 +101,7 @@ class Trainer:
         # Train Loop
         num_batches,leftover = divmod(epoch_length, batch_size)
         for epoch in range(EPOCHS):
-            print("Beginning Epoch", epoch, " -- proc:", SAVE)
+            print("Beginning Epoch", epoch, " -- ", SAVE)
             print()
             model.train(mode=True)
             indices = torch.randperm(data.train_shape[0]).long()
@@ -129,6 +130,8 @@ class Trainer:
                 loss.backward()
                 optimizer.step()
                 epoch_loss += loss.item()
+                if verbose:
+                    print("Loss:", round(loss.item(), 6), " -- ", batch, "/", num_batches, end="       \r")
                 if math.isnan(epoch_loss) or math.isinf(epoch_loss):
                     break
             avg_loss = epoch_loss/num_batches
@@ -144,7 +147,12 @@ class Trainer:
                 val_loss = 0
                 step_size = 500
                 n_loops = data.val_shape[0]//step_size
-                for v in range(0, n_loops*step_size, step_size):
+                rng = range(0, n_loops*step_size, step_size)
+                if verbose:
+                    print()
+                    print("Validating")
+                    rng = tqdm(rng)
+                for v in rng:
                     temp = model(data.val_X[v:v+step_size].to(device)).detach()
                     val_loss += loss_fn(temp, data.val_y[v:v+step_size].to(device)).item()
                     if LAMBDA1 > 0:
@@ -172,7 +180,10 @@ class Trainer:
                 test_obs = model(test_x.to(device)).cpu().detach().numpy()
 
                 avg_pearson = 0
-                for cell in range(test_obs.shape[-1]):
+                rng = range(test_obs.shape[-1])
+                if verbose:
+                    rng = tqdm(rng)
+                for cell in rng:
                     obs = test_obs[:,cell]
                     lab = test_data.y[:,cell]
                     r,p = pearsonr(obs,lab)
@@ -209,7 +220,7 @@ class Trainer:
 def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
     """
     Recursive function to load each of the hyperparameter combinations 
-    onto a list.
+    onto a queue.
 
     hyps - dict of hyperparameters created by a HyperParameters object
         type: dict
@@ -268,7 +279,8 @@ class DataContainer():
         self.y = data.y
         self.stats = data.stats
 
-def mp_hyper_search(hyps, hyp_ranges, keys, n_workers=4, visible_devices={0,1,2,3,4,5}, cuda_buffer=3000, ram_buffer=6000):
+def mp_hyper_search(hyps, hyp_ranges, keys, n_workers=4, visible_devices={0,1,2,3,4,5}, cuda_buffer=3000,
+                                                    ram_buffer=6000, early_stopping=10, stop_tolerance=.01):
     starttime = time.time()
     # Make results file
     if not os.path.exists(hyps['exp_name']):
@@ -297,7 +309,7 @@ def mp_hyper_search(hyps, hyp_ranges, keys, n_workers=4, visible_devices={0,1,2,
     procs = []
     print("Initializing workers")
     for i in range(n_workers):
-        worker = Trainer(run_q, return_q)
+        worker = Trainer(run_q, return_q, early_stopping=early_stopping, stop_tolerance=stop_tolerance)
         workers.append(worker)
         proc = mp.Process(target=worker.loop_training)
         proc.start()
@@ -332,4 +344,44 @@ def mp_hyper_search(hyps, hyp_ranges, keys, n_workers=4, visible_devices={0,1,2,
     for proc in procs:
         proc.terminate()
         proc.join(timeout=1.0)
+
+def hyper_search(hyps, hyp_ranges, keys, device, early_stopping=10, stop_tolerance=.01):
+    starttime = time.time()
+    # Make results file
+    if not os.path.exists(hyps['exp_name']):
+        os.mkdir(hyps['exp_name'])
+    results_file = hyps['exp_name']+"/results.txt"
+    with open(results_file,'a') as f:
+        f.write("Hyperparameters:\n")
+        for k in hyps.keys():
+            if k not in hyp_ranges:
+                f.write(str(k) + ": " + str(hyps[k]) + '\n')
+        f.write("\nHyperranges:\n")
+        for k in hyp_ranges.keys():
+            f.write(str(k) + ": [" + ",".join([str(v) for v in hyp_ranges[k]])+']\n')
+        f.write('\n')
+    
+    hyper_q = Queue()
+    
+    hyper_q = fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0)
+    total_searches = hyper_q.qsize()
+    print("n_searches:", total_searches)
+
+    trainer = Trainer(early_stopping=early_stopping, stop_tolerance=stop_tolerance)
+
+    result_count = 0
+    print("Starting Hyperloop")
+    while not hyper_q.empty():
+        print("Searches left:", hyper_q.qsize(),"-- Running Time:", time.time()-starttime)
+        hyperset = hyper_q.get()
+        hyperset.append(device)
+        results = trainer.train(*hyperset, verbose=True)
+        with open(results_file,'a') as f:
+            results = " -- ".join([str(k)+":"+str(results[k]) for k in sorted(results.keys())])
+            f.write("\n"+results+"\n")
+
+
+
+
+
 
