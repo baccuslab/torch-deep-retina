@@ -147,7 +147,7 @@ class ScaledSoftplusBNCNN(nn.Module):
         modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
         modules.append(nn.Linear(chans[1]*26*26,n_units, bias=linear_bias))
-        modules.append(nn.BatchNorm1d(n_units, eps=1e-3, momentum=bnorm_momentum)))
+        modules.append(nn.BatchNorm1d(n_units, eps=1e-3, momentum=bnorm_momentum))
         modules.append(ScaledSoftplus())
         self.sequential = nn.Sequential(*modules)
         
@@ -818,7 +818,7 @@ class SkipBNBNCNN(nn.Module):
         modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
         modules.append(nn.Linear(8*26*26,n_units, bias=linear_bias))
-        modules.append(nn.BatchNorm1d(n_units, eps=1e-3, momentum=bnorm_momentum)))
+        modules.append(nn.BatchNorm1d(n_units, eps=1e-3, momentum=bnorm_momentum))
         if softplus:
             modules.append(nn.Softplus())
         else:
