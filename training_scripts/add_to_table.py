@@ -1,5 +1,5 @@
 """
-This script is used to add new tables to accumulated tables
+This script is used to add new tables to accumulated tables. Does not duplicate table entries by save_folder
 
 $ python3 add_to_table.py main_table.csv small_table1.csv small_table2.csv 
 

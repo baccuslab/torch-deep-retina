@@ -134,7 +134,7 @@ def load_interneuron_data(root_path="~/interneuron_data/"):
             num_pots.append(num)
     return num_pots, stims, mem_pots, files
 
-def analyze_model(folder, interneuron_data, test_data=None, main_dir="../training_scripts/"):
+def analyze_model(folder, interneuron_data, test_data=None, main_dir="../training_scripts/", record_figs=True):
     """
     Does the model analysis for the saved model.
 
@@ -156,23 +156,20 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
     except:
         n_epochs = 1
     # Prep
-    losses = []
-    val_losses = []
-    val_accs = []
+    losses, val_losses, val_accs, test_accs = [], [], [], [] 
     model = None
+    metric_keys = ['loss', 'val_loss', 'val_acc', 'test_pearson']
+    metric_lists = [losses, val_losses, val_accs, test_accs]
     for i in range(n_epochs):
         f_name = os.path.join(main_dir, folder,"test_epoch_{0}.pth".format(i))
         try:
             with open(f_name, "rb") as fd:
                 data = torch.load(fd)
-            try:
-                losses.append(data['loss'])
-                val_losses.append(data['val_loss'])
-                val_accs.append(data['val_acc'])
-            except:
-                losses.append(0)
-                val_losses.append(0)
-                val_accs.append(.5)
+            for k,l in zip(metric_keys,metric_lists):
+                try:
+                    l.append(data[k])
+                except:
+                    l.append(.5*(l==val_accs)) # Min val_acc is .5 to continue script
             # Remove legacy saving system
             if 'model' in data:
                 model = data['model']
@@ -296,49 +293,62 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
         print("Results too low, continuing...\n")
         return stats
     
-    # Plot firing rate sample
-    fig = plt.figure()
-    plt.plot(normalize(model_response['output'][:400, 0]))
-    plt.plot(normalize(test_data.y[:400,0]), alpha=.7)
-    plt.legend(["model", "data"])
-    plt.title("Firing Rate")
-    plt.savefig(os.path.join(folder, "firing_rate_sample.png"))
-    #
-    ## Plot loss curve
-    #fig = plt.figure()
-    #plt.plot(losses)
-    #plt.plot(val_losses)
-    #plt.legend(["TrainLoss", "ValLoss"])
-    #plt.title("Loss Curves")
-    #plt.savefig(os.path.join(folder, "loss_curve.png"))
-    
-    # Get retinal phenomena plots
-    figs, fig_names, metrics = retinal_phenomena_figs(model)
+    if record_figs:
+        # Plot firing rate sample
+        fig = plt.figure()
+        plt.plot(normalize(model_response['output'][:400, 0]))
+        plt.plot(normalize(test_data.y[:400,0]), alpha=.7)
+        plt.legend(["model", "data"])
+        plt.title("Firing Rate")
+        plt.savefig(os.path.join(folder, "firing_rate_sample.png"))
 
-    for fig, name in zip(figs, fig_names):
-        save_name = name + ".png"
-        fig.savefig(os.path.join(folder, save_name))
-    oms_ratios = metrics['oms']
-    for i, cell in enumerate(test_data.cells):
-        stats["oms_ratio_cell"+str(cell)] = oms_ratios[i]
-    stats['avg_oms_ratio'] = np.mean(oms_ratios)
-    stats['std_oms_ratio'] = np.std(oms_ratios)
+        # Plot loss curve
+        fig = plt.figure()
+        plt.plot(losses)
+        plt.plot(val_losses)
+        plt.legend(["TrainLoss", "ValLoss"])
+        plt.title("Loss Curves")
+        plt.savefig(os.path.join(folder, "loss_curve.png"))
+
+        # Plot Acc Curves
+        fig = plt.figure()
+        plt.plot(val_accs)
+        plt.plot(test_accs)
+        plt.legend(["ValAcc", "TestSubsetAcc"])
+        plt.title("Acc Curves")
+        plt.savefig(os.path.join(folder, "acc_curve.png"))
+        
+        ## Get retinal phenomena plots
+        #figs, fig_names, metrics = retinal_phenomena_figs(model)
+
+        #for fig, name in zip(figs, fig_names):
+        #    save_name = name + ".png"
+        #    fig.savefig(os.path.join(folder, save_name))
+        #oms_ratios = metrics['oms']
+        #for i, cell in enumerate(test_data.cells):
+        #    stats["oms_ratio_cell"+str(cell)] = oms_ratios[i]
+        #stats['avg_oms_ratio'] = np.mean(oms_ratios)
+        #stats['std_oms_ratio'] = np.std(oms_ratios)
     
     print("Calculating interneuron model responses...")
     # Computes the model responses for each stimulus 
     # and interneuron type labels y_true (0 for bipolar, 1 for amacrine, 2 for horizontal)
     y_true = []
+    cell_ids = []
     filter_length = 40
     model_responses = dict()
     for i in tqdm(range(len(intrnrn_files))):
         file_name = intrnrn_files[i]
         if 'bipolar' in file_name:
+            cell_ids.append("bipolar")
             for j in range(num_pots[i]):
                 y_true.append(0)
         elif 'amacrine' in file_name:
+            cell_ids.append("amacrine")
             for j in range(num_pots[i]):
                 y_true.append(1)
         else:
+            cell_ids.append("horizontal")
             for j in range(num_pots[i]):
                 y_true.append(2)
         for k in stims.keys():
@@ -374,12 +384,26 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
             stim = stims[k][i]
             for j in range(mem_pots[k][i].shape[0]):
                 potential = mem_pots[k][i][j]
-                cell_info = intracellular.classify(potential, model_response, stim.shape[0], 
-                                                                    layer_keys=insp_layers)
+
+                # Find best correlations for each channel in each layer
+                # cor_stats is a dict of layers with a list of unit idxs and correlation 
+                # coefficients for each channel
+                cor_stats = intracellular.get_correlation_stats(potential, model_response, 
+                                                            layer_keys=set(insp_layers))
+                # Find maximally correlated model unit
+                cell_info = None
+                cell_infos = []
+                for layer in cor_stats.keys():
+                    for chan,tup in enumerate(cor_stats[layer]):
+                        row, col, cor_coef = tup
+                        cell_infos.append((layer, chan, (row, col), cor_coef))
+                        if cell_info is None or cor_coef > cell_info[-1]:
+                            cell_info = cell_infos[-1]
+
                 if k not in all_cell_info:
                     all_cell_info[k] = []
                     y_pred[k] = []
-                all_cell_info[k].append(cell_info)
+                all_cell_info[k].append(cell_info) # Stores best correlation for each intrnrn
                 # Determines index of layer of  max correlation
                 y_pred[k].append(analysis.index_of(cell_info[0], insp_layers)) 
 
@@ -388,7 +412,7 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
                 info = dict()
                 info['stim_type'] = k
                 info['cellfile'] = intrnrn_files[i]
-                info['cell_type'] = cell_types[y_true[i]]
+                info['cell_type'] = cell_ids[i]
                 info['save_folder'] = folder
                 info['cell_idx'] = j
                 info['layer'] = layer
@@ -396,6 +420,7 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
                 info['row'] = row
                 info['col'] = col
                 info['correlation'] = cor_coef
+                info['all_correlations'] = cell_infos
                 intrnrn_info.append(info)
     
     stats['all_cell_info'] = all_cell_info
@@ -502,25 +527,52 @@ def analyze_models(model_folders):
     norm_stats = [51.49175, 53.62663279042969]
     test_data = loadexpt(dataset,cells,stim_type,'test',40,0, norm_stats=norm_stats)
     
+    # Create existing folder sets
+    main_existing_folders = set()
+    table_path = os.path.join(grand_folder, "model_data.csv")
+    if os.path.exists(table_path):
+        frame = pd.read_csv(table_path, delimiter="!")
+        main_existing_folders = set(frame['save_folder'])
+    intr_table_path = os.path.join(grand_folder, "intrnrn_data.csv")
+    intr_existing_folders = set()
+    if os.path.exists(intr_table_path):
+        frame = pd.read_csv(intr_table_path, delimiter="!")
+        intr_existing_folders = set(frame['save_folder'])
+    cor_table_path = os.path.join(grand_folder, "correlation_data.csv")
+    cor_existing_folders = set()
+    if os.path.exists(cor_table_path):
+        frame = pd.read_csv(cor_table_path, delimiter="!")
+        cor_existing_folders = set(frame['save_folder'])
+    
     # Analysis loop
     for fcount, folder in enumerate(model_folders):
+        if folder in main_existing_folders and folder in intr_existing_folders and folder in cor_existing_folders:
+            print(folder, "already recorded, skipping to next.")
+            continue
         model_stats = dict()
-        print("Analyzing", folder, " -- ", len(model_folders) - fcount, "folders left...")
-        model_stats[folder] = analyze_model(folder, intrnrn_data, test_data=test_data)
+        print("\nAnalyzing", folder, " -- ", len(model_folders) - fcount, "folders left...")
+        model_stats[folder] = analyze_model(folder, intrnrn_data, test_data=test_data,
+                                                        record_figs=("test_" in folder))
 
-        # Record intrnrn data in table
-        table_path = os.path.join(grand_folder, "intrnrn_data.csv")
-        write_header = not os.path.exists(table_path)
-        intrnrn_frame = analysis.make_intrnrn_frame(model_stats, intrnrn_headers)
-        intrnrn_frame = intrnrn_frame.reindex(intrnrn_headers, axis=1)
-        intrnrn_frame.to_csv(table_path, header=write_header, mode='a', sep="!", index=False)
+        # Record all intrnrn data for later analysis
+        if folder not in cor_existing_folders:
+            write_header = not os.path.exists(cor_table_path)
+            cor_frame = analysis.make_correlation_frame(model_stats)
+            cor_frame.to_csv(cor_table_path, header=write_header, mode='a', sep='!', index=False)
 
-        # Record model data in table
-        table_path = os.path.join(grand_folder, "model_data.csv")
-        write_header = not os.path.exists(table_path)
-        model_frame = analysis.make_model_frame(model_stats, model_headers)
-        model_frame = model_frame.reindex(model_headers, axis=1)
-        model_frame.to_csv(table_path, header=write_header, mode='a', sep="!", index=False)
+        ## Record intrnrn data in table
+        #if folder not in intr_existing_folders:
+        #    write_header = not os.path.exists(intr_table_path)
+        #    intrnrn_frame = analysis.make_intrnrn_frame(model_stats, intrnrn_headers)
+        #    intrnrn_frame = intrnrn_frame.reindex(intrnrn_headers, axis=1)
+        #    intrnrn_frame.to_csv(intr_table_path, header=write_header, mode='a', sep="!", index=False)
+
+        ## Record model data in table
+        #if folder not in main_existing_folders:
+        #    write_header = not os.path.exists(table_path)
+        #    model_frame = analysis.make_model_frame(model_stats, model_headers)
+        #    model_frame = model_frame.reindex(model_headers, axis=1)
+        #    model_frame.to_csv(table_path, header=write_header, mode='a', sep="!", index=False)
 
 if __name__ == "__main__":
     start_idx = None
@@ -549,6 +601,7 @@ if __name__ == "__main__":
                         break
             print("Model Folders:")
             print("\n".join(model_folders))
+            print()
         except IndexError as e:
             print("index error for", grand_folder)
             print("Using model_folders:", model_folders)
