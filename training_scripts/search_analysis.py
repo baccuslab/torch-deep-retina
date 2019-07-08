@@ -560,19 +560,19 @@ def analyze_models(model_folders):
             cor_frame = analysis.make_correlation_frame(model_stats)
             cor_frame.to_csv(cor_table_path, header=write_header, mode='a', sep='!', index=False)
 
-        ## Record intrnrn data in table
-        #if folder not in intr_existing_folders:
-        #    write_header = not os.path.exists(intr_table_path)
-        #    intrnrn_frame = analysis.make_intrnrn_frame(model_stats, intrnrn_headers)
-        #    intrnrn_frame = intrnrn_frame.reindex(intrnrn_headers, axis=1)
-        #    intrnrn_frame.to_csv(intr_table_path, header=write_header, mode='a', sep="!", index=False)
+        # Record intrnrn data in table
+        if folder not in intr_existing_folders:
+            write_header = not os.path.exists(intr_table_path)
+            intrnrn_frame = analysis.make_intrnrn_frame(model_stats, intrnrn_headers)
+            intrnrn_frame = intrnrn_frame.reindex(intrnrn_headers, axis=1)
+            intrnrn_frame.to_csv(intr_table_path, header=write_header, mode='a', sep="!", index=False)
 
-        ## Record model data in table
-        #if folder not in main_existing_folders:
-        #    write_header = not os.path.exists(table_path)
-        #    model_frame = analysis.make_model_frame(model_stats, model_headers)
-        #    model_frame = model_frame.reindex(model_headers, axis=1)
-        #    model_frame.to_csv(table_path, header=write_header, mode='a', sep="!", index=False)
+        # Record model data in table
+        if folder not in main_existing_folders:
+            write_header = not os.path.exists(table_path)
+            model_frame = analysis.make_model_frame(model_stats, model_headers)
+            model_frame = model_frame.reindex(model_headers, axis=1)
+            model_frame.to_csv(table_path, header=write_header, mode='a', sep="!", index=False)
 
 if __name__ == "__main__":
     start_idx = None
