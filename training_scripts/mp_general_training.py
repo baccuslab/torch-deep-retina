@@ -7,6 +7,8 @@ $ python3 general_training.py params=hyperparams.json ranges=hyperranges.json de
 Defaults to hyperparams.json and hyperranges.json if no arguments are provided
 """
 import sys
+import os
+import select
 import time
 import numpy as np
 import torch
@@ -18,7 +20,7 @@ if __name__ == "__main__":
     mp.set_start_method('forkserver')
     hyperparams_file = "hyps/hyperparams.json"
     hyperranges_file = 'hyps/hyperranges.json'
-    visible_devices = {0,1,2,3}
+    visible_devices = {0,1}
     cuda_buffer = 3000
     ram_buffer = 6000
     n_workers = 2
@@ -79,6 +81,8 @@ if __name__ == "__main__":
                 nums.add(int(d.split("_")[1]))
             except:
                 pass
+        if hyps['starting_exp_num'] is None:
+            hyps['starting_exp_num'] = len(nums)
         if int(hyps['starting_exp_num']) in nums:
             print("!!!!! WAIT !!!!!!! MAKE SURE YOU WANT TO HAVE DUPLICATE EXP NUMS !!!!!")
             print("Would you like to use", len(nums), "instead? (Y/n)")
@@ -91,6 +95,8 @@ if __name__ == "__main__":
                         hyps['exp_name']+" (num "+ str(hyps['starting_exp_num'])+"): ")
             time.sleep(sleep_time)
     else:
+        if hyps['starting_exp_num'] is None:
+            hyps['starting_exp_num'] = 0
         print("You have "+str(sleep_time)+" seconds to cancel experiment name "+
                     hyps['exp_name']+" (num "+ str(hyps['starting_exp_num'])+"): ")
         time.sleep(sleep_time)

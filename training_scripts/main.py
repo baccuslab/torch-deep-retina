@@ -15,6 +15,7 @@ import select
 from torchdeepretina.training import hyper_search
 from torchdeepretina.utils import load_json
 
+
 if __name__ == "__main__":
     hyperparams_file = "hyps/hyperparams.json"
     hyperranges_file = 'hyps/hyperranges.json'
@@ -64,6 +65,8 @@ if __name__ == "__main__":
                 nums.add(int(d.split("_")[1]))
             except:
                 pass
+        if hyps['starting_exp_num'] is None:
+            hyps['starting_exp_num'] = len(nums)
         if int(hyps['starting_exp_num']) in nums:
             print("!!!!! WAIT !!!!!!! MAKE SURE YOU WANT TO HAVE DUPLICATE EXP NUMS !!!!!")
             print("Would you like to use", len(nums), "instead? (Y/n)")
@@ -76,6 +79,8 @@ if __name__ == "__main__":
                         hyps['exp_name']+" (num "+ str(hyps['starting_exp_num'])+"): ")
             time.sleep(sleep_time)
     else:
+        if hyps['starting_exp_num'] is None:
+            hyps['starting_exp_num'] = 0
         print("You have "+str(sleep_time)+" seconds to cancel experiment name "+
                     hyps['exp_name']+" (num "+ str(hyps['starting_exp_num'])+"): ")
         time.sleep(sleep_time)
