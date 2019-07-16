@@ -364,12 +364,15 @@ class StackedConv2d(nn.Module):
     '''
     Builds argued kernel out of multiple 3x3 kernels.
     '''
-    def __init__(self, in_channels, out_channels, kernel_size, bias=True, abs_bnorm=False, conv_bias=False):
+    def __init__(self, in_channels, out_channels, kernel_size, bias=True, abs_bnorm=False, conv_bias=False, legacy=False):
         super(StackedConv2d, self).__init__()
         self.bias = bias
         n_filters = int((kernel_size-1)/2)
         if n_filters > 1:
-            convs = [nn.Conv2d(in_channels, out_channels, 3, bias=conv_bias), nn.BatchNorm2d(out_channels), nn.ReLU()]
+            if not abs_bnorm or legacy:
+                convs = [nn.Conv2d(in_channels, out_channels, 3, bias=conv_bias), nn.BatchNorm2d(out_channels), nn.ReLU()]
+            else:
+                convs = [nn.Conv2d(in_channels, out_channels, 3, bias=conv_bias), AbsBatchNorm2d(out_channels), nn.ReLU()]
             for i in range(n_filters-1):
                 if i == n_filters-2:
                     convs.append(nn.Conv2d(out_channels, out_channels, 3, bias=bias))
