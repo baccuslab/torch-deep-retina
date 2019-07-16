@@ -17,6 +17,8 @@ import math
 import torch.multiprocessing as mp
 from queue import Queue
 import psutil
+import gc
+import resource
 
 class Trainer:
     def __init__(self, run_q=None, return_q=None, early_stopping=10, stop_tolerance=0.01):
@@ -214,8 +216,10 @@ class Trainer:
             # If loss is nan, training is futile
             if math.isnan(avg_loss) or math.isinf(avg_loss) or stop:
                 break
-        
-        del model
+            gc.collect()
+            max_mem_used = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            print("Memory Used: {:.2f} mb".format(max_mem_used / 1024))
+
         results = {"save_folder":SAVE, "Loss":avg_loss, "ValAcc":val_acc, "ValLoss":val_loss, "TestPearson":avg_pearson}
         with open(SAVE + "/hyperparams.txt",'a') as f:
             f.write("\n" + " ".join([str(k)+":"+str(results[k]) for k in sorted(results.keys())]) + '\n')
