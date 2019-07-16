@@ -200,6 +200,7 @@ class Trainer:
                 stats_string += "Avg Test Pearson: "+ str(avg_pearson) + "\n"
                 del test_obs
     
+            optimizer.zero_grad()
             save_dict = {
                 "model_hyps": model_hyps,
                 "model_state_dict":model.state_dict(),
@@ -213,13 +214,13 @@ class Trainer:
                 "norm_stats":train_data.stats,
             }
             io.save_checkpoint_dict(save_dict, SAVE, 'test', del_prev=True)
+            gc.collect()
+            max_mem_used = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            stats_string += "Memory Used: {:.2f} mb".format(max_mem_used / 1024)+"\n"
             print(stats_string)
             # If loss is nan, training is futile
             if math.isnan(avg_loss) or math.isinf(avg_loss) or stop:
                 break
-            gc.collect()
-            max_mem_used = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-            print("Memory Used: {:.2f} mb".format(max_mem_used / 1024))
 
         results = {"save_folder":SAVE, "Loss":avg_loss, "ValAcc":val_acc, "ValLoss":val_loss, "TestPearson":avg_pearson}
         with open(SAVE + "/hyperparams.txt",'a') as f:
