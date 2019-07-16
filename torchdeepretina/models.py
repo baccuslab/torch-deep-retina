@@ -898,7 +898,7 @@ class StackedBNCNN(nn.Module):
         return self.sequential(x)
     
 class AbsBNStackedBNCNN(nn.Module):
-    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None,adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True, inference_exp=False):
+    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None,adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True, inference_exp=False, legacy=False):
         super(AbsBNStackedBNCNN,self).__init__()
         self.name = 'StackedNet'
         self.chans = chans
@@ -907,13 +907,13 @@ class AbsBNStackedBNCNN(nn.Module):
         if linear_bias is None:
             linear_bias = bias
         modules = []
-        modules.append(StackedConv2d(40,chans[0],kernel_size=15, abs_bnorm=True, bias=bias))
+        modules.append(StackedConv2d(40,chans[0],kernel_size=15, abs_bnorm=True, bias=bias, legacy=legacy))
         modules.append(Flatten())
         modules.append(AbsBatchNorm1d(chans[0]*36*36, eps=1e-3, momentum=bnorm_momentum))
         modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
         modules.append(Reshape((-1,chans[0],36,36)))
-        modules.append(StackedConv2d(chans[0],chans[1],kernel_size=11, abs_bnorm=True, bias=bias))
+        modules.append(StackedConv2d(chans[0],chans[1],kernel_size=11, abs_bnorm=True, bias=bias, legacy=legacy))
         modules.append(Flatten())
         modules.append(AbsBatchNorm1d(chans[1]*26*26, eps=1e-3, momentum=bnorm_momentum))
         modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
