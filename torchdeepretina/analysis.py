@@ -163,16 +163,46 @@ def get_hyps(folder, main_dir="../training_scripts"):
                         hyps[splt[0]] = hyps[splt[0]] == "True"
     return hyps
 
+def load_model(folder, data):
+    try:
+        hyps=get_hyps(folder)
+        hyps['model_type'] = hyps['model_type'].split(".")[-1].split("\'")[0].strip()
+        hyps['model_type'] = globals()[hyps['model_type']]
+        model = hyps['model_type'](**data['model_hyps'])
+    except Exception as e:
+        model_hyps = {"n_units":5,"noise":float(hyps['noise'])}
+        if "bias" in hyps:
+            model_hyps['bias'] = hyps['bias'] == "True"
+        if "chans" in hyps:
+            model_hyps['chans'] = [int(x) for x in
+                                   hyps['chans'].replace("[", "").replace("]", "").strip().split(",")]
+        if "adapt_gauss" in hyps:
+            model_hyps['adapt_gauss'] = hyps['adapt_gauss'] == "True"
+        if "linear_bias" in hyps:
+            model_hyps['linear_bias'] = hyps['linear_bias'] == "True"
+        if "softplus" in hyps:
+            model_hyps['softplus'] = hyps['softplus'] == "True"
+        fn_args = set(hyps['model_type'].__init__.__code__.co_varnames)
+        for k in model_hyps.keys():
+            if k not in fn_args:
+                del model_hyps[k]
+        model = hyps['model_type'](**model_hyps)
+    return model
+
 def read_model(folder):
-    i = 0
-    while True:
-        file = os.path.join(folder.strip(),"test_epoch_{0}.pth".format(i))
+    try:
+        _, _, fs = next(os.walk(folder.strip()))
+    except Exception as e:
+        print(e)
+        print("Likely folder", folder.strip(),"does not exist")
+        assert False
+    for i in range(len(fs)):
+        f = os.path.join(folder.strip(),"test_epoch_{0}.pth".format(i))
         try:
-            with open(file, "rb") as fd:
-                data = torch.load(fd)
+            with open(f, "rb") as fd:
+                data = torch.load(fd, map_location=torch.device("cpu"))
         except Exception as e:
-            break
-        i += 1
+            pass
     try:
         model = data['model']
     except Exception as e:
