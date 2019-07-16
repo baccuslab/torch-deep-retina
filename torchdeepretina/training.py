@@ -57,6 +57,7 @@ class Trainer:
     def train(self, hyps, model_hyps, device, verbose=False):
         SAVE = hyps['save_folder']
         if 'skip_nums' in hyps and len(hyps['skip_nums']) > 0 and hyps['exp_num'] in hyps['skip_nums']:
+            print("Skipping", SAVE)
             results = {"save_folder":SAVE, "Loss":None, "ValAcc":None, "ValLoss":None, "TestPearson":None}
             return results
             
