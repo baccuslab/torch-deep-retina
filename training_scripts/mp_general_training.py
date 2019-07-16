@@ -8,6 +8,7 @@ Defaults to hyperparams.json and hyperranges.json if no arguments are provided
 """
 import sys
 import os
+import select
 import time
 import numpy as np
 import torch
