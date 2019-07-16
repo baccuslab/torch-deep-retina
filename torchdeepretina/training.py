@@ -53,6 +53,11 @@ class Trainer:
                 sleep(100)
 
     def train(self, hyps, model_hyps, device, verbose=False):
+        SAVE = hyps['save_folder']
+        if 'skip_nums' in hyps and len(hyps['skip_nums']) > 0 and hyps['exp_num'] in hyps['skip_nums']:
+            results = {"save_folder":SAVE, "Loss":None, "ValAcc":None, "ValLoss":None, "TestPearson":None}
+            return results
+            
         # Get Data
         train_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],
                                             hyps['stim_type'],'train',40,0))
@@ -75,7 +80,6 @@ class Trainer:
         model = model.to(device)
 
         # Initialize miscellaneous parameters 
-        SAVE = hyps['save_folder']
         if not os.path.exists(SAVE):
             os.mkdir(SAVE)
         LR = hyps['lr']
