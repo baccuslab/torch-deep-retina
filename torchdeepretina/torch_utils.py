@@ -360,6 +360,34 @@ class AbsLinear(nn.Module):
         except:
             return "bias={}, abs_bias={}".format(self.bias, True)
 
+class LinearStackedConv2d(nn.Module):
+    '''
+    Builds argued kernel out of multiple 3x3 kernels without added nonlinearities.
+    '''
+    def __init__(self, in_channels, out_channels, kernel_size, bias=True, abs_bnorm=False, conv_bias=False):
+        super(LinearStackedConv2d, self).__init__()
+        self.bias = bias
+        self.conv_bias = conv_bias
+        self.abs_bnorm = abs_bnorm
+        n_filters = int((kernel_size-1)/2)
+        if n_filters > 1:
+            convs = [nn.Conv2d(in_channels, out_channels, 3, bias=conv_bias)]
+            if abs_bnorm:
+                convs.append(AbsBatchNorm2d(out_channels))
+            for i in range(n_filters-1):
+                if i == n_filters-2:
+                    convs.append(nn.Conv2d(out_channels, out_channels, 3, bias=bias))
+                else:
+                    convs.append(nn.Conv2d(out_channels, out_channels, 3, bias=conv_bias))
+                if abs_bnorm:
+                    convs.append(AbsBatchNorm2d(out_channels))
+        else:
+            convs = [nn.Conv2d(in_channels, out_channels, 3, bias=bias)]
+        self.convs = nn.Sequential(*convs)
+
+    def forward(self, x):
+        return self.convs(x)
+
 class StackedConv2d(nn.Module):
     '''
     Builds argued kernel out of multiple 3x3 kernels.
@@ -389,6 +417,9 @@ class StackedConv2d(nn.Module):
 
     def forward(self, x):
         return self.convs(x)
+
+#class ConvRNN(nn.Module):
+#    def __init__(self)
 
 class Flatten(nn.Module):
     def __init__(self):
