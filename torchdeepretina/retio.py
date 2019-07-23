@@ -16,6 +16,9 @@ def save_checkpoint_dict(save_dict, path, exp_id, del_prev=False):
             for key in keys:
                 if "state_dict" in key:
                     del data[key]
+            torch.save(data, prev_path)
+        elif save_dict['epoch'] != 0:
+            print("Failed to find previous checkpoint", prev_path)
     path = os.path.join(path,exp_id + '_epoch_' + str(save_dict['epoch'])) + '.pth'
     path = os.path.abspath(os.path.expanduser(path))
     torch.save(save_dict, path)
