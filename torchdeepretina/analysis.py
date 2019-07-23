@@ -196,7 +196,7 @@ def read_model(folder):
         print(e)
         print("Likely folder", folder.strip(),"does not exist")
         assert False
-    for i in range(len(fs)):
+    for i in range(len(fs)+100):
         f = os.path.join(folder.strip(),"test_epoch_{0}.pth".format(i))
         try:
             with open(f, "rb") as fd:

@@ -73,7 +73,8 @@ class Trainer:
 
             # train/val split
         num_val = 20000
-        data = ShuffledDataSplit(train_data, num_val)
+        shuffle = hyps['shuffle']
+        data = ShuffledDataSplit(train_data, num_val, shuffle=shuffle)
         data.torch()
         epoch_length = data.train_shape[0]
 

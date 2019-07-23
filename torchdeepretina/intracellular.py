@@ -150,16 +150,20 @@ def argmax_correlation(membrane_potential, model_layer, ret_max_cor=False, abs_v
         return best_idx, max_r
     return best_idx
 
-def get_correlation_stats(membrane_potential, model_response, layer_keys=['sequential.2', 'sequential.8']):
+def get_correlation_stats(membrane_potential, model_response, layer_keys=['sequential.2', 'sequential.8'], abs_val=False):
     """
     Finds the unit of maximum correlation for each channel in each of the argued layers.
     i.e. will return a (row,col) coordinate for each channel in each layer in layer_keys.
+
     membrane_potential: ndarray (T,)
     model_response: dict
         keys: must contain each value in layer_keys. 
         values: ndarray (T,C,H,W)
     layer_keys: sequence of keys
         these are the keys to get the responses from model_response
+    abs_val: bool
+        if true, the returned maximum correlations are an absolute value of
+        the actual correlation.
 
     Returns a dict of correlation statistics. Each layer_key is a key with a 
     list of correlation stats for each channel.
@@ -175,7 +179,7 @@ def get_correlation_stats(membrane_potential, model_response, layer_keys=['seque
         for chan in range(model_layer.shape[1]):
             r, idx = argmax_correlation_recurse_helper(membrane_potential,model_layer,
                                                         shape=model_layer.shape[2:],
-                                                        idx=(chan,), abs_val=False)
+                                                        idx=(chan,), abs_val=abs_val)
             _, row, col = idx
             cor_stats[layer_key].append((row,col,r))
     return cor_stats

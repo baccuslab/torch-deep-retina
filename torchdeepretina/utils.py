@@ -136,7 +136,7 @@ class ShuffledDataSplit:
     for shuffling large datasets.
     """
 
-    def __init__(self, data, val_size=30000, batch_size=512):
+    def __init__(self, data, val_size=30000, batch_size=512, shuffle=True):
         """
         data - a class or named tuple containing an X and y member variable.
         val_size - the number of samples dedicated to validation
@@ -146,9 +146,15 @@ class ShuffledDataSplit:
         self.X = data.X
         self.y = data.y
         if type(self.X) == type(np.array([])):
-            self.perm = np.random.permutation(self.X.shape[0]).astype('int')
+            if shuffle:
+                self.perm = np.random.permutation(self.X.shape[0]).astype('int')
+            else:
+                self.perm = np.arange(self.X.shape[0]).astype('int')
         else:
-            self.perm = torch.randperm(self.X.shape[0]).long()
+            if shuffle:
+                self.perm = torch.randperm(self.x.shape[0]).long()
+            else:
+                self.perm = torch.arange(self.x.shape[0]).long()
         self.train_idxs = self.perm[:-val_size]
         self.val_idxs = self.perm[-val_size:]
         self.train_X = DataObj(self.X, self.train_idxs)
