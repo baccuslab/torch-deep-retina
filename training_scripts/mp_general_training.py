@@ -75,20 +75,23 @@ if __name__ == "__main__":
     sleep_time = 8
     if os.path.exists(hyps['exp_name']):
         _, subds, _ = next(os.walk(hyps['exp_name']))
-        nums = set()
+        nums = []
         for d in subds:
             try:
-                nums.add(int(d.split("_")[1]))
+                nums.append(int(d.split("_")[1]))
             except:
                 pass
-        if hyps['starting_exp_num'] is None:
-            hyps['starting_exp_num'] = len(nums)
+        nums = sorted(nums)
+        if len(nums) == 0 and hyps['starting_exp_num'] is None:
+            hyps['starting_exp_num'] = 0
+        elif hyps['starting_exp_num'] is None:
+            hyps['starting_exp_num'] = nums[-1] + 1
         if int(hyps['starting_exp_num']) in nums:
             print("!!!!! WAIT !!!!!!! MAKE SURE YOU WANT TO HAVE DUPLICATE EXP NUMS !!!!!")
-            print("Would you like to use", len(nums), "instead? (Y/n)")
+            print("Would you like to use", nums[-1]+1, "instead? (Y/n)")
             i,_,_ = select.select([sys.stdin], [],[],sleep_time)
             if not (i and sys.stdin.readline().strip().lower() == "n"):
-                hyps['starting_exp_num'] = len(nums)
+                hyps['starting_exp_num'] = nums[-1]+1
             print("Using:", hyps['starting_exp_num'])
         else:
             print("You have "+str(sleep_time)+" seconds to cancel experiment name "+
