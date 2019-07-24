@@ -120,7 +120,7 @@ def stimcut(data, expt, ci, width=11):
 
     # get the white noise STA for this cell
     wn = _loadexpt_h5(expt, 'whitenoise')
-    sta = np.array(wn[f'train/stas/cell{ci+1:02d}']).copy()
+    sta = np.array(wn['train/stas/cell{2}'.format(ci+1)]).copy()
 
     # find the peak of the sta
     xc, yc = ft.filterpeak(sta)[1]
