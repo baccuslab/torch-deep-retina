@@ -29,6 +29,9 @@ def add_to_frame(frame, fname, delim="!"):
             print()
     new_frame = new_frame.loc[~new_frame["save_folder"].isin(set(frame['save_folder']))]
     frame = frame.append(new_frame)
+    new_folders = sorted([folder for folder in set(new_frame['save_folder'])], key=lambda x: int(x.split("_")[1]))
+    if len(new_folders) > 0:
+        print("Added folders:\n", "\n".join(new_folders))
     return frame
 
 if __name__ == "__main__":
