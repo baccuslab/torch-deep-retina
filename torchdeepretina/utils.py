@@ -3,6 +3,7 @@ import copy
 import torch
 import subprocess
 import json
+import os
 
 def load_json(file_name):
     with open(file_name) as f:
