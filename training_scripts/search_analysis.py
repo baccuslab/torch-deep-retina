@@ -14,7 +14,7 @@ import sys
 import pickle
 from torchdeepretina.models import *
 import matplotlib.pyplot as plt
-from torchdeepretina.deepretina_loader import loadexpt
+from torchdeepretina.datas import loadexpt
 from torchdeepretina.physiology import Physio
 import torchdeepretina.intracellular as intracellular
 import torchdeepretina.batch_compute as bc
@@ -592,10 +592,10 @@ if __name__ == "__main__":
 
         # Sort model folders and select folders above start_idx if argued
         try:
-            model_folders = sorted(model_folders, key=lambda x: int(x.split("_")[1]))
+            model_folders = sorted(model_folders, key=lambda x: int(x.split("/")[1].split("_")[1]))
             if start_idx is not None:
                 for i in range(len(model_folders)):
-                    folder_idx = int(model_folders[i].split("_")[1])
+                    folder_idx = int(model_folders[i].split("/")[1].split("_")[1])
                     if folder_idx == start_idx:
                         model_folders = model_folders[i:]
                         break
