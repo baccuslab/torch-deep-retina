@@ -7,10 +7,9 @@ import torch
 import torch.nn as nn
 from torch.nn import PoissonNLLLoss, MSELoss
 import os.path as path
-from torchdeepretina.utils import ShuffledDataSplit, get_cuda_info
-from torchdeepretina.deepretina_loader import loadexpt
+from torchdeepretina.utils import ShuffledDataSplit, get_cuda_info, save_checkpoint
+from torchdeepretina.datas import loadexpt
 from torchdeepretina.models import *
-import torchdeepretina.retio as io
 import time
 from tqdm import tqdm
 import math
@@ -107,7 +106,12 @@ class Trainer:
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.1)
 
         # Train Loop
+        hs = None
+        if "RNN" in hyps['model_type']:
+            hs = [torch.zeros(batch_size, hyps['rnn_chans'][0], 50, 50),
+                    torch.zeros(batch_size, hyps['rnn_chans'][1], 36, 36)]
         num_batches,leftover = divmod(epoch_length, batch_size)
+        ### TODO: Create experience replay system
         for epoch in range(EPOCHS):
             print("Beginning Epoch", epoch, " -- ", SAVE)
             print()
@@ -128,8 +132,10 @@ class Trainer:
                 label = label.float()
                 label = label.to(device)
 
-                y = model(x.to(device))
-                y = y.float() 
+                if hs is not None:
+                    y = model(x.to(device), hs)
+                else:
+                    y = model(x.to(device))
 
                 if LAMBDA1 > 0:
                     activity_l1 = LAMBDA1 * torch.norm(y, 1).float()/y.shape[0]
@@ -203,6 +209,7 @@ class Trainer:
     
             optimizer.zero_grad()
             save_dict = {
+                "model_type": hyps['model_type'],
                 "model_hyps": model_hyps,
                 "model_state_dict":model.state_dict(),
                 "optim_state_dict":optimizer.state_dict(),
@@ -214,7 +221,7 @@ class Trainer:
                 "test_pearson":avg_pearson,
                 "norm_stats":train_data.stats,
             }
-            io.save_checkpoint_dict(save_dict, SAVE, 'test', del_prev=True)
+            save_checkpoint(save_dict, SAVE, 'test', del_prev=True)
             gc.collect()
             max_mem_used = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             stats_string += "Memory Used: {:.2f} mb".format(max_mem_used / 1024)+"\n"
