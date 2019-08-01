@@ -364,7 +364,7 @@ class LinearStackedConv2d(nn.Module):
     '''
     Builds argued kernel out of multiple 3x3 kernels without added nonlinearities.
     '''
-    def __init__(self, in_channels, out_channels, kernel_size, bias=True, abs_bnorm=False, conv_bias=False):
+    def __init__(self, in_channels, out_channels, kernel_size, bias=True, abs_bnorm=False, conv_bias=False, drop_p=0):
         super(LinearStackedConv2d, self).__init__()
         self.bias = bias
         self.conv_bias = conv_bias
@@ -374,6 +374,8 @@ class LinearStackedConv2d(nn.Module):
             convs = [nn.Conv2d(in_channels, out_channels, 3, bias=conv_bias)]
             if abs_bnorm:
                 convs.append(AbsBatchNorm2d(out_channels))
+            if drop_p > 0:
+                convs.append(nn.Dropout(drop_p))
             for i in range(n_filters-1):
                 if i == n_filters-2:
                     convs.append(nn.Conv2d(out_channels, out_channels, 3, bias=bias))
@@ -381,6 +383,8 @@ class LinearStackedConv2d(nn.Module):
                     convs.append(nn.Conv2d(out_channels, out_channels, 3, bias=conv_bias))
                 if abs_bnorm:
                     convs.append(AbsBatchNorm2d(out_channels))
+                if drop_p > 0:
+                    convs.append(nn.Dropout(drop_p))
         else:
             convs = [nn.Conv2d(in_channels, out_channels, 3, bias=bias)]
         self.convs = nn.Sequential(*convs)
@@ -392,7 +396,7 @@ class StackedConv2d(nn.Module):
     '''
     Builds argued kernel out of multiple 3x3 kernels.
     '''
-    def __init__(self, in_channels, out_channels, kernel_size, bias=True, abs_bnorm=False, conv_bias=False, legacy=False):
+    def __init__(self, in_channels, out_channels, kernel_size, bias=True, abs_bnorm=False, conv_bias=False, drop_p=0, legacy=False):
         super(StackedConv2d, self).__init__()
         self.bias = bias
         n_filters = int((kernel_size-1)/2)
@@ -411,6 +415,8 @@ class StackedConv2d(nn.Module):
                     convs.append(AbsBatchNorm2d(out_channels))
                 else:
                     convs.append(nn.BatchNorm2d(out_channels))
+                if drop_p > 0:
+                    convs.append(nn.Dropout(drop_p))
         else:
             convs = [nn.Conv2d(in_channels, out_channels, 3, bias=bias), nn.BatchNorm2d(out_channels), nn.ReLU()]
         self.convs = nn.Sequential(*convs)
@@ -418,8 +424,33 @@ class StackedConv2d(nn.Module):
     def forward(self, x):
         return self.convs(x)
 
-#class ConvRNN(nn.Module):
-#    def __init__(self)
+#Conv2d(out_channels, out_channels, 3, bias=bias)
+class ConvRNNCell(nn.Module):
+    def __init__(self, in_channels, out_channels, rnn_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
+        super(ConvRNNCell, self).__init__()
+        self.in_chans = in_channels
+        self.out_chans = out_channels
+        self.rnn_chans = rnn_channels
+        self.ksize = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.bias = bias
+        self.conv = nn.Conv2d(in_channels+rnn_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
+        assert kernel_size % 2 == 1 # Must have odd kernel size
+        self.rnn_padding = (kernel_size-1)//2
+        self.rnn_conv = nn.Conv2d(in_channels+rnn_channels, rnn_channels, kernel_size, stride, self.rnn_padding, bias)
+    
+    def forward(self, x, h):
+        """
+        x: torch tensor (B, IN_CHAN, H, W)
+            the new input
+        h: torch tensor (B, RNN_CHAN, H, W) 
+            the recurrent input
+        """
+        ins = torch.cat([x,h], dim=1)
+        outs = self.conv(ins)
+        h_new = self.rnn_conv(ins)
+        return outs, h_new
 
 class Flatten(nn.Module):
     def __init__(self):
