@@ -3,7 +3,69 @@ import torch.nn as nn
 from torchdeepretina.torch_utils import *
 import numpy as np
 
-# Use for bncnnbnormmomentum folder
+#class TDRModel(nn.Module):
+#    def __init__(self, n_units, noise=0.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bn_moment=0.01, softplus=True):
+#        self.n_units = n_units
+#        self.noise = noise
+
+class RNNCNN(nn.Module):
+    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=.01, softplus=True, inference_exp=False, rnn_chans=[2,2]):
+        super(RNNCNN,self).__init__()
+        self.chans = chans
+        self.rnn_chans = rnn_chans
+        self.softplus = softplus
+        self.infr_exp = inference_exp
+        self.n_units = n_units
+        if linear_bias is None:
+            linear_bias = bias
+        self.rnns = nn.ModuleList([])
+
+        # Block 1
+        modules = []
+        self.rnns.append(ConvRNNCell(40, chans[0], rnn_chans[0], kernel_size=15, bias=bias))
+        modules.append(Flatten())
+        modules.append(nn.BatchNorm1d(chans[0]*36*36, eps=1e-3, momentum=bnorm_momentum))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
+        modules.append(nn.ReLU())
+        modules.append(Reshape((-1,chans[0],36,36)))
+        self.sequential1 = nn.Sequential(*modules)
+
+        # Block 2
+        modules = []
+        self.rnns.append(ConvRNNCell(chans[0],chans[1], rnn_chans[1], kernel_size=11, bias=bias))
+        modules.append(Flatten())
+        modules.append(nn.BatchNorm1d(chans[1]*26*26, eps=1e-3, momentum=bnorm_momentum))
+        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
+        modules.append(nn.ReLU())
+        modules.append(nn.Linear(chans[1]*26*26,n_units, bias=linear_bias))
+        modules.append(nn.BatchNorm1d(n_units, eps=1e-3, momentum=bnorm_momentum))
+        if softplus:
+            modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
+        self.sequential2 = nn.Sequential(*modules)
+        
+    def forward(self, x, hs):
+        """
+        x: torch FloatTensor (B, C, H, W)
+            the inputs
+        hs: list of torch FloatTensors len==2, (B, RNN_CHAN, H, W), (B, RNN_CHAN1, H1, W1)
+            list of the rnn cell states
+        """
+        fx, h1 = self.rnns[0](x, hs[0])
+        fx = self.sequential1(fx)
+        fx, h2 = self.rnns[1](x, hs[1])
+        fx = self.sequential2(fx)
+        if not self.training and self.infr_exp:
+            fx = torch.exp(fx)
+        return fx, [h1, h2]
+
+    def extra_repr(self):
+        try:
+            return 'adapt_gauss={}'.format(self.adapt_gauss)
+        except:
+            pass
+
 class BNCNN(nn.Module):
     def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=.01, softplus=True, inference_exp=False):
         super(BNCNN,self).__init__()
@@ -932,22 +994,23 @@ class AbsBNStackedBNCNN(nn.Module):
         return self.sequential(x)
     
 class LinearStackedBNCNN(nn.Module):
-    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True, inference_exp=False):
+    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True, inference_exp=False, bnorm=True, drop_p=0):
         super(LinearStackedBNCNN,self).__init__()
         self.name = 'StackedNet'
         self.chans = chans
         self.n_units = n_units
         self.infr_exp = inference_exp
+        self.bnorm = bnorm
         if linear_bias is None:
             linear_bias = bias
         modules = []
-        modules.append(LinearStackedConv2d(40,chans[0],kernel_size=15, abs_bnorm=True, bias=bias))
+        modules.append(LinearStackedConv2d(40,chans[0], kernel_size=15, abs_bnorm=bnorm, bias=bias, drop_p=drop_p))
         modules.append(Flatten())
         modules.append(AbsBatchNorm1d(chans[0]*36*36, eps=1e-3, momentum=bnorm_momentum))
         modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
         modules.append(nn.ReLU())
         modules.append(Reshape((-1,chans[0],36,36)))
-        modules.append(LinearStackedConv2d(chans[0],chans[1],kernel_size=11, abs_bnorm=True, bias=bias))
+        modules.append(LinearStackedConv2d(chans[0],chans[1],kernel_size=11, abs_bnorm=bnorm, bias=bias, drop_p=drop_p))
         modules.append(Flatten())
         modules.append(AbsBatchNorm1d(chans[1]*26*26, eps=1e-3, momentum=bnorm_momentum))
         modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
