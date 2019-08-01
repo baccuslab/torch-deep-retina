@@ -119,3 +119,4 @@ delete_me.py
 jupyter-notebooks/*.ipynb
 */hyps/*
 .DS_Store
+*.png
