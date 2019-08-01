@@ -655,58 +655,61 @@ def white(time, contrast=1.0):
     stimulus = np.repeat(compressed_stim, 3, axis=0)
     return stimulus[:time]
 
-def get_stim_grad(model, X, layer, cell_idx, batch_size=500):
+def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None):
     """
     Gets the gradient of the model output at the specified layer and cell idx with respect
     to the inputs (X). Returns a gradient array with the same shape as X.
     """
+    print("layer:", layer)
     requires_grad(model, False)
+    device = next(model.parameters()).get_device()
 
-    outsize = (batch_size, model.n_units)
-    outs = torch.zeros(outsize).to(0)
+    outsize = (batch_size, model.n_units) if layer_shape is None else (batch_size, *layer_shape)
+    outs = torch.zeros(outsize).to(device)
     def forward_hook(module, inps, outputs):
         outs[:] = outputs
-    hook_handles = []
-    for name, module in model.named_modules():
+    module = None
+    for name, modu in model.named_modules():
         if name == layer:
             print("hook attached to " + name)
-            hook_handles.append(module.register_forward_hook(forward_hook))
+            module = modu
 
     # Get gradient with respect to activations
-    for i in range(0, X.shape[0], batch_size):
-        x = X[i:i+batch_size].to(0)
+    X.requires_grad = True
+    n_loops = X.shape[0]//batch_size
+    for i in range(n_loops):
+        hook_handle = module.register_forward_hook(forward_hook)
+        idx = i*batch_size
+        x = X[idx:idx+batch_size].to(device)
         _ = model(x)
         # Outs are the activations at the argued layer and cell idx accross the batch
         if type(cell_idx) == type(int()):
-            fx = outs[:,cell_idx].mean()
+            fx = outs[:,cell_idx]
         elif len(cell_idx) == 1:
-            fx = outs[:,cell_idx[0]].mean()
+            fx = outs[:,cell_idx[0]]
         else:
-            fx = outs[:,cell_idx[0], cell_idx[1], cell_idx[2]].mean()
+            fx = outs[:, cell_idx[0], cell_idx[1], cell_idx[2]]
+        fx = fx.mean()
         fx.backward()
-        outs = torch.zeros(outsize).to(0)
+        outs = torch.zeros_like(outs)
+        hook_handle.remove()
     del outs
     del _
-    # Remove hooks to avoid memory leaks
-    for handle in hook_handles:
-        print("hook detached")
-        handle.remove()
 
     requires_grad(model, True)
-    return X.grad.data.cpu().detach().numpy()
+    return X.grad[:batch_size*n_loops].cpu().detach().numpy()
 
-def compute_sta(model, contrast, layer, cell_index):
+def compute_sta(model, contrast, layer, cell_index, layer_shape=None):
     """helper function to compute the STA using the model gradient"""
     # generate some white noise
-    X = stim.concat(white(1040, contrast=contrast)).copy()
+    #X = stim.concat(white(1040, contrast=contrast)).copy()
+    X = stim.concat(contrast*np.random.randn(10000,50,50))
     X = torch.FloatTensor(X)
     X.requires_grad = True
 
     # compute the gradient of the model with respect to the stimulus
-    drdx = get_stim_grad(model, X, layer, cell_index)
-
-    # average over the white noise samples
-    sta = drdx.mean(axis=0)
+    drdx = get_stim_grad(model, X, layer, cell_index, layer_shape=layer_shape)
+    sta = drdx.mean(0)
 
     del X
     return sta
