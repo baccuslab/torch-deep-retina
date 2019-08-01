@@ -7,7 +7,7 @@ import sys
 import pickle
 from torchdeepretina.models import *
 import matplotlib.pyplot as plt
-from torchdeepretina.deepretina_loader import loadexpt
+from torchdeepretina.datas import loadexpt
 from torchdeepretina.physiology import Physio
 import torchdeepretina.intracellular as intracellular
 import torchdeepretina.batch_compute as bc
@@ -125,30 +125,33 @@ def make_model_frame(model_stats, headers, main_dir="../training_scripts"):
 def get_architecture(folder, data, hyps=None, main_dir="../training_scripts/"):
     # load_model changed to get_architecture
     try:
-        hyps= hyps if hyps is not None else get_hyps(folder, main_dir)
-        hyps['model_type'] = hyps['model_type'].split(".")[-1].split("\'")[0].strip()
-        hyps['model_type'] = globals()[hyps['model_type']]
-        model = hyps['model_type'](**data['model_hyps'])
-    except Exception as e:
-        model_hyps = {"n_units":5,"noise":float(hyps['noise'])}
-        if "bias" in hyps:
-            model_hyps['bias'] = hyps['bias'] == "True"
-        if "chans" in hyps:
-            model_hyps['chans'] = [int(x) for x in
-                                   hyps['chans'].replace("[", "").replace("]", "").strip().split(",")]
-        if "adapt_gauss" in hyps:
-            model_hyps['adapt_gauss'] = hyps['adapt_gauss'] == "True"
-        if "linear_bias" in hyps:
-            model_hyps['linear_bias'] = hyps['linear_bias'] == "True"
-        if "softplus" in hyps:
-            model_hyps['softplus'] = hyps['softplus'] == "True"
-        if "abs_bias" in hyps:
-            model_hyps['abs_bias'] = hyps['abs_bias'] == "True"
-        fn_args = set(hyps['model_type'].__init__.__code__.co_varnames)
-        for k in model_hyps.keys():
-            if k not in fn_args:
-                del model_hyps[k]
-        model = hyps['model_type'](**model_hyps)
+        model = globals()[data['model_type']](**data['model_hyps'])
+    except:
+        try:
+            hyps= hyps if hyps is not None else get_hyps(folder, main_dir)
+            hyps['model_type'] = hyps['model_type'].split(".")[-1].split("\'")[0].strip()
+            hyps['model_type'] = globals()[hyps['model_type']]
+            model = hyps['model_type'](**data['model_hyps'])
+        except Exception as e:
+            model_hyps = {"n_units":5,"noise":float(hyps['noise'])}
+            if "bias" in hyps:
+                model_hyps['bias'] = hyps['bias'] == "True"
+            if "chans" in hyps:
+                model_hyps['chans'] = [int(x) for x in
+                                       hyps['chans'].replace("[", "").replace("]", "").strip().split(",")]
+            if "adapt_gauss" in hyps:
+                model_hyps['adapt_gauss'] = hyps['adapt_gauss'] == "True"
+            if "linear_bias" in hyps:
+                model_hyps['linear_bias'] = hyps['linear_bias'] == "True"
+            if "softplus" in hyps:
+                model_hyps['softplus'] = hyps['softplus'] == "True"
+            if "abs_bias" in hyps:
+                model_hyps['abs_bias'] = hyps['abs_bias'] == "True"
+            fn_args = set(hyps['model_type'].__init__.__code__.co_varnames)
+            for k in model_hyps.keys():
+                if k not in fn_args:
+                    del model_hyps[k]
+            model = hyps['model_type'](**model_hyps)
     return model
 
 def get_hyps(folder, main_dir="../training_scripts"):
@@ -163,30 +166,31 @@ def get_hyps(folder, main_dir="../training_scripts"):
                         hyps[splt[0]] = hyps[splt[0]] == "True"
     return hyps
 
-def load_model(folder, data):
+def load_model(folder, data=None, hyps=None, main_dir="../training_scripts/"):
+    """
+    Can load a specific model file both architecture and state_dict if the file 
+    contains a model_state_dict key, or can just load the architecture.
+
+    folder: str
+        can be a path to a specific model folder or to a specific checkpoint file.
+        if argument is path to a checkpoint file, then data is unnecessary parameter.
+    data: dict or None
+        this should either be the loaded checkpoint dict if folder is a model folder,
+        or it can be None if the folder is a path to a checkpoint file.
+    hyps: dict
+        specific hyperparameters used in the model. this is an optional parameter to 
+        save time in the function.
+    main_dir: string
+        this is the folder to search for the argued folder.
+
+    """
+    if data is None:
+        data = torch.load(folder, map_location=torch.device("cpu"))
+    model = get_architecture(folder, data, hyps, main_dir)
     try:
-        hyps=get_hyps(folder)
-        hyps['model_type'] = hyps['model_type'].split(".")[-1].split("\'")[0].strip()
-        hyps['model_type'] = globals()[hyps['model_type']]
-        model = hyps['model_type'](**data['model_hyps'])
-    except Exception as e:
-        model_hyps = {"n_units":5,"noise":float(hyps['noise'])}
-        if "bias" in hyps:
-            model_hyps['bias'] = hyps['bias'] == "True"
-        if "chans" in hyps:
-            model_hyps['chans'] = [int(x) for x in
-                                   hyps['chans'].replace("[", "").replace("]", "").strip().split(",")]
-        if "adapt_gauss" in hyps:
-            model_hyps['adapt_gauss'] = hyps['adapt_gauss'] == "True"
-        if "linear_bias" in hyps:
-            model_hyps['linear_bias'] = hyps['linear_bias'] == "True"
-        if "softplus" in hyps:
-            model_hyps['softplus'] = hyps['softplus'] == "True"
-        fn_args = set(hyps['model_type'].__init__.__code__.co_varnames)
-        for k in model_hyps.keys():
-            if k not in fn_args:
-                del model_hyps[k]
-        model = hyps['model_type'](**model_hyps)
+        model.load_state_dict(data['model_state_dict'])
+    except KeyError as e:
+        print("Failed to load state_dict. This checkpoint does not contain a model state_dict!")
     return model
 
 def read_model(folder):
@@ -194,7 +198,7 @@ def read_model(folder):
         _, _, fs = next(os.walk(folder.strip()))
     except Exception as e:
         print(e)
-        print("Likely folder", folder.strip(),"does not exist")
+        print("It is likely that folder", folder.strip(),"does not exist")
         assert False
     for i in range(len(fs)+100):
         f = os.path.join(folder.strip(),"test_epoch_{0}.pth".format(i))
