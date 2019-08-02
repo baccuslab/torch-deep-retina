@@ -111,8 +111,12 @@ training_scripts/*/
 
 # Miscellaneous
 */hyperparams.txt
-*/description.txt
-delete_me.py
 */hyperparams.json
 */hyperranges.json
+*/description.txt
+delete_me.py
 */*_results.txt
+jupyter-notebooks/*.ipynb
+*/hyps/*
+.DS_Store
+*.png
