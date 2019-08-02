@@ -3,42 +3,54 @@ import torch.nn as nn
 from torchdeepretina.torch_utils import *
 import numpy as np
 
-#class TDRModel(nn.Module):
-#    def __init__(self, n_units, noise=0.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bn_moment=0.01, softplus=True):
-#        self.n_units = n_units
-#        self.noise = noise
+def try_kwarg(kwargs, key, default):
+    try:
+        return kwargs[key]
+    except:
+        return default
 
-class RNNCNN(nn.Module):
-    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=.01, softplus=True, inference_exp=False, rnn_chans=[2,2]):
-        super(RNNCNN,self).__init__()
-        self.chans = chans
-        self.rnn_chans = rnn_chans
-        self.softplus = softplus
-        self.infr_exp = inference_exp
+class TDRModel(nn.Module):
+    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, chans=[8,8], bnorm_momentum=.01, 
+                                 softplus=True, inference_exp=False, img_shape=(40,50,50), ksizes=(15,11)):
+        super().__init__()
         self.n_units = n_units
-        if linear_bias is None:
-            linear_bias = bias
+        self.chans = chans 
+        self.softplus = softplus 
+        self.infr_exp = inference_exp 
+        self.bias = bias 
+        self.img_shape = img_shape 
+        self.ksizes = ksizes 
+        self.linear_bias = linear_bias 
+        self.noise = noise 
+        self.bn_moment = bnorm_momentum 
+    
+    def forward(self, x):
+        return x
+
+class RNNCNN(TDRModel):
+    def __init__(self, rnn_chans=[2,2], **kwargs):
+        super(**kwargs)
         self.rnns = nn.ModuleList([])
 
         # Block 1
         modules = []
-        self.rnns.append(ConvRNNCell(40, chans[0], rnn_chans[0], kernel_size=15, bias=bias))
+        self.rnns.append(ConvRNNCell(40, self.chans[0], rnn_chans[0], kernel_size=15, bias=self.bias))
         modules.append(Flatten())
-        modules.append(nn.BatchNorm1d(chans[0]*36*36, eps=1e-3, momentum=bnorm_momentum))
-        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
+        modules.append(nn.BatchNorm1d(self.chans[0]*36*36, eps=1e-3, momentum=self.bn_moment))
+        modules.append(GaussianNoise(std=self.noise))
         modules.append(nn.ReLU())
-        modules.append(Reshape((-1,chans[0],36,36)))
+        modules.append(Reshape((-1,self.chans[0],36,36)))
         self.sequential1 = nn.Sequential(*modules)
 
         # Block 2
         modules = []
-        self.rnns.append(ConvRNNCell(chans[0],chans[1], rnn_chans[1], kernel_size=11, bias=bias))
+        self.rnns.append(ConvRNNCell(self.chans[0],self.chans[1], rnn_chans[1], kernel_size=11, bias=self.bias))
         modules.append(Flatten())
-        modules.append(nn.BatchNorm1d(chans[1]*26*26, eps=1e-3, momentum=bnorm_momentum))
-        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
+        modules.append(nn.BatchNorm1d(self.chans[1]*26*26, eps=1e-3, momentum=self.bn_moment))
+        modules.append(GaussianNoise(std=noise))
         modules.append(nn.ReLU())
-        modules.append(nn.Linear(chans[1]*26*26,n_units, bias=linear_bias))
-        modules.append(nn.BatchNorm1d(n_units, eps=1e-3, momentum=bnorm_momentum))
+        modules.append(nn.Linear(self.chans[1]*26*26,self.n_units, bias=self.linear_bias))
+        modules.append(nn.BatchNorm1d(self.n_units, eps=1e-3, momentum=bnorm_momentum))
         if softplus:
             modules.append(nn.Softplus())
         else:
@@ -993,31 +1005,32 @@ class AbsBNStackedBNCNN(nn.Module):
             return torch.exp(self.sequential(x))
         return self.sequential(x)
     
-class LinearStackedBNCNN(nn.Module):
-    def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, adapt_gauss=False, chans=[8,8], bnorm_momentum=0.1, softplus=True, inference_exp=False, bnorm=True, drop_p=0):
-        super(LinearStackedBNCNN,self).__init__()
+class LinearStackedBNCNN(TDRModel):
+    def __init__(self, bnorm=True, drop_p=0, **kwargs):
+        super().__init__(**kwargs)
         self.name = 'StackedNet'
-        self.chans = chans
-        self.n_units = n_units
-        self.infr_exp = inference_exp
         self.bnorm = bnorm
-        if linear_bias is None:
-            linear_bias = bias
+        self.drop_p = drop_p
         modules = []
-        modules.append(LinearStackedConv2d(40,chans[0], kernel_size=15, abs_bnorm=bnorm, bias=bias, drop_p=drop_p))
+        shape = self.img_shape[1:] # (H, W)
+        modules.append(LinearStackedConv2d(self.img_shape[0],self.chans[0],kernel_size=self.ksizes[0], abs_bnorm=self.bnorm, 
+                                                                                    bias=self.bias, drop_p=self.drop_p))
+        shape = update_shape(shape, self.ksizes[0])
         modules.append(Flatten())
-        modules.append(AbsBatchNorm1d(chans[0]*36*36, eps=1e-3, momentum=bnorm_momentum))
-        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
+        modules.append(AbsBatchNorm1d(self.chans[0]*shape[0]*shape[1], eps=1e-3, momentum=self.bn_moment))
+        modules.append(GaussianNoise(std=self.noise))
         modules.append(nn.ReLU())
-        modules.append(Reshape((-1,chans[0],36,36)))
-        modules.append(LinearStackedConv2d(chans[0],chans[1],kernel_size=11, abs_bnorm=bnorm, bias=bias, drop_p=drop_p))
+        modules.append(Reshape((-1,self.chans[0],shape[0], shape[1])))
+        modules.append(LinearStackedConv2d(self.chans[0],self.chans[1],kernel_size=self.ksizes[1], abs_bnorm=self.bnorm, 
+                                                                                bias=self.bias, drop_p=self.drop_p))
+        shape = update_shape(shape, self.ksizes[1])
         modules.append(Flatten())
-        modules.append(AbsBatchNorm1d(chans[1]*26*26, eps=1e-3, momentum=bnorm_momentum))
-        modules.append(GaussianNoise(std=noise, adapt=adapt_gauss))
+        modules.append(AbsBatchNorm1d(self.chans[1]*shape[0]*shape[1], eps=1e-3, momentum=self.bn_moment))
+        modules.append(GaussianNoise(std=self.noise))
         modules.append(nn.ReLU())
-        modules.append(nn.Linear(chans[1]*26*26,n_units, bias=linear_bias))
-        modules.append(AbsBatchNorm1d(n_units, eps=1e-3, momentum=bnorm_momentum))
-        if softplus:
+        modules.append(nn.Linear(self.chans[1]*shape[0]*shape[1], self.n_units, bias=self.linear_bias))
+        modules.append(AbsBatchNorm1d(self.n_units, eps=1e-3, momentum=self.bn_moment))
+        if self.softplus:
             modules.append(nn.Softplus())
         else:
             modules.append(Exponential(train_off=True))

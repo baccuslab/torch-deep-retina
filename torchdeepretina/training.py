@@ -266,7 +266,9 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
         # Make model hyps
         hyps['model_class'] = globals()[hyps['model_type']]
         model_hyps = {k:v for k,v in hyps.items()}
-        fn_args = set(hyps['model_class'].__init__.__code__.co_varnames)
+        fn_args = set(hyps['model_class'].__init__.__code__.co_varnames) 
+        if "kwargs" in fn_args:
+            fn_args = fn_args | set(TDRModel.__init__.__code__.co_varnames)
         keys = list(model_hyps.keys())
         for k in keys:
             if k not in fn_args:

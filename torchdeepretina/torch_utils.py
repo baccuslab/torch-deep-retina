@@ -4,6 +4,36 @@ import numpy as np
 
 DEVICE = torch.device("cuda:0")
 
+def update_shape(shape, kernel=3, padding=0, stride=1, op="conv"):
+    """
+    Calculates the new shape of the tensor following a convolution or deconvolution
+
+    shape: list-like or int
+        the height/width of the activations
+    kernel: int or list-like
+        size of the kernel
+    padding: list-like or int
+    stride: list-like or int
+    op: str
+        'conv' or 'deconv'
+    """
+    if type(shape) == type(int()):
+        shape = np.asarray([shape])
+    if type(kernel) == type(int()):
+        kernel = np.asarray([kernel for i in range(len(shape))])
+    if type(padding) == type(int()):
+        padding = np.asarray([padding for i in range(len(shape))])
+    if type(stride) == type(int()):
+        stride = np.asarray([stride for i in range(len(shape))])
+
+    if op == "conv":
+        shape = (shape - kernel + 2*padding)/stride + 1
+    elif op == "deconv" or op == "conv_transpose":
+        shape = (shape - 1)*stride + kernel - 2*padding
+    if len(shape) == 1:
+        return int(shape[0])
+    return [int(s) for s in shape]
+
 def diminish_weight_magnitude(params):
     for param in params:
         divisor = float(np.prod(param.data.shape))/2
@@ -366,6 +396,7 @@ class LinearStackedConv2d(nn.Module):
     '''
     def __init__(self, in_channels, out_channels, kernel_size, bias=True, abs_bnorm=False, conv_bias=False, drop_p=0):
         super(LinearStackedConv2d, self).__init__()
+        assert kernel_size % 2 == 1 # kernel must be odd
         self.bias = bias
         self.conv_bias = conv_bias
         self.abs_bnorm = abs_bnorm
