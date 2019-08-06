@@ -397,9 +397,11 @@ class LinearStackedConv2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, bias=True, abs_bnorm=False, conv_bias=False, drop_p=0):
         super(LinearStackedConv2d, self).__init__()
         assert kernel_size % 2 == 1 # kernel must be odd
+        self.ksize = kernel_size
         self.bias = bias
         self.conv_bias = conv_bias
         self.abs_bnorm = abs_bnorm
+        self.drop_p = drop_p
         n_filters = int((kernel_size-1)/2)
         if n_filters > 1:
             convs = [nn.Conv2d(in_channels, out_channels, 3, bias=conv_bias)]
@@ -412,16 +414,22 @@ class LinearStackedConv2d(nn.Module):
                     convs.append(nn.Conv2d(out_channels, out_channels, 3, bias=bias))
                 else:
                     convs.append(nn.Conv2d(out_channels, out_channels, 3, bias=conv_bias))
-                if abs_bnorm:
-                    convs.append(AbsBatchNorm2d(out_channels))
-                if drop_p > 0:
-                    convs.append(nn.Dropout(drop_p))
+                    if abs_bnorm:
+                        convs.append(AbsBatchNorm2d(out_channels))
+                    if drop_p > 0:
+                        convs.append(nn.Dropout(drop_p))
         else:
             convs = [nn.Conv2d(in_channels, out_channels, 3, bias=bias)]
         self.convs = nn.Sequential(*convs)
 
     def forward(self, x):
         return self.convs(x)
+
+    def extra_repr(self):
+        try:
+            return 'bias={}, abs_bias={}'.format(self.bias, self.abs_bias)
+        except:
+            return "bias={}, abs_bias={}".format(self.bias, True)
 
 class StackedConv2d(nn.Module):
     '''
