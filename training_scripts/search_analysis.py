@@ -160,7 +160,7 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
     model = None
     metric_keys = ['loss', 'val_loss', 'val_acc', 'test_pearson']
     metric_lists = [losses, val_losses, val_accs, test_accs]
-    for i in range(n_epochs):
+    for i in range(300):
         f_name = os.path.join(main_dir, folder,"test_epoch_{0}.pth".format(i))
         try:
             with open(f_name, "rb") as fd:
@@ -178,29 +178,9 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
         except FileNotFoundError as e:
             pass
  
-    if model is None:
-        model = analysis.get_architecture(folder, data, hyps)
+    model = analysis.load_model(os.path.join(main_dir, folder), data)
     insp_layers = get_insp_layers(model, hyps)
     print("Inspection layers:", insp_layers)
-    
-    # Load saved model parameters
-    # Try-except blocks are used to accomodate some legacy models
-    try:
-        model.load_state_dict(data['model_state_dict'])
-    except RuntimeError as e:
-        print("Failed to load model state_dict, attempting fix")
-        try:
-            keys = list(data['model_state_dict'].keys())
-            for k in keys:
-                if "cuda_param" in k:
-                    new_k = k.replace("cuda_param", "sigma")
-                    data['model_state_dict'][new_k] = data['model_state_dict'][k]
-                    del data['model_state_dict'][k]
-            model.load_state_dict(data['model_state_dict'])
-        except RuntimeError as e:
-            print(e)
-            print("Unable to load state dict, continuing")
-            return stats
     
     # Add exponential layer depending on training regime
     poisson = ("lossfxn" not in hyps and "lossfxn_name" not in hyps) or\
@@ -247,9 +227,9 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
     test_data = loadexpt(dataset,cells,stim_type,'test',40,0, norm_stats=norm_stats)
     test_x = torch.from_numpy(test_data.X)
     
-    stats['FinalLoss'] = losses[-1]
-    stats['FinalVal'] = val_losses[-1]
-    stats['ValAcc'] = val_accs[-1]
+    stats['final_loss'] = losses[-1]
+    stats['final_val'] = val_losses[-1]
+    stats['val_acc'] = val_accs[-1]
     
     if(math.isnan(losses[-1]) or math.isnan(val_losses[-1]) or math.isnan(val_accs[-1])):
         print("NaN results, continuing...\n")
@@ -267,7 +247,7 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
         stats["cell"+str(cell)] = test_accs[i]
 
     print("Final Test Acc:", avg_test_acc)
-    stats['FinalTestAcc'] = avg_test_acc
+    stats['test_acc'] = avg_test_acc
 
     # Compare to non-exponentiated outputs
     if noexp_seq is not None: 
@@ -278,7 +258,7 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
         noexp_avg_acc = np.mean(test_accs)
         print("Old test acc:", noexp_avg_acc)
         print("New minus old:", avg_test_acc - noexp_avg_acc)
-        stats['OldTestAcc'] = noexp_avg_acc
+        stats['nonexp_test_acc'] = noexp_avg_acc
         if math.isnan(avg_test_acc):
             avg_test_acc = noexp_avg_acc
         del noexp_modresp
@@ -306,7 +286,7 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
         fig = plt.figure()
         plt.plot(losses)
         plt.plot(val_losses)
-        plt.legend(["TrainLoss", "ValLoss"])
+        plt.legend(["train_loss", "val_loss"])
         plt.title("Loss Curves")
         plt.savefig(os.path.join(folder, "loss_curve.png"))
 
@@ -314,7 +294,7 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
         fig = plt.figure()
         plt.plot(val_accs)
         plt.plot(test_accs)
-        plt.legend(["ValAcc", "TestSubsetAcc"])
+        plt.legend(["val_acc", "TestSubsetAcc"])
         plt.title("Acc Curves")
         plt.savefig(os.path.join(folder, "acc_curve.png"))
         
@@ -363,9 +343,11 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
             for j,cl in enumerate(insp_layers):
                 if len(model_responses[k][-1][cl].shape) <= 2:
                     try:
-                        model_responses[k][-1][cl] = model_responses[k][-1][cl].reshape((-1,chans[0],36,36))
+                        shape = model.shapes[0]
+                        model_responses[k][-1][cl] = model_responses[k][-1][cl].reshape((-1,chans[0],*shape))
                     except:
-                        model_responses[k][-1][cl] = model_responses[k][-1][cl].reshape((-1,chans[1],26,26))
+                        shape = model.shapes[1]
+                        model_responses[k][-1][cl] = model_responses[k][-1][cl].reshape((-1,chans[1],*shape))
     
     # uses classify to get the most correlated cell/layer/subtype for each interneuron recording. 
     # Stored in all_cell_info. y_pred does a baseline "classification": record the convolutional 
@@ -442,14 +424,14 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
     # Collect total average correlation (and other statistics)
     avg_intr_cor = np.mean(np.asarray([[all_cell_info[k][i][-1] for i in range(len(all_cell_info[k]))] for k in all_cell_info.keys()]))
     print("Mean intracellular:", avg_intr_cor)
-    stats['Meanintracellular'] = avg_intr_cor
+    stats['mean_intr'] = avg_intr_cor
 
     std = np.std(np.asarray([[all_cell_info[k][i][-1] for i in range(len(all_cell_info[k]))] for k in all_cell_info.keys()]))
-    stats['STDintracellular'] = std
+    stats['std_intr'] = std
     m = np.min(np.asarray([[all_cell_info[k][i][-1] for i in range(len(all_cell_info[k]))] for k in all_cell_info.keys()]))
-    stats["Minintracellular"] = m
+    stats["min_intr"] = m
     m = np.max(np.asarray([[all_cell_info[k][i][-1] for i in range(len(all_cell_info[k]))] for k in all_cell_info.keys()]))
-    stats["Maxintracellular"] = m
+    stats["max_intr"] = m
     
     stim_type = 'boxes'
     # Make example correlation map
@@ -490,7 +472,7 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
     
     return stats
 
-def analyze_models(model_folders):
+def analyze_models(grand_folder, model_folders):
     """
     Does the initial model analysis over all the models in a hyperparameter search. 
 
@@ -502,17 +484,9 @@ def analyze_models(model_folders):
     #with open('models.csv') as f:
     #    model_headers = f.readline().strip().split("!")
     model_headers = [
-        "exp_name","exp_num","dataset","l2","ValAcc","n_epochs","model_type",
-        "bias","chans","results_file","lr","n_output_units","starting_exp_num",
-        "l1","adapt_gauss","FinalTestAcc","OldTestAcc","architecture","Meanintracellular",
-        "cells","ValLoss","noise","Minintracellular","stim_type","poor_results",
-        "TrainLoss","Maxintracellular","FinalLoss","batch_size","FinalVal",
-        "save_folder","cell0","cell1","cell2","cell3","cell4","cell5","cell6",
-        "cell7","cell8","cell9","cell10","cell11","cell12","cell13","cell14",
-        "cell16","cell17","cell18","cell20","cell21","cell22","cell23","cell24",
-        "cell25","cell27","cell31","bnorm_momentum","linear_bias","shift",
-        "lossfxn","abs_bias","log_poisson","softplus","bipolar_intr_cor", 
-        "amacrine_intr_cor","horizontal_intr_cor",'avg_oms_ratio','std_oms_ratio'
+        "val_acc", "val_loss", "results_file", "test_acc","noexp_test_acc", "architecture","mean_intr","min_intr",
+        "stim_type","poor_results", "train_loss","max_intr","final_loss","final_val",
+        "save_folder", "bipolar_intr_cor", "amacrine_intr_cor","horizontal_intr_cor",'avg_oms_ratio','std_oms_ratio'
     ]
     intrnrn_headers = [
         "cellfile", "cell_idx", "cell_type", "stim_type", "save_folder", 
@@ -570,9 +544,18 @@ def analyze_models(model_folders):
         # Record model data in table
         if folder not in main_existing_folders:
             write_header = not os.path.exists(table_path)
-            model_frame = analysis.make_model_frame(model_stats, model_headers)
-            model_frame = model_frame.reindex(model_headers, axis=1)
-            model_frame.to_csv(table_path, header=write_header, mode='a', sep="!", index=False)
+            hyps = analysis.get_hyps(folder)
+            headers = model_headers + list(hyps.keys())
+            model_frame = analysis.make_model_frame(model_stats, headers)
+            if os.path.exists(table_path):
+                main_frame = pd.read_csv(table_path, delimiter="!")
+                headers = list(set(main_frame.columns)|set(headers))
+                main_frame = main_frame.reindex(headers, axis=1)
+                model_frame = model_frame.reindex(headers, axis=1)
+                main_frame = main_frame.append(model_frame)
+            else:
+                main_frame = model_frame
+            main_frame.to_csv(table_path, header=True, mode='w', sep="!", index=False)
 
 if __name__ == "__main__":
     start_idx = None
@@ -605,7 +588,7 @@ if __name__ == "__main__":
         except IndexError as e:
             print("index error for", grand_folder)
             print("Using model_folders:", model_folders)
-        analyze_models(model_folders)
+        analyze_models(grand_folder, model_folders)
     
     
     
