@@ -7,8 +7,8 @@ import torch
 import torch.nn as nn
 from torch.nn import PoissonNLLLoss, MSELoss
 import os.path as path
-from torchdeepretina.utils import ShuffledDataSplit, get_cuda_info, save_checkpoint
-from torchdeepretina.datas import loadexpt
+from torchdeepretina.utils import get_cuda_info, save_checkpoint
+from torchdeepretina.datas import loadexpt, ShuffledDataSplit, DataContainer
 from torchdeepretina.models import *
 import time
 from tqdm import tqdm
@@ -61,11 +61,11 @@ class Trainer:
             return results
             
         # Get Data
-        train_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],
-                                            hyps['stim_type'],'train',40,0))
+        img_depth, img_height, img_width = hyps['img_shape']
+        train_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'], hyps['stim_type'],'train',img_depth,0))
         norm_stats = [train_data.stats['mean'], train_data.stats['std']] 
-        test_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],hyps['stim_type'],
-                                                        'test',40,0, norm_stats=norm_stats))
+        test_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],hyps['stim_type'],'test',img_depth,0, 
+                                                                            norm_stats=norm_stats))
         test_data.X = test_data.X[:500]
         test_x = torch.from_numpy(test_data.X)
         test_data.y = test_data.y[:500]
@@ -94,6 +94,9 @@ class Trainer:
             f.write(str(model)+'\n')
             for k in sorted(hyps.keys()):
                 f.write(str(k) + ": " + str(hyps[k]) + "\n")
+
+        with open(SAVE + "/hyperparams.json",'w') as f:
+            json.dump(hyps, f)
     
         # Make optimization objects (lossfxn, optimizer, scheduler)
         if 'lossfxn' not in hyps:
@@ -107,9 +110,16 @@ class Trainer:
 
         # Train Loop
         hs = None
+        if "shapes" in model.__dict__:
+            h1_shape = model.shapes[0] # (H,W)
+            h2_shape = model.shapes[1] # (H, W)
+        else:
+            h1_shape = (36, 36)
+            h2_shape = (26, 26)
+            
         if "RNN" in hyps['model_type']:
-            hs = [torch.zeros(batch_size, hyps['rnn_chans'][0], 50, 50),
-                    torch.zeros(batch_size, hyps['rnn_chans'][1], 36, 36)]
+            hs = [torch.zeros(batch_size, hyps['rnn_chans'][0], *h1_shape),
+                    torch.zeros(batch_size, hyps['rnn_chans'][1], *h2_shape)]
         num_batches,leftover = divmod(epoch_length, batch_size)
         ### TODO: Create experience replay system
         for epoch in range(EPOCHS):
@@ -128,6 +138,10 @@ class Trainer:
                 optimizer.zero_grad()
                 idxs = indices[batch_size*batch:batch_size*(batch+1)]
                 x = data.train_X[idxs]
+                #if x.shape[-1] < img_width or x.shape[-2] < img_height: # TODO: remove this from loop (be careful of tricky bugs due to np striding)
+                #    width_pad = max(img_width-x.shape[-1], 0)//2
+                #    height_pad = max(img_height-x.shape[-2], 0)//2
+                #    x = torch.pad(x, (width_pad, width_pad, height_pad, height_pad), 'constant', 0)
                 label = data.train_y[idxs]
                 label = label.float()
                 label = label.to(device)
@@ -292,12 +306,6 @@ def get_device(visible_devices, cuda_buffer=3000):
         if i in visible_devices and mem_dict['remaining_mem'] >= cuda_buffer:
             return i
     return -1
-
-class DataContainer():
-    def __init__(self, data):
-        self.X = data.X
-        self.y = data.y
-        self.stats = data.stats
 
 def mp_hyper_search(hyps, hyp_ranges, keys, n_workers=4, visible_devices={0,1,2,3,4,5}, cuda_buffer=3000,
                                                     ram_buffer=6000, early_stopping=10, stop_tolerance=.01):

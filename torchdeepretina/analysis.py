@@ -11,7 +11,6 @@ from torchdeepretina.datas import loadexpt
 from torchdeepretina.physiology import Physio
 import torchdeepretina.intracellular as intracellular
 import torchdeepretina.batch_compute as bc
-import torchdeepretina.retinal_phenomena as rp
 import torchdeepretina.stimuli as stimuli
 import pyret.filtertools as ft
 import scipy
@@ -66,7 +65,6 @@ def make_correlation_frame(model_stats):
                     frame[k].append(v)
     return pd.DataFrame(frame)
 
-    
 def index_of(arg, arr):
     """
     Used to find the index of the argument in the array.
@@ -99,25 +97,25 @@ def make_model_frame(model_stats, headers, main_dir="../training_scripts"):
         data[header] = []
     for folder in model_stats.keys():
         untouched_keys = set(data.keys())
+        untouched_keys.remove("save_folder")
         for k in model_stats[folder].keys():
-            if k in data:
+            if k in data and k in untouched_keys:
+                untouched_keys.remove(k)
                 data[k].append(model_stats[folder][k])
-                if k in untouched_keys:
-                    untouched_keys.remove(k)
+        hyps = get_hyps(folder, main_dir)
+        for k,v in hyps.items():
+            if k in data and k in untouched_keys:
+                untouched_keys.remove(k)
+                data[k].append(v)
         with open(os.path.join(main_dir, folder, "hyperparams.txt")) as f:
             architecture = []
             for i,line in enumerate(f):
                 if "(" in line or ")" in line:
                     l = line.replace("\n", "#")
                     architecture.append(l)
-                else:
-                    splt_line = line.strip().split(":")
-                    if len(splt_line) == 2 and splt_line[0].strip() in data:
-                        data[splt_line[0].strip()].append(splt_line[1].strip())
-                        if splt_line[0].strip() in untouched_keys:
-                            untouched_keys.remove(splt_line[0].strip())
             data['architecture'].append("".join(architecture))
             untouched_keys.remove('architecture')
+        data['save_folder'].append(folder)
         for k in list(untouched_keys):
             data[k].append(None)
     return pd.DataFrame(data)
@@ -148,22 +146,29 @@ def get_architecture(folder, data, hyps=None, main_dir="../training_scripts/"):
             if "abs_bias" in hyps:
                 model_hyps['abs_bias'] = hyps['abs_bias'] == "True"
             fn_args = set(hyps['model_type'].__init__.__code__.co_varnames)
-            for k in model_hyps.keys():
+            keys = list(model_hyps.keys())
+            for k in keys:
                 if k not in fn_args:
                     del model_hyps[k]
             model = hyps['model_type'](**model_hyps)
     return model
 
 def get_hyps(folder, main_dir="../training_scripts"):
-    hyps = dict()
-    with open(os.path.join(main_dir, folder, "hyperparams.txt")) as f:
-        for line in f:
-            if "(" not in line and ")" not in line:
-                splt = line.strip().split(":")
-                if len(splt) > 1:
-                    hyps[splt[0]] = splt[1].strip()
-                    if splt[0] == "log_poisson":
-                        hyps[splt[0]] = hyps[splt[0]] == "True"
+    try:
+        return load_json(os.path.join(main_dir, folder, "hyperparams.json"))
+    except Exception as e:
+        print("hyperparams.json does not exist, attempting manual fix")
+        hyps = dict()
+        with open(os.path.join(main_dir, folder, "hyperparams.txt")) as f:
+            for line in f:
+                if "(" not in line and ")" not in line:
+                    splt = line.strip().split(":")
+                    if len(splt) == 2:
+                        key = splt[0]
+                        val = splt[1].strip()
+                        if "true" == val.lower() or "false" == val.lower():
+                            val = val.lower() == "true"
+                        hyps[key] = val
     return hyps
 
 def load_model(folder, data=None, hyps=None, main_dir="../training_scripts/"):
