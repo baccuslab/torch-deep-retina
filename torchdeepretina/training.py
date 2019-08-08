@@ -8,7 +8,7 @@ import torch.nn as nn
 from torch.nn import PoissonNLLLoss, MSELoss
 import os.path as path
 from torchdeepretina.utils import get_cuda_info, save_checkpoint
-from torchdeepretina.datas import loadexpt, ShuffledDataSplit, DataContainer
+from torchdeepretina.datas import loadexpt, DataContainer, DataDistributor
 from torchdeepretina.models import *
 import time
 from tqdm import tqdm
@@ -18,6 +18,7 @@ from queue import Queue
 import psutil
 import gc
 import resource
+import json
 
 class Trainer:
     def __init__(self, run_q=None, return_q=None, early_stopping=10, stop_tolerance=0.01):
@@ -70,13 +71,6 @@ class Trainer:
         test_x = torch.from_numpy(test_data.X)
         test_data.y = test_data.y[:500]
 
-            # train/val split
-        num_val = 20000
-        shuffle = hyps['shuffle']
-        data = ShuffledDataSplit(train_data, num_val, shuffle=shuffle)
-        data.torch()
-        epoch_length = data.train_shape[0]
-
         # Make model
         model_hyps["n_units"] = test_data.y.shape[-1]
         model = hyps['model_class'](**model_hyps)
@@ -96,7 +90,20 @@ class Trainer:
                 f.write(str(k) + ": " + str(hyps[k]) + "\n")
 
         with open(SAVE + "/hyperparams.json",'w') as f:
-            json.dump(hyps, f)
+            temp_hyps = {k:v for k,v in hyps.items()}
+            del temp_hyps['model_class']
+            json.dump(temp_hyps, f)
+
+        # train/val split
+        num_val = 10000
+        shuffle = hyps['shuffle']
+        recurrent = model.recurrent
+        seq_len = 1
+        if recurrent:
+            seq_len = hyps['recur_seq_len']
+        data_distr = DataDistributor(train_data, num_val, batch_size=batch_size, shuffle=shuffle, 
+                                                            recurrent=recurrent, seq_len=seq_len)
+        data_distr.torch()
     
         # Make optimization objects (lossfxn, optimizer, scheduler)
         if 'lossfxn' not in hyps:
@@ -111,22 +118,18 @@ class Trainer:
         # Train Loop
         hs = None
         if "shapes" in model.__dict__:
-            h1_shape = model.shapes[0] # (H,W)
-            h2_shape = model.shapes[1] # (H, W)
-        else:
-            h1_shape = (36, 36)
-            h2_shape = (26, 26)
+            h1_shape = model.h_shapes[0] # (H,W)
+            h2_shape = model.h_shapes[1] # (H, W)
             
-        if "RNN" in hyps['model_type']:
-            hs = [torch.zeros(batch_size, hyps['rnn_chans'][0], *h1_shape),
-                    torch.zeros(batch_size, hyps['rnn_chans'][1], *h2_shape)]
-        num_batches,leftover = divmod(epoch_length, batch_size)
-        ### TODO: Create experience replay system
         for epoch in range(EPOCHS):
             print("Beginning Epoch", epoch, " -- ", SAVE)
             print()
+            n_loops = data_distr.n_loops
+            if model.recurrent:
+                hs = [torch.zeros(batch_size, *h1_shape).to(device),
+                        torch.zeros(batch_size, *h2_shape).to(device)]
             model.train(mode=True)
-            indices = torch.randperm(data.train_shape[0]).long()
+            indices = torch.randperm(data_distr.train_shape[0]).long()
 
             losses = []
             epoch_loss = 0
@@ -134,35 +137,38 @@ class Trainer:
             
             starttime = time.time()
             activity_l1 = torch.zeros(1).to(device)
-            for batch in range(num_batches):
+            for i,(x,label) in enumerate(data_distr.train_sample()):
                 optimizer.zero_grad()
-                idxs = indices[batch_size*batch:batch_size*(batch+1)]
-                x = data.train_X[idxs]
-                #if x.shape[-1] < img_width or x.shape[-2] < img_height: # TODO: remove this from loop (be careful of tricky bugs due to np striding)
-                #    width_pad = max(img_width-x.shape[-1], 0)//2
-                #    height_pad = max(img_height-x.shape[-2], 0)//2
-                #    x = torch.pad(x, (width_pad, width_pad, height_pad, height_pad), 'constant', 0)
-                label = data.train_y[idxs]
                 label = label.float()
                 label = label.to(device)
 
+                # Recurrent loop
                 if hs is not None:
-                    y = model(x.to(device), hs)
+                    seq_len = hyps['recur_seq_len']
+                    hs_out = hs
+                    ys = []
+                    for ri in range(seq_len):
+                        ins = x[:,ri]
+                        y, hs_out = model(ins.to(device), hs_out)
+                        ys.append(y.view(batch_size, 1, label.shape[-1]))
+                        if ri == 0:
+                            hs = [h.clone() for h in hs]
+                    y = torch.cat(ys, dim=1)
                 else:
                     y = model(x.to(device))
+                error = loss_fn(y,label)
 
                 if LAMBDA1 > 0:
-                    activity_l1 = LAMBDA1 * torch.norm(y, 1).float()/y.shape[0]
-                error = loss_fn(y,label)
+                    activity_l1 = LAMBDA1 * torch.norm(y, 1).float().mean()
                 loss = error + activity_l1
                 loss.backward()
                 optimizer.step()
                 epoch_loss += loss.item()
                 if verbose:
-                    print("Loss:", round(loss.item(), 6), " -- ", batch, "/", num_batches, end="       \r")
+                    print("Loss:", round(loss.item(), 6), " -- ", i, "/", n_loops, end="       \r")
                 if math.isnan(epoch_loss) or math.isinf(epoch_loss):
                     break
-            avg_loss = epoch_loss/num_batches
+            avg_loss = epoch_loss/n_loops
             stats_string += 'Avg Loss: ' + str(avg_loss) + " -- exec time:"+ str(time.time() - starttime) +"\n"
 
             #validate model
@@ -173,24 +179,37 @@ class Trainer:
             with torch.no_grad():
                 val_preds = []
                 val_loss = 0
-                step_size = 500
-                n_loops = data.val_shape[0]//step_size
-                rng = range(0, n_loops*step_size, step_size)
+                if model.recurrent:
+                    step_size = 1
+                    hs = [torch.zeros(1, *h1_shape).to(device),
+                            torch.zeros(1, *h2_shape).to(device)]
+                    n_loops = data_distr.val_shape[0]
+                else:
+                    step_size = 500
+                    n_loops = data_distr.val_shape[0]//step_size
                 if verbose:
                     print()
                     print("Validating")
-                    rng = tqdm(rng)
-                for v in rng:
-                    temp = model(data.val_X[v:v+step_size].to(device)).detach()
-                    val_loss += loss_fn(temp, data.val_y[v:v+step_size].to(device)).item()
+                for i, (val_x, val_y) in enumerate(data_distr.val_sample(step_size)):
+                    if hs is not None:
+                        outs, hs = model(val_x[:,0].to(device), hs)
+                        val_y = val_y[:,0]
+                    else:
+                        outs = model(val_x.to(device)).detach()
+                    val_loss += loss_fn(outs, val_y.to(device)).item()
                     if LAMBDA1 > 0:
-                        val_loss += (LAMBDA1 * torch.norm(temp, 1).float()/temp.shape[0]).item()
-                    val_preds.append(temp.cpu().numpy())
+                        val_loss += (LAMBDA1 * torch.norm(outs, 1).float()/outs.shape[0]).item()
+                    val_preds.append(outs.cpu().numpy())
+                    if verbose:
+                        print("{}/{}".format(i,data_distr.val_y.shape[0]), end="     \r")
                 val_loss = val_loss/n_loops
                 val_preds = np.concatenate(val_preds, axis=0)
+                val_targs = data_distr.val_y[:val_preds.shape[0]].numpy()
+                if recurrent:
+                    val_targs = val_targs[:,0]
                 pearsons = []
                 for cell in range(val_preds.shape[-1]):
-                    pearsons.append(pearsonr(val_preds[:, cell], data.val_y[:val_preds.shape[0]][:,cell].numpy())[0])
+                    pearsons.append(pearsonr(val_preds[:, cell], val_targs[:,cell])[0])
                 stats_string += "Val Cell Pearsons:" + " - ".join([str(p) for p in pearsons])+'\n'
                 val_acc = np.mean(pearsons)
                 stop = self.stop_early(val_acc)
@@ -198,28 +217,31 @@ class Trainer:
                 if hyps["log_poisson"] and hyps['softplus'] and not model.infr_exp:
                     val_preds = np.exp(val_preds)
                     for cell in range(val_preds.shape[-1]):
-                        pearsons.append(pearsonr(val_preds[:, cell], data.val_y[:val_preds.shape[0]][:,cell].numpy())[0])
+                        pearsons.append(pearsonr(val_preds[:, cell], data_distr.val_y[:val_preds.shape[0]][:,cell].numpy())[0])
                     exp_val_acc = np.mean(pearsons)
                 stats_string += "Avg Val Pearson: {} -- Val Loss: {} -- Exp Val: {}\n".format(val_acc, val_loss, exp_val_acc)
                 scheduler.step(val_loss)
                 del val_preds
-                del temp
+                del outs
 
-                test_obs = model(test_x.to(device)).cpu().detach().numpy()
+                if hs is not None:
+                    avg_pearson = 0
+                else:
+                    test_obs = model(test_x.to(device)).cpu().detach().numpy()
 
-                avg_pearson = 0
-                rng = range(test_obs.shape[-1])
-                if verbose:
-                    rng = tqdm(rng)
-                for cell in rng:
-                    obs = test_obs[:,cell]
-                    lab = test_data.y[:,cell]
-                    r,p = pearsonr(obs,lab)
-                    avg_pearson += r
-                    stats_string += 'Cell ' + str(cell) + ': ' + str(r)+"\n"
-                avg_pearson = avg_pearson / float(test_obs.shape[-1])
-                stats_string += "Avg Test Pearson: "+ str(avg_pearson) + "\n"
-                del test_obs
+                    avg_pearson = 0
+                    rng = range(test_obs.shape[-1])
+                    if verbose:
+                        rng = tqdm(rng)
+                    for cell in rng:
+                        obs = test_obs[:,cell]
+                        lab = test_data.y[:,cell]
+                        r,p = pearsonr(obs,lab)
+                        avg_pearson += r
+                        stats_string += 'Cell ' + str(cell) + ': ' + str(r)+"\n"
+                    avg_pearson = avg_pearson / float(test_obs.shape[-1])
+                    stats_string += "Avg Test Pearson: "+ str(avg_pearson) + "\n"
+                    del test_obs
     
             optimizer.zero_grad()
             save_dict = {

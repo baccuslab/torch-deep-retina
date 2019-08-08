@@ -11,7 +11,7 @@ def try_kwarg(kwargs, key, default):
 
 class TDRModel(nn.Module):
     def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, chans=[8,8], bn_moment=.01, 
-                                 softplus=True, inference_exp=False, img_shape=(40,50,50), ksizes=(15,11), **kwargs):
+                                 softplus=True, inference_exp=False, img_shape=(40,50,50), ksizes=(15,11), recurrent=False, **kwargs):
         super().__init__()
         self.n_units = n_units
         self.chans = chans 
@@ -23,6 +23,7 @@ class TDRModel(nn.Module):
         self.linear_bias = linear_bias 
         self.noise = noise 
         self.bn_moment = bn_moment 
+        self.recurrent = recurrent
     
     def forward(self, x):
         return x
@@ -69,20 +70,112 @@ class BNCNN(TDRModel):
             return torch.exp(self.sequential(x))
         return self.sequential(x)
 
+class SkipAmacRNN(TDRModel):
+    def __init__(self, rnn_chans=[2], bnorm=False, drop_p=0, **kwargs):
+        super().__init__(**kwargs)
+        self.shapes = []
+        self.h_shapes = []
+        shape = self.img_shape[1:] # (H, W)
+        self.bnorm = bnorm
+        self.recurrent = True
+        self.rnn_chans = rnn_chans
+        self.drop_p = drop_p
+        
+        # Bipolar Block
+        self.bipolar1 = LinearStackedConv2d(self.img_shape[0],self.chans[0],kernel_size=self.ksizes[0], 
+                                                                                        abs_bnorm=False, 
+                                                                                        bias=self.bias, 
+                                                                                        drop_p=self.drop_p)
+        #self.bipolar1 = nn.Conv2d(self.img_shape[0], self.chans[0], self.ksizes[0], bias=self.bias)
+        shape = update_shape(shape, self.ksizes[0])
+        self.shapes.append(tuple(shape))
+        self.h_shapes.append((self.chans[0], *shape))
+        self.h_shapes.append((self.rnn_chans[0],*shape))
+
+        modules = []
+        if bnorm:
+            modules.append(Flatten())
+            modules.append(nn.BatchNorm1d(self.chans[0]*shape[0]*shape[1], momentum=self.bn_moment))
+            modules.append(Reshape((-1, self.chans[0], shape[0], shape[1])))
+        modules.append(GaussianNoise(std=self.noise))
+        modules.append(nn.ReLU())
+        self.bipolar2 = nn.Sequential(*modules)
+
+        # Amacrine Block
+        self.amacrine1 = AmacRNNFull(self.chans[0], self.chans[1], rnn_chans[0], self.ksizes[1], bias=self.bias, linearstacked=True)
+        shape = update_shape(shape, self.ksizes[1])
+        self.shapes.append(tuple(shape))
+
+        modules = []
+        modules.append(Flatten())
+        if bnorm:
+            modules.append(nn.BatchNorm1d(self.chans[0]*shape[0]*shape[1], momentum=self.bn_moment))
+        modules.append(GaussianNoise(std=self.noise))
+        modules.append(nn.ReLU())
+        modules.append(InvertSign())
+        self.amacrine2 = nn.Sequential(*modules)
+
+        # Ganglion Block
+        modules = []
+        length = self.chans[0]*self.shapes[0][0]*self.shapes[0][1] + self.chans[1]*self.shapes[1][0]*self.shapes[1][1]
+        modules.append(AbsLinear(length, self.n_units, bias=self.linear_bias))
+        if self.bnorm:
+            modules.append(nn.BatchNorm1d(self.n_units, eps=1e-3, momentum=self.bn_moment))
+        else:
+            modules.append(ScaleShift(self.n_units))
+        if self.softplus:
+            modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
+        self.ganglion = nn.Sequential(*modules)
+
+    def forward(self, x, h):
+        """
+        x: torch FloatTensor (B, C, H, W)
+            the inputs
+        h: tuple or list containing h_bi, h_am
+            h_bi: torch FloatTensor (B, C2, H2, W2)
+                the bipolar cell states
+            h_am: torch FloatTensor (B, RNN_CHAN, H, W)
+                the amacrine cell states
+        """
+        h_bi, h_am = h
+
+        bipolar = self.bipolar1(x) + h_bi # Conv
+        bipolar = self.bipolar2(bipolar)
+        amacrine, h_bi_new, h_am_new = self.amacrine1(bipolar, h_am)
+        amacrine = self.amacrine2(amacrine)
+
+        flat_bi = bipolar.view(x.shape[0], -1)
+        flat_am = amacrine.view(x.shape[0], -1)
+        cat = torch.cat([flat_bi, flat_am], dim=-1)
+        ganglion = self.ganglion(cat)
+        if not self.training and self.infr_exp:
+            ganglion = torch.exp(ganglion)
+        return ganglion, [h_bi_new, h_am_new]
+
 class RNNCNN(TDRModel):
-    def __init__(self, rnn_chans=[2,2], **kwargs):
-        super(**kwargs)
+    def __init__(self, rnn_chans=[2,2], bnorm=False, rnn_type="ConvGRUCell", **kwargs):
+        super().__init__(**kwargs)
         self.rnns = nn.ModuleList([])
         self.shapes = []
+        self.h_shapes = []
         shape = self.img_shape[1:] # (H, W)
+        self.h_shapes.append((rnn_chans[0], *shape))
+        self.bnorm = bnorm
+        self.recurrent = True
+        self.rnn_type = rnn_type
+        rnn_class = globals()[rnn_type]
 
         # Block 1
         modules = []
-        self.rnns.append(ConvRNNCell(self.img_shape[0], self.chans[0], rnn_chans[0], kernel_size=self.ksizes[0], bias=self.bias))
+        self.rnns.append(rnn_class(self.img_shape[0], self.chans[0], rnn_chans[0], kernel_size=self.ksizes[0], bias=self.bias))
         shape = update_shape(shape, self.ksizes[0])
         self.shapes.append(tuple(shape))
+        self.h_shapes.append((rnn_chans[1], *shape))
         modules.append(Flatten())
-        modules.append(nn.BatchNorm1d(self.chans[0]*shape[0]*shape[1], eps=1e-3, momentum=self.bn_moment))
+        if self.bnorm:
+            modules.append(nn.BatchNorm1d(self.chans[0]*shape[0]*shape[1], eps=1e-3, momentum=self.bn_moment))
         modules.append(GaussianNoise(std=self.noise))
         modules.append(nn.ReLU())
         modules.append(Reshape((-1,self.chans[0],*shape)))
@@ -90,16 +183,20 @@ class RNNCNN(TDRModel):
 
         # Block 2
         modules = []
-        self.rnns.append(ConvRNNCell(self.chans[0],self.chans[1], rnn_chans[1], kernel_size=self.ksizes[1], bias=self.bias))
+        self.rnns.append(rnn_class(self.chans[0], self.chans[1], rnn_chans[1], kernel_size=self.ksizes[1], bias=self.bias))
         shape = update_shape(shape, self.ksizes[1])
         self.shapes.append(tuple(shape))
         modules.append(Flatten())
-        modules.append(nn.BatchNorm1d(self.chans[1]*shape[0]*shape[1], eps=1e-3, momentum=self.bn_moment))
-        modules.append(GaussianNoise(std=noise))
+        if self.bnorm:
+            modules.append(nn.BatchNorm1d(self.chans[1]*shape[0]*shape[1], eps=1e-3, momentum=self.bn_moment))
+        modules.append(GaussianNoise(std=self.noise))
         modules.append(nn.ReLU())
         modules.append(nn.Linear(self.chans[1]*shape[0]*shape[1],self.n_units, bias=self.linear_bias))
-        modules.append(nn.BatchNorm1d(self.n_units, eps=1e-3, momentum=bn_moment))
-        if softplus:
+        if self.bnorm:
+            modules.append(nn.BatchNorm1d(self.n_units, eps=1e-3, momentum=self.bn_moment))
+        else:
+            modules.append(ScaleShift(self.n_units))
+        if self.softplus:
             modules.append(nn.Softplus())
         else:
             modules.append(Exponential(train_off=True))
@@ -114,17 +211,11 @@ class RNNCNN(TDRModel):
         """
         fx, h1 = self.rnns[0](x, hs[0])
         fx = self.sequential1(fx)
-        fx, h2 = self.rnns[1](x, hs[1])
+        fx, h2 = self.rnns[1](fx, hs[1])
         fx = self.sequential2(fx)
         if not self.training and self.infr_exp:
             fx = torch.exp(fx)
         return fx, [h1, h2]
-
-    def extra_repr(self):
-        try:
-            return 'adapt_gauss={}'.format(self.adapt_gauss)
-        except:
-            pass
 
 class LinearStackedBNCNN(TDRModel):
     def __init__(self, bnorm=True, drop_p=0, **kwargs):

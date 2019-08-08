@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 
 DEVICE = torch.device("cuda:0")
@@ -370,6 +371,9 @@ class DecoupledLinear(nn.Module):
         return "bias={}".format(self.bias is not None)
 
 class AbsLinear(nn.Module):
+    """
+    Performs a fully connected operation in which the weights are all positive.
+    """
     def __init__(self, in_features, out_features, bias=True, abs_bias=False):
         super(AbsLinear, self).__init__()
         self.bias = bias
@@ -394,13 +398,14 @@ class LinearStackedConv2d(nn.Module):
     '''
     Builds argued kernel out of multiple 3x3 kernels without added nonlinearities.
     '''
-    def __init__(self, in_channels, out_channels, kernel_size, bias=True, abs_bnorm=False, conv_bias=False, drop_p=0):
+    def __init__(self, in_channels, out_channels, kernel_size, bias=True, abs_bnorm=False, conv_bias=False, drop_p=0, padding=0):
         super(LinearStackedConv2d, self).__init__()
         assert kernel_size % 2 == 1 # kernel must be odd
         self.ksize = kernel_size
         self.bias = bias
         self.conv_bias = conv_bias
         self.abs_bnorm = abs_bnorm
+        self.padding = padding
         self.drop_p = drop_p
         n_filters = int((kernel_size-1)/2)
         if n_filters > 1:
@@ -423,13 +428,14 @@ class LinearStackedConv2d(nn.Module):
         self.convs = nn.Sequential(*convs)
 
     def forward(self, x):
+        x = F.pad(x, (self.padding, self.padding, self.padding, self.padding))
         return self.convs(x)
 
     def extra_repr(self):
         try:
-            return 'bias={}, abs_bias={}'.format(self.bias, self.abs_bias)
+            return 'bias={}, abs_bnorm={}'.format(self.bias, self.abs_bnorm)
         except:
-            return "bias={}, abs_bias={}".format(self.bias, True)
+            return "bias={}, abs_bnorm={}".format(self.bias, True)
 
 class StackedConv2d(nn.Module):
     '''
@@ -463,7 +469,6 @@ class StackedConv2d(nn.Module):
     def forward(self, x):
         return self.convs(x)
 
-#Conv2d(out_channels, out_channels, 3, bias=bias)
 class ConvRNNCell(nn.Module):
     def __init__(self, in_channels, out_channels, rnn_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
         super(ConvRNNCell, self).__init__()
@@ -490,6 +495,146 @@ class ConvRNNCell(nn.Module):
         outs = self.conv(ins)
         h_new = self.rnn_conv(ins)
         return outs, h_new
+
+class AmacRNNFull(nn.Module):
+    def __init__(self, in_channels, out_channels, rnn_channels, kernel_size, padding=0, bias=True, linearstacked=True):
+        super().__init__()
+        self.in_chans = in_channels
+        self.out_chans = out_channels
+        self.rnn_chans = rnn_channels
+        self.ksize = kernel_size
+        self.padding = padding
+        self.bias = bias
+        if linearstacked:
+            print("Stride ignored in AmacRNN convolution due to linear stacked conv choice")
+            self.conv = LinearStackedConv2d(in_channels+rnn_channels, out_channels, kernel_size=kernel_size, 
+                                                                                        bias=bias, drop_p=0)
+        else:
+            self.conv = nn.Conv2d(in_channels+rnn_channels, out_channels, kernel_size, bias=bias)
+        assert kernel_size % 2 == 1 # Must have odd kernel size
+        self.rnn_padding = (kernel_size-1)//2
+        self.bipolar = nn.ConvTranspose2d(out_channels, in_channels, kernel_size, padding=0, bias=True)
+        if linearstacked:
+            self.rnn_conv = LinearStackedConv2d(in_channels+rnn_channels, rnn_channels*2, kernel_size=kernel_size, 
+                                                                                        padding=self.rnn_padding,
+                                                                                        bias=True)
+            self.rnn_conv = nn.Sequential(self.rnn_conv, nn.Sigmoid())
+            self.tan_conv = LinearStackedConv2d(in_channels+rnn_channels, rnn_channels, kernel_size=kernel_size, 
+                                                                                        padding=self.rnn_padding,
+                                                                                        bias=True)
+            self.tan_conv = nn.Sequential(self.tan_conv, nn.Tanh())
+        else:
+            self.rnn_conv = nn.Sequential(nn.Conv2d(in_channels+rnn_channels, rnn_channels*2, kernel_size, self.rnn_padding, bias=True),
+                                                                                                                              nn.Sigmoid())
+            self.tan_conv = nn.Sequential(nn.Conv2d(in_channels+rnn_channels, rnn_channels, kernel_size, self.rnn_padding, bias=True),
+                                                                                                                                nn.Tanh())
+    
+    def forward(self, x, h):
+        """
+        Creates a unique h for both self feedback and bipolar feedback.
+
+        x: torch tensor (B, IN_CHAN, H, W)
+            the new input
+        h: torch tensor (B, RNN_CHAN, H, W) 
+            the recurrent input for the amacrine cells
+        """
+        ins = torch.cat([x,h], dim=1)
+        outs = self.conv(ins)
+        bipolar_feedback = -self.bipolar(outs).abs()
+        temp = self.rnn_conv(ins)
+        z,r = (temp[:,:self.rnn_chans], temp[:,self.rnn_chans:])
+        tanin = torch.cat([x,h*r], dim=1)
+        tanout = self.tan_conv(tanin)
+        h_new = z*h + (1-z)*tanout
+        return outs, bipolar_feedback, h_new
+
+class AmacRNNPartial(nn.Module):
+    def __init__(self, in_channels, out_channels, rnn_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
+        super().__init__()
+        self.in_chans = in_channels
+        self.out_chans = out_channels
+        self.rnn_chans = rnn_channels
+        self.ksize = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.bias = bias
+        self.conv = nn.Conv2d(in_channels+rnn_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
+        assert kernel_size % 2 == 1 # Must have odd kernel size
+        self.rnn_padding = (kernel_size-1)//2
+        self.rnn_conv = nn.Sequential(nn.Conv2d(in_channels+rnn_channels, rnn_channels*4, kernel_size, stride, self.rnn_padding, bias=True),
+                                                                                                                          nn.Sigmoid())
+        self.tan_conv = nn.Sequential(nn.Conv2d(in_channels+rnn_channels, rnn_channels*2, kernel_size, stride, self.rnn_padding, bias=True),
+                                                                                                                          nn.Tanh())
+    
+    def forward(self, x, h_a, h_b):
+        """
+        Creates a unique h for both self feedback and bipolar feedback.
+
+        x: torch tensor (B, IN_CHAN, H, W)
+            the new input
+        h_a: torch tensor (B, RNN_CHAN, H, W) 
+            the recurrent input for the amacrine cells
+        h_b: torch tensor (B, RNN_CHAN, H, W) 
+            the recurrent input for the bipolar cells
+        """
+        ins = torch.cat([x,h_a], dim=1)
+        outs = self.conv(ins)
+        temp = self.rnn_conv(ins)
+        z,r = (temp[:,:self.rnn_chans*2], temp[:,self.rnn_chans*2:])
+        h = torch.cat([h_a, h_b], dim=1)
+        tanin = torch.cat(x,h*r, dim=1)
+        tanout = self.tan_conv(tanin)
+        h_new = z*h + (1-z)*tanout
+        h_a, h_b = (h_new[:,:self.rnn_chans], h_new[:,self.rnn_chans:])
+        return outs, h_a, h_b
+
+class ConvGRUCell(nn.Module):
+    def __init__(self, in_channels, out_channels, rnn_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
+        super().__init__()
+        self.in_chans = in_channels
+        self.out_chans = out_channels
+        self.rnn_chans = rnn_channels
+        self.ksize = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.bias = bias
+        self.conv = nn.Conv2d(in_channels+rnn_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
+        assert kernel_size % 2 == 1 # Must have odd kernel size
+        self.rnn_padding = (kernel_size-1)//2
+        self.rnn_conv = nn.Sequential(nn.Conv2d(in_channels+rnn_channels, rnn_channels*2, kernel_size, stride, self.rnn_padding, bias=True),
+                                                                                                                          nn.Sigmoid())
+        self.tan_conv = nn.Sequential(nn.Conv2d(in_channels+rnn_channels, rnn_channels, kernel_size, stride, self.rnn_padding, bias=True),
+                                                                                                                          nn.Tanh())
+    
+    def forward(self, x, h):
+        """
+        x: torch tensor (B, IN_CHAN, H, W)
+            the new input
+        h: torch tensor (B, RNN_CHAN, H, W) 
+            the recurrent input
+        """
+        ins = torch.cat([x,h], dim=1)
+        outs = self.conv(ins)
+        temp = self.rnn_conv(ins)
+        z,r = (temp[:,:self.rnn_chans], temp[:,self.rnn_chans:])
+        tanin = torch.cat(x,h*r, dim=1)
+        tanout = self.tan_conv(tanin)
+        h_new = z*h + (1-z)*tanout
+        return outs, h_new
+
+class Abs(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.abs(x)
+
+class InvertSign(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return -x
 
 class Flatten(nn.Module):
     def __init__(self):

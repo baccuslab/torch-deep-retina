@@ -8,6 +8,7 @@ import numpy as np
 from os.path import join, expanduser
 from scipy.stats import zscore
 import pyret.filtertools as ft
+import torch
 
 NUM_BLOCKS = {
     '15-10-07': 6,
@@ -26,7 +27,7 @@ CELLS = {
 }
 
 Exptdata = namedtuple('Exptdata', ['X', 'y', 'spkhist', 'stats', "cells"])
-__all__ = ['loadexpt', 'stimcut', 'CELLS']
+__all__ = ['loadexpt', 'stimcut', 'CELLS', ]
 
 class DataContainer():
     def __init__(self, data):
@@ -232,15 +233,6 @@ class DataDistributor:
         if recurrent and not shuffle:
             self.X = self.order_into_batches(self.X, batch_size)
             self.y = self.order_into_batches(self.y, batch_size)
-        """
-        TODO: figure out clean way to integrate recurrent approach
-            - Recurrent unshuffled (best to reshape data and grab individual batches)
-            - Recurrent shuffled (best to use current approach)
-            - regular unshuffled (best to use current approach)
-            - regular shuffled (best to use current approach)
-        """
-            
-
         if type(self.X) == type(np.array([])):
             if shuffle:
                 self.perm = np.random.permutation(self.X.shape[0]).astype('int')
@@ -254,16 +246,16 @@ class DataDistributor:
 
         self.train_idxs = self.perm[:-val_size]
         self.val_idxs = self.perm[-val_size:]
-        if seq_len > 1:
-            self.X = rolling_window(self.X, seq_len, time_axis=0)
-            self.y = rolling_window(self.y, seq_len, time_axis=0)
         self.train_X = DataObj(self.X, self.train_idxs)
         self.train_y = DataObj(self.y, self.train_idxs)
         self.val_X = DataObj(self.X, self.val_idxs)
         self.val_y = DataObj(self.y, self.val_idxs)
-        self.train_shape = (len(self.train_idxs), *self.X.shape[-3:])
-        self.val_shape = (len(self.val_idxs), *self.X.shape[-3:])
-        self.n_loops = self.train_shape[0]//batch_size
+        self.train_shape = (len(self.train_idxs), *self.X.shape[1:])
+        self.val_shape = (len(self.val_idxs), *self.X.shape[1:])
+        if self.recurrent and not self.shuffle:
+            self.n_loops = self.train_shape[0]
+        else:
+            self.n_loops = self.train_shape[0]//batch_size
 
     def __len__(self):
         return len(self.X)
@@ -275,22 +267,42 @@ class DataDistributor:
         length = data.shape[0]//batch_size
         tot_len = length*batch_size
         trunc = data[:tot_len]
-        return trunc.reshape(batch_size, length, data.shape[1:])
+        return trunc.reshape(batch_size, length, *data.shape[1:])
 
     def set_batch_size(self, batch_size):
         self.batch_size = batch_size
         self.n_loops = self.train_shape[0]//batch_size
 
-    def train_sample(self):
-        while True:
-            if self.rand_sampling:
-                batch_perm = torch.randperm(self.train_shape[0]).long()
+    def val_sample(self, step_size):
+        n_loops = self.val_shape[0]//step_size
+        arange = torch.arange(self.train_shape[0]).long()
+        for i in range(n_loops):
+            if self.recurrent and not self.shuffle:
+                idxs = i
             else:
-                batch_perm = torch.arange(self.train_shape[0]).long()
-            for i in range(0, n_loops*batch_size, batch_size):
-                idxs = batch_perm[i:i+batch_size]
-                yield self.train_X[idxs], self.train_y[idxs]
+                idxs = arange[i*step_size:(i+1)*step_size]
+            yield self.val_X[idxs], self.val_y[idxs]
 
+    def train_sample(self, batch_size=None):
+        n_loops = self.n_loops
+        if batch_size is None:
+            batch_size = self.batch_size
+        elif not (self.recurrent and not self.shuffle):
+            n_loops = self.train_shape[0]//batch_size
+        else:
+            print("batch_size arg ignored")
+            batch_size = self.batch_size
+        if self.rand_sample:
+            batch_perm = torch.randperm(self.train_shape[0]).long()
+        else:
+            batch_perm = torch.arange(self.train_shape[0]).long()
+        for i in range(n_loops):
+            if self.recurrent and not self.shuffle:
+                idxs = i
+            else:
+                idxs = batch_perm[i*batch_size:(i+1)*batch_size]
+            yield self.train_X[idxs], self.train_y[idxs]
+    
     def torch(self):
         self.X = torch.FloatTensor(self.X)
         self.y = torch.FloatTensor(self.y)
@@ -312,28 +324,4 @@ class DataDistributor:
         self.train_y = DataObj(self.y, self.train_idxs)
         self.val_X = DataObj(self.X, self.val_idxs)
         self.val_y = DataObj(self.y, self.val_idxs)
-
-class DataDistributor:
-    def __init__(self, data_container, batch_size=128, ordered=False, seq_len=8):
-        self.data = data_container
-        self.seq_len = seq_len
-        self.batch_size = batch_size
-        self.ordered = ordered
-        if ordered and seq_len > 1:
-                self.data.X = rolling_window(self.data.X, seq_len)
-                self.data.y = rolling_window(self.data.y, seq_len)
-        self.data.X = self.order_into_batches(self.data.X, batch_size)
-        self.data.y = self.order_into_batches(self.data.y, batch_size)
-        self.idxs = None
-    
-
-
-
-
-
-
-
-
-
-
 
