@@ -497,7 +497,7 @@ class ConvRNNCell(nn.Module):
         return outs, h_new
 
 class AmacRNNFull(nn.Module):
-    def __init__(self, in_channels, out_channels, rnn_channels, kernel_size, padding=0, bias=True, linearstacked=True):
+    def __init__(self, in_channels, out_channels, rnn_channels, kernel_size, padding=0, bias=True, stackconvs=True):
         super().__init__()
         self.in_chans = in_channels
         self.out_chans = out_channels
@@ -505,7 +505,8 @@ class AmacRNNFull(nn.Module):
         self.ksize = kernel_size
         self.padding = padding
         self.bias = bias
-        if linearstacked:
+        self.stackconvs = stackconvs
+        if stackconvs:
             print("Stride ignored in AmacRNN convolution due to linear stacked conv choice")
             self.conv = LinearStackedConv2d(in_channels+rnn_channels, out_channels, kernel_size=kernel_size, 
                                                                                         bias=bias, drop_p=0)
@@ -514,7 +515,7 @@ class AmacRNNFull(nn.Module):
         assert kernel_size % 2 == 1 # Must have odd kernel size
         self.rnn_padding = (kernel_size-1)//2
         self.bipolar = nn.ConvTranspose2d(out_channels, in_channels, kernel_size, padding=0, bias=True)
-        if linearstacked:
+        if stackconvs:
             self.rnn_conv = LinearStackedConv2d(in_channels+rnn_channels, rnn_channels*2, kernel_size=kernel_size, 
                                                                                         padding=self.rnn_padding,
                                                                                         bias=True)
@@ -524,10 +525,12 @@ class AmacRNNFull(nn.Module):
                                                                                         bias=True)
             self.tan_conv = nn.Sequential(self.tan_conv, nn.Tanh())
         else:
-            self.rnn_conv = nn.Sequential(nn.Conv2d(in_channels+rnn_channels, rnn_channels*2, kernel_size, self.rnn_padding, bias=True),
-                                                                                                                              nn.Sigmoid())
-            self.tan_conv = nn.Sequential(nn.Conv2d(in_channels+rnn_channels, rnn_channels, kernel_size, self.rnn_padding, bias=True),
-                                                                                                                                nn.Tanh())
+            self.rnn_conv = nn.Sequential(nn.Conv2d(in_channels+rnn_channels, rnn_channels*2, kernel_size=kernel_size, 
+                                                                                    padding=self.rnn_padding, bias=True),
+                                                                                                            nn.Sigmoid())
+            self.tan_conv = nn.Sequential(nn.Conv2d(in_channels+rnn_channels, rnn_channels, kernel_size=kernel_size, 
+                                                                                padding=self.rnn_padding, bias=True),
+                                                                                                          nn.Tanh())
     
     def forward(self, x, h):
         """
@@ -547,46 +550,6 @@ class AmacRNNFull(nn.Module):
         tanout = self.tan_conv(tanin)
         h_new = z*h + (1-z)*tanout
         return outs, bipolar_feedback, h_new
-
-class AmacRNNPartial(nn.Module):
-    def __init__(self, in_channels, out_channels, rnn_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
-        super().__init__()
-        self.in_chans = in_channels
-        self.out_chans = out_channels
-        self.rnn_chans = rnn_channels
-        self.ksize = kernel_size
-        self.stride = stride
-        self.padding = padding
-        self.bias = bias
-        self.conv = nn.Conv2d(in_channels+rnn_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
-        assert kernel_size % 2 == 1 # Must have odd kernel size
-        self.rnn_padding = (kernel_size-1)//2
-        self.rnn_conv = nn.Sequential(nn.Conv2d(in_channels+rnn_channels, rnn_channels*4, kernel_size, stride, self.rnn_padding, bias=True),
-                                                                                                                          nn.Sigmoid())
-        self.tan_conv = nn.Sequential(nn.Conv2d(in_channels+rnn_channels, rnn_channels*2, kernel_size, stride, self.rnn_padding, bias=True),
-                                                                                                                          nn.Tanh())
-    
-    def forward(self, x, h_a, h_b):
-        """
-        Creates a unique h for both self feedback and bipolar feedback.
-
-        x: torch tensor (B, IN_CHAN, H, W)
-            the new input
-        h_a: torch tensor (B, RNN_CHAN, H, W) 
-            the recurrent input for the amacrine cells
-        h_b: torch tensor (B, RNN_CHAN, H, W) 
-            the recurrent input for the bipolar cells
-        """
-        ins = torch.cat([x,h_a], dim=1)
-        outs = self.conv(ins)
-        temp = self.rnn_conv(ins)
-        z,r = (temp[:,:self.rnn_chans*2], temp[:,self.rnn_chans*2:])
-        h = torch.cat([h_a, h_b], dim=1)
-        tanin = torch.cat(x,h*r, dim=1)
-        tanout = self.tan_conv(tanin)
-        h_new = z*h + (1-z)*tanout
-        h_a, h_b = (h_new[:,:self.rnn_chans], h_new[:,self.rnn_chans:])
-        return outs, h_a, h_b
 
 class ConvGRUCell(nn.Module):
     def __init__(self, in_channels, out_channels, rnn_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):

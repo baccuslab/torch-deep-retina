@@ -70,7 +70,7 @@ class BNCNN(TDRModel):
         return self.sequential(x)
 
 class SkipAmacRNN(TDRModel):
-    def __init__(self, rnn_chans=[2], bnorm=False, drop_p=0, **kwargs):
+    def __init__(self, rnn_chans=[2], bnorm=False, drop_p=0, stackconvs=False, **kwargs):
         super().__init__(**kwargs)
         self.shapes = []
         self.h_shapes = []
@@ -79,13 +79,17 @@ class SkipAmacRNN(TDRModel):
         self.recurrent = True
         self.rnn_chans = rnn_chans
         self.drop_p = drop_p
+        self.stackconvs = stackconvs
+        print("stackconvs:", stackconvs)
         
         # Bipolar Block
-        self.bipolar1 = LinearStackedConv2d(self.img_shape[0],self.chans[0],kernel_size=self.ksizes[0], 
+        if stackconvs:
+            self.bipolar1 = LinearStackedConv2d(self.img_shape[0],self.chans[0],kernel_size=self.ksizes[0], 
                                                                                         abs_bnorm=False, 
                                                                                         bias=self.bias, 
                                                                                         drop_p=self.drop_p)
-        #self.bipolar1 = nn.Conv2d(self.img_shape[0], self.chans[0], self.ksizes[0], bias=self.bias)
+        else:
+            self.bipolar1 = nn.Conv2d(self.img_shape[0], self.chans[0], self.ksizes[0], bias=self.bias)
         shape = update_shape(shape, self.ksizes[0])
         self.shapes.append(tuple(shape))
         self.h_shapes.append((self.chans[0], *shape))
@@ -101,7 +105,7 @@ class SkipAmacRNN(TDRModel):
         self.bipolar2 = nn.Sequential(*modules)
 
         # Amacrine Block
-        self.amacrine1 = AmacRNNFull(self.chans[0], self.chans[1], rnn_chans[0], self.ksizes[1], bias=self.bias, linearstacked=True)
+        self.amacrine1 = AmacRNNFull(self.chans[0], self.chans[1], rnn_chans[0], self.ksizes[1], bias=self.bias, stackconvs=stackconvs)
         shape = update_shape(shape, self.ksizes[1])
         self.shapes.append(tuple(shape))
 
