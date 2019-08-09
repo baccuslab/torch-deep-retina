@@ -12,6 +12,7 @@ from torchdeepretina.physiology import Physio
 import torchdeepretina.intracellular as intracellular
 import torchdeepretina.batch_compute as bc
 import torchdeepretina.stimuli as stimuli
+from torchdeepretina.utils import load_json
 import pyret.filtertools as ft
 import scipy
 import re
@@ -155,9 +156,11 @@ def get_architecture(folder, data, hyps=None, main_dir="../training_scripts/"):
 
 def get_hyps(folder, main_dir="../training_scripts"):
     try:
-        return load_json(os.path.join(main_dir, folder, "hyperparams.json"))
+        path = os.path.join(main_dir, folder, "hyperparams.json")
+        return load_json(path)
     except Exception as e:
-        print("hyperparams.json does not exist, attempting manual fix")
+        print(e)
+        print(path, "does not exist, attempting manual fix")
         hyps = dict()
         with open(os.path.join(main_dir, folder, "hyperparams.txt")) as f:
             for line in f:
