@@ -1,0 +1,2 @@
+build some sort of normalization into rnn
+test data to ensure it is appropriate
