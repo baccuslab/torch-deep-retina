@@ -21,7 +21,7 @@ from skimage.transform import downscale_local_mean
 import skimage.draw
 import cv2
 
-from deepretina.experiments import rolling_window
+from torchdeepretina.datas import rolling_window
 
 __all__ = ['concat', 'white', 'contrast_steps', 'flash', 'spatialize', 'bar',
            'driftingbar', 'cmask', 'paired_flashes']
