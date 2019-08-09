@@ -89,6 +89,8 @@ def retinal_phenomena_figs(model):
     return figs, fig_names, metrics
 
 def get_insp_layers(model, hyps):
+    if hyps['model_type'] == "SkipAmacRNN":
+        return ["bipolar1", "amacrine1.conv"]
     try:
         insp_layers = hyps['insp_layers']
         return insp_layers
