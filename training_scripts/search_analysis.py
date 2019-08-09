@@ -32,6 +32,8 @@ import time
 import math
 import pandas as pd
 
+DEVICE = torch.device("cuda:0")
+
 def normalize(x):
     return (x-x.mean())/(x.std()+1e-7)
 
@@ -191,26 +193,25 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
     print("poissonloss:", poisson)
     log_poisson = "log_poisson" not in hyps or hyps['log_poisson'] == "True" or hyps['log_poisson'] == True
     print("log_poisson:", log_poisson)
-    softplus = model.sequential[-1]._get_name() == "Softplus"
-    noexp_seq = None
-    if poisson and log_poisson and softplus:
-        new_seq = [m for m in model.sequential] + [Exponential()]
-        noexp_seq = model.sequential
-        noexp_seq.eval()
-        # Old model is model without final exponential
-        # Models during inference have an exponential
-        print("Old model:") 
-        print(noexp_seq)
-        model.sequential = nn.Sequential(*new_seq)
+    if "sequential" in dir(model):
+        softplus = model.sequential[-1]._get_name() == "Softplus"
+        noexp_seq = None
+        if poisson and log_poisson and softplus:
+            new_seq = [m for m in model.sequential] + [Exponential()]
+            noexp_seq = model.sequential
+            noexp_seq.eval()
+            # Old model is model without final exponential
+            # Models during inference have an exponential
+            print("Old model:") 
+            print(noexp_seq)
+            model.sequential = nn.Sequential(*new_seq)
 
     model = model.to(DEVICE)
     model.eval()
     print(model)
     
-    try:
-        chans = [int(x) for x in hyps['chans'].replace("[","").replace("]","").split(",")]
-    except KeyError as e:
-        chans=[8,8]
+    model_hyps = data['model_hyps']
+    chans = model_hyps['chans']
     
     # Load data
     try:
@@ -238,8 +239,19 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
         return stats
     
     with torch.no_grad():
+        #if model.recurrent:
+        #    print("Collecting model response")
+        #    model_response = []
+        #    hs = [torch.zeros(1,*model.h_shapes[0]).to(DEVICE), torch.zeros(1,*model.h_shapes[1]).to(DEVICE)]
+        #    for x in tqdm(test_data.X):
+        #        outs, hs = model(torch.FloatTensor(x)[None].to(DEVICE), hs)
+        #        model_response.append(outs.detach().cpu().numpy())
+        #    model_response = {"output":np.concatenate(model_response, axis=0)}
+        #else:
+        print("Collecting Model Response")
         model_response = bc.batch_compute_model_response(test_data.X, model, batch_compute_size, 
-                                                     insp_keys=set(insp_layers))
+                                                                        recurrent=model.recurrent,
+                                                                        insp_keys=set(insp_layers))
 
     # Collect test data pearson correlation
     test_accs = [scipy.stats.pearsonr(model_response['output'][:, i], test_data.y[:, i])[0] 
@@ -252,7 +264,7 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
     stats['test_acc'] = avg_test_acc
 
     # Compare to non-exponentiated outputs
-    if noexp_seq is not None: 
+    if not model.recurrent and noexp_seq is not None: 
         noexp_modresp = bc.batch_compute_model_response(test_data.X, noexp_seq, batch_compute_size, 
                                                                                 insp_keys=set())
         test_accs = [scipy.stats.pearsonr(noexp_modresp['output'][:, i], test_data.y[:, i])[0] 
@@ -340,6 +352,7 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
                 model_responses[k] = []
             model_responses[k].append(bc.batch_compute_model_response(stimuli.concat(padded_stim),
                                                                       model,batch_compute_size, 
+                                                                      recurrent=model.recurrent,
                                                                       insp_keys=set(insp_layers)))
             # Reshape potentially flat layers
             for j,cl in enumerate(insp_layers):
@@ -528,7 +541,7 @@ def analyze_models(grand_folder, model_folders):
         model_stats = dict()
         print("\nAnalyzing", folder, " -- ", len(model_folders) - fcount, "folders left...")
         model_stats[folder] = analyze_model(folder, intrnrn_data, test_data=test_data,
-                                                        record_figs=("test_" in folder))
+                                                        record_figs=True)
 
         # Record all intrnrn data for later analysis
         if folder not in cor_existing_folders:
@@ -567,7 +580,6 @@ if __name__ == "__main__":
             grand_folders = sys.argv[2:]
         except:
             grand_folders = sys.argv[1:]
-    DEVICE = torch.device("cuda:0")
     torch.cuda.empty_cache()
     for grand_folder in grand_folders:
         exp_folder = os.path.join("../training_scripts/",grand_folder)
