@@ -34,7 +34,6 @@ class TDRModel(nn.Module):
         except:
             pass
 
-
 class BNCNN(TDRModel):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

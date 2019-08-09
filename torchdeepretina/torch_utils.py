@@ -651,6 +651,9 @@ class Reshape(nn.Module):
     def forward(self, x):
         return x.view(self.shape)
 
+    def extra_repr(self):
+        return "shape={}".format(self.shape)
+
 class WeightNorm(nn.Module):
     def __init__(self, torch_module):
         super(WeightNorm, self).__init__()

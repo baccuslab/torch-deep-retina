@@ -236,6 +236,20 @@ def read_model(folder):
     model = model.to(DEVICE)
     return model
 
+def read_model_file(file_name, model_type=None):
+    """
+    file_name: str
+        path to the model save file. The save should contain "model_hyps", "model_state_dict",
+        and ideally "model_type" as keys.
+    model_type: str or None
+        optional string name of model class to be loaded
+    """
+    data = torch.load(file_name, map_location="cpu")
+    if model_type is None:
+        model_type = data['model_type']
+    model = globals()[model_type](**data['model_hyps'])
+    model.load_state_dict(data['model_state_dict'])
+    return model
 
 def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None):
     """
