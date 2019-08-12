@@ -33,6 +33,13 @@ class TDRModel(nn.Module):
             return 'n_units={}, noise={}, bias={}, linear_bias={}, chans={}, bn_moment={}, softplus={}, inference_exp={}, img_shape={}, ksizes={}'.format(self.n_units, self.noise, self.bias, self.linear_bias, self.chans, self.bn_moment, self.softplus, self.inference_exp, self.img_shape, self.ksizes)
         except:
             pass
+    
+    def detach(self):
+        for p in self.parameters():
+            try:
+                p.detach()
+            except:
+                pass
 
 class BNCNN(TDRModel):
     def __init__(self, **kwargs):
@@ -69,6 +76,96 @@ class BNCNN(TDRModel):
             return torch.exp(self.sequential(x))
         return self.sequential(x)
 
+class SkipDalesAmacRNN(TDRModel):
+    def __init__(self, bnorm=False, drop_p=0, stackconvs=False, **kwargs):
+        super().__init__(**kwargs)
+        self.shapes = []
+        self.h_shapes = []
+        shape = self.img_shape[1:] # (H, W)
+        self.bnorm = bnorm
+        self.recurrent = True
+        self.drop_p = drop_p
+        self.stackconvs = stackconvs
+        
+        # Bipolar Block
+        if stackconvs:
+            self.bipolar1 = LinearStackedConv2d(self.img_shape[0],self.chans[0],kernel_size=self.ksizes[0], 
+                                                                                        abs_bnorm=False, 
+                                                                                        bias=self.bias, 
+                                                                                        drop_p=self.drop_p)
+        else:
+            self.bipolar1 = nn.Conv2d(self.img_shape[0], self.chans[0], self.ksizes[0], bias=self.bias)
+        shape = update_shape(shape, self.ksizes[0])
+        self.shapes.append(tuple(shape))
+        self.h_shapes.append((self.chans[0], *shape))
+
+        modules = []
+        if bnorm:
+            modules.append(Flatten())
+            modules.append(AbsBatchNorm1d(self.chans[0]*shape[0]*shape[1], momentum=self.bn_moment))
+            modules.append(Reshape((-1, self.chans[0], shape[0], shape[1])))
+        modules.append(GaussianNoise(std=self.noise))
+        modules.append(nn.ReLU())
+        self.bipolar2 = nn.Sequential(*modules)
+
+        # Amacrine Block
+        self.amacrine1 = DalesAmacRNNSimple(self.chans[0], self.chans[1], self.ksizes[1], bias=self.bias,
+                                                                                   stackconvs=stackconvs)
+        shape = update_shape(shape, self.ksizes[1])
+        self.shapes.append(tuple(shape))
+        self.h_shapes.append((self.chans[1],*shape))
+
+        modules = []
+        modules.append(Flatten())
+        if bnorm:
+            modules.append(AbsBatchNorm1d(self.chans[0]*shape[0]*shape[1], momentum=self.bn_moment))
+        modules.append(GaussianNoise(std=self.noise))
+        modules.append(nn.ReLU())
+        modules.append(InvertSign())
+        self.amacrine2 = nn.Sequential(*modules)
+
+        # Ganglion Block
+        modules = []
+        length = self.chans[0]*self.shapes[0][0]*self.shapes[0][1] + self.chans[1]*self.shapes[1][0]*self.shapes[1][1]
+        modules.append(AbsLinear(length, self.n_units, bias=self.linear_bias))
+        if self.bnorm:
+            modules.append(AbsBatchNorm1d(self.n_units, eps=1e-3, momentum=self.bn_moment))
+        else:
+            modules.append(ScaleShift(self.n_units))
+        if self.softplus:
+            modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
+        self.ganglion = nn.Sequential(*modules)
+
+    def forward(self, x, h):
+        """
+        x: torch FloatTensor (B, C, H, W)
+            the inputs
+        h: tuple or list containing h_bi, h_am
+            h_bi: torch FloatTensor (B, C2, H2, W2)
+                the bipolar cell states
+            h_am: torch FloatTensor (B, RNN_CHAN, H, W)
+                the amacrine cell states
+        """
+        h_bi, h_am = h
+
+        # Bipolars are all excitatory
+        bipolar = self.bipolar1(x) + h_bi # Conv
+        bipolar = self.bipolar2(bipolar)
+
+        # All outputs here are inhibitory 
+        amacrine, h_bi_new, h_am_new = self.amacrine1(bipolar, h_am)
+        amacrine = self.amacrine2(amacrine)
+
+        flat_bi = bipolar.view(x.shape[0], -1)
+        flat_am = amacrine.view(x.shape[0], -1)
+        cat = torch.cat([flat_bi, flat_am], dim=-1)
+        ganglion = self.ganglion(cat)
+        if not self.training and self.infr_exp:
+            ganglion = torch.exp(ganglion)
+        return ganglion, [h_bi_new, h_am_new]
+
 class SkipAmacRNN(TDRModel):
     def __init__(self, rnn_chans=[2], bnorm=False, drop_p=0, stackconvs=False, **kwargs):
         super().__init__(**kwargs)
@@ -80,7 +177,6 @@ class SkipAmacRNN(TDRModel):
         self.rnn_chans = rnn_chans
         self.drop_p = drop_p
         self.stackconvs = stackconvs
-        print("stackconvs:", stackconvs)
         
         # Bipolar Block
         if stackconvs:

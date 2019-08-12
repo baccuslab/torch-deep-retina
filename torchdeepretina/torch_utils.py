@@ -323,6 +323,28 @@ class AbsBatchNorm2d(nn.Module):
     def extra_repr(self):
         return 'bias={}, abs_bias={}, momentum={}, eps={}'.format(self.bias, self.abs_bias, self.momentum, self.eps)
                                             
+class AbsConvTranspose2d(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, bias=True, abs_bias=False):
+        super().__init__()
+        self.abs_bias = abs_bias
+        self.bias = bias
+        self.conv = nn.ConvTranspose2d(in_channels, out_channels, kernel_size, stride, padding, bias=bias)
+
+    def forward(self, x):
+        bias = None
+        if self.bias and self.abs_bias:
+            bias = self.conv.bias.abs()
+        elif self.bias:
+            bias = self.conv.bias
+        return nn.functional.conv_transpose2d(x, self.conv.weight.abs(), bias,
+                                           self.conv.stride, self.conv.padding)
+
+    def extra_repr(self):
+        try:
+            return 'bias={}, abs_bias={}'.format(self.bias, self.abs_bias)
+        except:
+            return "abs_bias={}".format(True)
+
 class AbsConv2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, abs_bias=False):
         super(AbsConv2d, self).__init__()
@@ -393,6 +415,50 @@ class AbsLinear(nn.Module):
             return 'bias={}, abs_bias={}'.format(self.bias, self.abs_bias)
         except:
             return "bias={}, abs_bias={}".format(self.bias, True)
+
+class AbsLinearStackedConv2d(nn.Module):
+    '''
+    Builds argued kernel out of multiple 3x3 kernels without added nonlinearities.
+    '''
+    def __init__(self, in_channels, out_channels, kernel_size, bias=True, abs_bnorm=False, conv_bias=False, drop_p=0, padding=0):
+        super().__init__()
+        assert kernel_size % 2 == 1 # kernel must be odd
+        self.ksize = kernel_size
+        self.bias = bias
+        self.conv_bias = conv_bias
+        self.abs_bnorm = abs_bnorm
+        self.padding = padding
+        self.drop_p = drop_p
+        n_filters = int((kernel_size-1)/2)
+        if n_filters > 1:
+            convs = [AbsConv2d(in_channels, out_channels, 3, bias=conv_bias)]
+            if abs_bnorm:
+                convs.append(AbsBatchNorm2d(out_channels))
+            if drop_p > 0:
+                convs.append(nn.Dropout(drop_p))
+            for i in range(n_filters-1):
+                if i == n_filters-2:
+                    convs.append(AbsConv2d(out_channels, out_channels, 3, bias=bias))
+                else:
+                    convs.append(AbsConv2d(out_channels, out_channels, 3, bias=conv_bias))
+                    if abs_bnorm:
+                        convs.append(AbsBatchNorm2d(out_channels))
+                    if drop_p > 0:
+                        convs.append(nn.Dropout(drop_p))
+        else:
+            convs = [AbsConv2d(in_channels, out_channels, 3, bias=bias)]
+        self.convs = nn.Sequential(*convs)
+
+    def forward(self, x):
+        x = F.pad(x, (self.padding, self.padding, self.padding, self.padding))
+        return self.convs(x)
+
+    def extra_repr(self):
+        try:
+            return 'bias={}, abs_bnorm={}'.format(self.bias, self.abs_bnorm)
+        except:
+            return "bias={}, abs_bnorm={}".format(self.bias, True)
+
 
 class LinearStackedConv2d(nn.Module):
     '''
@@ -495,6 +561,43 @@ class ConvRNNCell(nn.Module):
         outs = self.conv(ins)
         h_new = self.rnn_conv(ins)
         return outs, h_new
+
+class DalesAmacRNNSimple(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, padding=0, bias=True, stackconvs=True):
+        super().__init__()
+        self.in_chans = in_channels
+        self.out_chans = out_channels
+        self.ksize = kernel_size
+        self.padding = padding
+        self.bias = bias
+        self.stackconvs = stackconvs
+        self.rnn_padding = (kernel_size-1)//2
+        if stackconvs:
+            self.amacrine = AbsLinearStackedConv2d(in_channels, out_channels, kernel_size=kernel_size,
+                                                                                    padding=self.rnn_padding,
+                                                                                    bias=bias, drop_p=0)
+            self.conv = AbsLinearStackedConv2d(in_channels, out_channels, kernel_size=kernel_size, 
+                                                                               bias=bias, drop_p=0)
+        else:
+            self.amacrine = AbsConv2d(in_channels, out_channels, kernel_size, padding=self.rnn_padding, bias=bias)
+            self.conv = AbsConv2d(in_channels, out_channels, kernel_size, bias=bias)
+        assert kernel_size % 2 == 1 # Must have odd kernel size
+        self.bipolar = AbsConvTranspose2d(out_channels, in_channels, kernel_size, padding=0, bias=True)
+    
+    def forward(self, x, h):
+        """
+        Creates a unique h for both self feedback and bipolar feedback.
+
+        x: torch tensor (B, IN_CHAN, H, W)
+            the new input
+        h: torch tensor (B, OUT_CHAN, H1, W1) 
+            the recurrent input for the amacrine cells
+        """
+        outs = self.conv(x)
+        outs = outs + h
+        bipolar_feedback = -self.bipolar(outs).abs()
+        h_new = -self.amacrine(outs).abs()
+        return outs, bipolar_feedback, h_new
 
 class AmacRNNFull(nn.Module):
     def __init__(self, in_channels, out_channels, rnn_channels, kernel_size, padding=0, bias=True, stackconvs=True):
