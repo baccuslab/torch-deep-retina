@@ -263,6 +263,10 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None):
     requires_grad(model, False)
     device = next(model.parameters()).get_device()
 
+    if model.recurrent:
+        batch_size = 1
+        hs = [torch.zeros(batch_size, *h_shape).to(device) for h_shape in model.h_shapes]
+
     outsize = (batch_size, model.n_units) if layer_shape is None else (batch_size, *layer_shape)
     outs = torch.zeros(outsize).to(device)
     def forward_hook(module, inps, outputs):
@@ -274,13 +278,21 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None):
             module = modu
 
     # Get gradient with respect to activations
-    X.requires_grad = True
+    model.eval()
+    X.requires_grad = False
     n_loops = X.shape[0]//batch_size
-    for i in range(n_loops):
+    grads = []
+    for i in tqdm(range(n_loops)):
         hook_handle = module.register_forward_hook(forward_hook)
         idx = i*batch_size
-        x = X[idx:idx+batch_size].to(device)
-        _ = model(x)
+        x = X[idx:idx+batch_size]
+        x = x.to(device)
+        x.requires_grad = True
+        if model.recurrent:
+            _, hs = model(x, hs)
+            hs = [h.data for h in hs]
+        else:
+            _ = model(x)
         # Outs are the activations at the argued layer and cell idx accross the batch
         if type(cell_idx) == type(int()):
             fx = outs[:,cell_idx]
@@ -290,19 +302,22 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None):
             fx = outs[:, cell_idx[0], cell_idx[1], cell_idx[2]]
         fx = fx.mean()
         fx.backward()
-        outs = torch.zeros_like(outs)
+        grads.append(x.grad.data.cpu().detach().numpy())
         hook_handle.remove()
+        outs = torch.zeros(outs.shape).to(device)
+        def forward_hook(module, inps, outputs):
+            outs[:] = outputs
     del outs
     del _
 
     requires_grad(model, True)
-    return X.grad[:batch_size*n_loops].cpu().detach().numpy()
+    return np.concatenate(grads, axis=0)
 
 def compute_sta(model, contrast, layer, cell_index, layer_shape=None):
     """helper function to compute the STA using the model gradient"""
     # generate some white noise
     #X = stim.concat(white(1040, contrast=contrast)).copy()
-    X = stim.concat(contrast*np.random.randn(10000,50,50))
+    X = stimuli.concat(contrast*np.random.randn(10000,50,50))
     X = torch.FloatTensor(X)
     X.requires_grad = True
 
