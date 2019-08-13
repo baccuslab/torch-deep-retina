@@ -62,13 +62,13 @@ def retinal_phenomena_figs(model):
     fig_names.append("contrast_adaptation")
     metrics['contrast_adaptation'] = None
 
-    contrasts = [0.5, 1.2]
-    unit = 0
-    layer = "sequential."+str(len(model.sequential)-1)
-    fig = rp.contrast_fig(model, contrasts, unit_index=unit, nonlinearity_type="bin")
-    figs.append(fig)
-    fig_names.append("contrast_fig")
-    metrics['contrast_fig'] = None
+    #contrasts = [0.5, 1.2]
+    #unit = 0
+    #layer = "sequential."+str(len(model.sequential)-1)
+    #fig = rp.contrast_fig(model, contrasts, unit_index=unit, nonlinearity_type="bin")
+    #figs.append(fig)
+    #fig_names.append("contrast_fig")
+    #metrics['contrast_fig'] = None
 
     (fig, ax), (speed_left, speed_right), (rtl, resp_rtl), (ltr, resp_ltr), avg_resp = rp.motion_reversal(model)
     figs.append(fig)
@@ -238,17 +238,8 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
         print("NaN results, continuing...\n")
         return stats
     
+    print("Collecting Model Response")
     with torch.no_grad():
-        #if model.recurrent:
-        #    print("Collecting model response")
-        #    model_response = []
-        #    hs = [torch.zeros(1,*model.h_shapes[0]).to(DEVICE), torch.zeros(1,*model.h_shapes[1]).to(DEVICE)]
-        #    for x in tqdm(test_data.X):
-        #        outs, hs = model(torch.FloatTensor(x)[None].to(DEVICE), hs)
-        #        model_response.append(outs.detach().cpu().numpy())
-        #    model_response = {"output":np.concatenate(model_response, axis=0)}
-        #else:
-        print("Collecting Model Response")
         model_response = bc.batch_compute_model_response(test_data.X, model, batch_compute_size, 
                                                                         recurrent=model.recurrent,
                                                                         insp_keys=set(insp_layers))
@@ -313,11 +304,11 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
         plt.savefig(os.path.join(folder, "acc_curve.png"))
         
         ## Get retinal phenomena plots
-        #figs, fig_names, metrics = retinal_phenomena_figs(model)
+        figs, fig_names, metrics = retinal_phenomena_figs(model)
 
-        #for fig, name in zip(figs, fig_names):
-        #    save_name = name + ".png"
-        #    fig.savefig(os.path.join(folder, save_name))
+        for fig, name in zip(figs, fig_names):
+            save_name = name + ".png"
+            fig.savefig(os.path.join(folder, save_name))
         #oms_ratios = metrics['oms']
         #for i, cell in enumerate(test_data.cells):
         #    stats["oms_ratio_cell"+str(cell)] = oms_ratios[i]
