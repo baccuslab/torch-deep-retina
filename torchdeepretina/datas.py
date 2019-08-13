@@ -35,7 +35,7 @@ class DataContainer():
         self.y = data.y
         self.stats = data.stats
 
-def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=None, norm_stats=None):
+def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=None, norm_stats=None, data_path="~/experiments/data"):
     """Loads an experiment from an h5 file on disk
 
     Parameters
@@ -65,6 +65,9 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=
     norm_stats : listlike of floats i.e. [mean, std], optional
         If a list of len 2 is argued, idx 0 will be used as the mean and idx 1 the std for
         data normalization
+
+    data_path : string
+        path to the data folders
     """
     assert history > 0 and type(history) is int, "Temporal history must be a positive integer"
     assert train_or_test in ('train', 'test'), "train_or_test must be 'train' or 'test'"
@@ -79,7 +82,7 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=
         py, px = ft.filterpeak(sta)[1]
 
     # load the hdf5 file
-    with _loadexpt_h5(expt, filename) as f:
+    with _loadexpt_h5(expt, filename, root=data_path) as f:
 
         expt_length = f[train_or_test]['time'].size
 
@@ -115,9 +118,9 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=
     return Exptdata(stim_reshaped, resp, spk_hist, stats, cells)
 
 
-def _loadexpt_h5(expt, filename):
+def _loadexpt_h5(expt, filename, root="~/experiments/data"):
     """Loads an h5py reference to an experiment on disk"""
-    filepath = join(expanduser('~/experiments/data'), expt, filename + '.h5')
+    filepath = join(expanduser(root), expt, filename + '.h5')
     return h5py.File(filepath, mode='r')
 
 def stimcut(data, expt, ci, width=11):
