@@ -154,12 +154,12 @@ class SkipDalesAmacRNN(TDRModel):
         bipolar = self.bipolar1(x) + h_bi # Conv
         bipolar = self.bipolar2(bipolar)
 
-        # All outputs here are inhibitory 
+        # hs are inhibitory here
         amacrine, h_bi_new, h_am_new = self.amacrine1(bipolar, h_am)
         amacrine = self.amacrine2(amacrine)
 
         flat_bi = bipolar.view(x.shape[0], -1)
-        flat_am = amacrine.view(x.shape[0], -1)
+        flat_am = -amacrine.view(x.shape[0], -1)
         cat = torch.cat([flat_bi, flat_am], dim=-1)
         ganglion = self.ganglion(cat)
         if not self.training and self.infr_exp:
