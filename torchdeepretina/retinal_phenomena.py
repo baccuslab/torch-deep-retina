@@ -15,12 +15,22 @@ from tqdm import tqdm, trange
 import torch
 
 DEVICE = torch.device("cuda:0")
+device = DEVICE
 
 def step_response(model, duration=100, delay=50, nsamples=200, intensity=-1.):
     """Step response"""
     X = stim.concat(stim.flash(duration, delay, nsamples, intensity=intensity))
     X_torch = torch.from_numpy(X).to(DEVICE)
-    resp = model(X_torch)
+    with torch.no_grad():
+        if model.recurrent:
+            hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+            resps = []
+            for i in range(X_torch.shape[0]):
+                resp, hs = model(X_torch[i:i+1], hs)
+                resps.append(resp)
+            resp = torch.cat(resps, dim=0)
+        else:
+            resp = model(X_torch)
     figs = viz.response1D(X[:, -1, 0, 0].copy(), resp.cpu().detach().numpy())
     (fig, (ax0,ax1)) = figs
     return (fig, (ax0,ax1)), X, resp
@@ -48,18 +58,48 @@ def paired_flash(model, ifis=(2, 20), duration=1, intensity=-2.0, total=100, del
         x1 = stim.paired_flashes(ifi, duration, (intensity, 0), total, delay)
         s1.append(stim.unroll(x1)[:, 0, 0])
         x1_torch = torch.from_numpy(x1).to(DEVICE)
-        r1.append(stim.prepad(model(x1_torch).cpu().detach().numpy()))
+        with torch.no_grad():
+            if model.recurrent:
+                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                resps = []
+                for i in range(x1_torch.shape[0]):
+                    resp, hs = model(x1_torch[i:i+1], hs)
+                    resps.append(resp)
+                resp = torch.cat(resps, dim=0)
+            else:
+                resp = model(x1_torch)
+        r1.append(stim.prepad(resp.cpu().detach().numpy()))
 
         x2 = stim.paired_flashes(ifi, duration, (0, intensity), total, delay)
         x2_torch = torch.from_numpy(x2).to(DEVICE)
         s2.append(stim.unroll(x2)[:, 0, 0])
-        r2.append(stim.prepad(model(x2_torch).cpu().detach().numpy()))
+        with torch.no_grad():
+            if model.recurrent:
+                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                resps = []
+                for i in range(x2_torch.shape[0]):
+                    resp, hs = model(x2_torch[i:i+1], hs)
+                    resps.append(resp)
+                resp = torch.cat(resps, dim=0)
+            else:
+                resp = model(x2_torch)
+        r2.append(stim.prepad(resp.cpu().detach().numpy()))
 
         # pair
         x = stim.paired_flashes(ifi, duration, intensity, total, delay)
         x_torch = torch.from_numpy(x).to(DEVICE)
         stimuli.append(stim.unroll(x)[:, 0, 0])
-        responses.append(stim.prepad(model(x).cpu().detach().numpy()))
+        with torch.no_grad():
+            if model.recurrent:
+                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                resps = []
+                for i in range(x_torch.shape[0]):
+                    resp, hs = model(x_torch[i:i+1], hs)
+                    resps.append(resp)
+                resp = torch.cat(resps, dim=0)
+            else:
+                resp = model(x_torch)
+        responses.append(stim.prepad(resp.cpu().detach().numpy()))
 
     return map(np.stack, (s1, r1, s2, r2, stimuli, responses))
 
@@ -69,7 +109,16 @@ def reversing_grating(model, size=5, phase=0.):
     grating = stim.grating(barsize=(size, 0), phase=(phase, 0.0), intensity=(1.0, 1.0), us_factor=1, blur=0)
     X = stim.concat(stim.reverse(grating, halfperiod=50, nsamples=300))
     X_torch = torch.from_numpy(X).to(DEVICE)
-    resp = model(X_torch)
+    with torch.no_grad():
+        if model.recurrent:
+            hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+            resps = []
+            for i in range(X_torch.shape[0]):
+                resp, hs = model(X_torch[i:i+1], hs)
+                resps.append(resp)
+            resp = torch.cat(resps, dim=0)
+        else:
+            resp = model(X_torch)
     figs = viz.response1D(X[:, -1, 0, 0].copy(), resp.cpu().detach().numpy())
     (fig, (ax0,ax1)) = figs
     return (fig, (ax0,ax1)), X, resp
@@ -83,10 +132,22 @@ def contrast_adaptation(model, c0, c1, duration=50, delay=50, nsamples=140, nrep
     envelope += c0
 
     # generate a bunch of responses to random noise with the given contrast envelope
-    responses = np.stack([model(
-        torch.from_numpy(stim.concat(np.random.randn(*envelope.shape) * envelope)).to(DEVICE)).cpu().detach().numpy()
-                          for _ in trange(nrepeats)])
+    responses = []
+    with torch.no_grad():
+        for _ in trange(nrepeats):
+            x = torch.from_numpy(stim.concat(np.random.randn(*envelope.shape) * envelope)).to(DEVICE)
+            if model.recurrent:
+                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                resps = []
+                for i in range(x.shape[0]):
+                    resp, hs = model(x[i:i+1], hs)
+                    resps.append(resp)
+                resp = torch.cat(resps, dim=0)
+            else:
+                resp = model(x)
+            responses.append(resp.cpu().detach().numpy())
 
+    responses = np.asarray(responses)
     figs = viz.response1D(envelope[40:, 0, 0], responses.mean(axis=0))
     (fig, (ax0,ax1)) = figs
 
@@ -151,8 +212,31 @@ def oms_random_differential(model, duration=5, sample_rate=30, pre_frames=40, po
         diff_response = None
         global_response = None
     else:
-        diff_response = model(torch.FloatTensor(stim.concat(diff_vid)).to(DEVICE)).cpu().detach().numpy()
-        global_response = model(torch.FloatTensor(stim.concat(global_vid)).to(DEVICE)).cpu().detach().numpy()
+        x = torch.FloatTensor(stim.concat(diff_vid)).to(DEVICE)
+        with torch.no_grad():
+            if model.recurrent:
+                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                resps = []
+                for i in range(x.shape[0]):
+                    resp, hs = model(x[i:i+1], hs)
+                    resps.append(resp)
+                resp = torch.cat(resps, dim=0)
+            else:
+                resp = model(x)
+        diff_response = resp.cpu().detach().numpy()
+
+        x = torch.FloatTensor(stim.concat(global_vid)).to(DEVICE)
+        with torch.no_grad():
+            if model.recurrent:
+                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                resps = []
+                for i in range(x.shape[0]):
+                    resp, hs = model(x[i:i+1], hs)
+                    resps.append(resp)
+                resp = torch.cat(resps, dim=0)
+            else:
+                resp = model(x)
+        global_response = resp.cpu().detach().numpy()
 
         # generate the figure
         fig = plt.figure(figsize=(6, 4))
@@ -295,8 +379,31 @@ def oms_differential(model, duration=5, sample_rate=30, pre_frames=40, post_fram
         diff_response = None
         global_response = None
     else:
-        diff_response = model(torch.FloatTensor(stim.concat(diff_vid)).to(DEVICE)).cpu().detach().numpy()
-        global_response = model(torch.FloatTensor(stim.concat(global_vid)).to(DEVICE)).cpu().detach().numpy()
+        x = torch.FloatTensor(stim.concat(diff_vid)).to(DEVICE)
+        with torch.no_grad():
+            if model.recurrent:
+                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                resps = []
+                for i in range(x.shape[0]):
+                    resp, hs = model(x[i:i+1], hs)
+                    resps.append(resp)
+                resp = torch.cat(resps, dim=0)
+            else:
+                resp = model(x)
+        diff_response = resp.cpu().detach().numpy()
+
+        x = torch.FloatTensor(stim.concat(global_vid)).to(DEVICE)
+        with torch.no_grad():
+            if model.recurrent:
+                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                resps = []
+                for i in range(x.shape[0]):
+                    resp, hs = model(x[i:i+1], hs)
+                    resps.append(resp)
+                resp = torch.cat(resps, dim=0)
+            else:
+                resp = model(x)
+        global_response = resp.cpu().detach().numpy()
 
         # generate the figure
         fig = plt.figure(figsize=(6, 4))
@@ -355,7 +462,18 @@ def oms_jitter(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40,
         fig = None
         response = None
     else:
-        response = model(torch.FloatTensor(stim.concat(vid)).to(DEVICE)).cpu().detach().numpy()
+        x = torch.FloatTensor(stim.concat(vid)).to(DEVICE)
+        with torch.no_grad():
+            if model.recurrent:
+                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                resps = []
+                for i in range(x.shape[0]):
+                    resp, hs = model(x[i:i+1], hs)
+                    resps.append(resp)
+                resp = torch.cat(resps, dim=0)
+            else:
+                resp = model(x)
+        response = resp.cpu().detach().numpy()
         avg_response = response.mean(-1)
 
         # generate the figure
@@ -456,7 +574,17 @@ def osr(model=None, duration=2, interval=10, nflashes=5, intensity=-2.0):
     X[X!=0] = 1
     if model is not None:
         X_torch = torch.from_numpy(X).to(DEVICE)
-        resp = model(X_torch).cpu().detach().numpy()
+        with torch.no_grad():
+            if model.recurrent:
+                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                resps = []
+                for i in range(X_torch.shape[0]):
+                    resp, hs = model(X_torch[i:i+1], hs)
+                    resps.append(resp)
+                resp = torch.cat(resps, dim=0)
+            else:
+                resp = model(X_torch)
+        resp = resp.cpu().detach().numpy()
         figs = viz.response1D(X[:, -1, 0, 0].copy(), resp, figsize=(20, 8))
         (fig, (ax0,ax1)) = figs
 
@@ -498,10 +626,32 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
     # moving bar stimulus and responses
     # c_right and c_left are the center positions of the bar
     c_right, speed_right, stim_right = stim.driftingbar(velocity, width, x=(-30, 30))
-    resp_right = model(torch.from_numpy(stim_right).to(DEVICE)).cpu().detach().numpy()
+    x = torch.from_numpy(stim_right).to(DEVICE)
+    with torch.no_grad():
+        if model.recurrent:
+            hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+            resps = []
+            for i in range(x.shape[0]):
+                resp, hs = model(x[i:i+1], hs)
+                resps.append(resp)
+            resp = torch.cat(resps, dim=0)
+        else:
+            resp = model(x)
+    resp_right = resp.cpu().detach().numpy()
 
     c_left, speed_left, stim_left = stim.driftingbar(-velocity, width, x=(30, -30))
-    resp_left = model(torch.from_numpy(stim_left).to(DEVICE)).cpu().detach().numpy()
+    x = torch.from_numpy(stim_left).to(DEVICE)
+    with torch.no_grad():
+        if model.recurrent:
+            hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+            resps = []
+            for i in range(x.shape[0]):
+                resp, hs = model(x[i:i+1], hs)
+                resps.append(resp)
+            resp = torch.cat(resps, dim=0)
+        else:
+            resp = model(x)
+    resp_left = resp.cpu().detach().numpy()
 
     # flashed bar stimulus
     flash_centers = np.arange(-25, 26)
@@ -509,7 +659,22 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
                for x in flash_centers)
 
     # flash responses are a 3-D array with dimensions (centers, stimulus time, cell)
-    flash_responses = np.stack([model(torch.from_numpy(stim.concat(f)).to(DEVICE)).cpu().detach().numpy() for f in tqdm(flashes)])
+    flash_responses = []
+    with torch.no_grad():
+        for f in tqdm(flashes):
+            x = torch.from_numpy(stim.concat(f)).to(DEVICE)
+            if model.recurrent:
+                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                resps = []
+                for i in range(x.shape[0]):
+                    resp, hs = model(x[i:i+1], hs)
+                    resps.append(resp)
+                resp = torch.cat(resps, dim=0)
+            else:
+                resp = model(x)
+            flash_responses.append(resp.cpu().detach().numpy())
+        
+    flash_responses = np.stack(flash_responses)
 
     # pick off the flash responses at a particular time point (the time of the max response)
     max_resp_idx = flash_responses.mean(axis=-1).mean(axis=0).argmax()
@@ -605,11 +770,31 @@ def motion_reversal(model, scale_factor=55, velocity=0.08, width=2):
  
     rtl_blocks = stim.concat(rtl)
     rtl_blocks = torch.from_numpy(rtl_blocks).to(DEVICE)
-    resp_rtl = model(rtl_blocks).cpu().detach().numpy()
+    with torch.no_grad():
+        if model.recurrent:
+            hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+            resps = []
+            for i in range(rtl_blocks.shape[0]):
+                resp, hs = model(rtl_blocks[i:i+1], hs)
+                resps.append(resp)
+            resp = torch.cat(resps, dim=0)
+        else:
+            resp = model(rtl_blocks)
+    resp_rtl = resp.cpu().detach().numpy()
 
     ltr_blocks = stim.concat(ltr)
     ltr_blocks = torch.from_numpy(ltr_blocks).to(DEVICE)
-    resp_ltr = model(ltr_blocks).cpu().detach().numpy()
+    with torch.no_grad():
+        if model.recurrent:
+            hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+            resps = []
+            for i in range(ltr_blocks.shape[0]):
+                resp, hs = model(ltr_blocks[i:i+1], hs)
+                resps.append(resp)
+            resp = torch.cat(resps, dim=0)
+        else:
+            resp = model(ltr_blocks)
+    resp_ltr = resp.cpu().detach().numpy()
 
     # average the response from multiple cells
     avg_resp_rtl = resp_rtl.mean(axis=-1)
