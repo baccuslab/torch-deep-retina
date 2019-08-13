@@ -257,6 +257,9 @@ class Trainer:
                 "test_pearson":avg_pearson,
                 "norm_stats":train_data.stats,
             }
+            for k in hyps.keys():
+                if k not in save_dict:
+                    save_dict[k] = hyps[k]
             save_checkpoint(save_dict, SAVE, 'test', del_prev=True)
             gc.collect()
             max_mem_used = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
