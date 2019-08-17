@@ -78,7 +78,7 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=
     if cutout_width is not None:
         assert len(cells) == 1, "cutout must be used with single cells"
         wn = _loadexpt_h5(expt, 'whitenoise')
-        sta = np.array(wn[f'train/stas/cell{cells[0]+1:02d}']).copy()
+        sta = np.array(wn['train/stas/cell{:02d}'.format(cells[0]+1)]).copy()
         py, px = ft.filterpeak(sta)[1]
 
     # load the hdf5 file
@@ -128,7 +128,7 @@ def stimcut(data, expt, ci, width=11):
 
     # get the white noise STA for this cell
     wn = _loadexpt_h5(expt, 'whitenoise')
-    sta = np.array(wn[f'train/stas/cell{ci+1:02d}']).copy()
+    sta = np.array(wn['train/stas/cell{:02d}'.format(ci+1)]).copy()
 
     # find the peak of the sta
     xc, yc = ft.filterpeak(sta)[1]
@@ -243,10 +243,12 @@ class DataDistributor:
                 self.perm = np.arange(self.X.shape[0]).astype('int')
         else:
             if shuffle:
-                self.perm = torch.randperm(self.x.shape[0]).long()
+                self.perm = torch.randperm(self.X.shape[0]).long()
             else:
-                self.perm = torch.arange(self.x.shape[0]).long()
+                self.perm = torch.arange(self.X.shape[0]).long()
 
+        if val_size > len(self.perm):
+            val_size = int(len(self.perm)*0.05)
         self.train_idxs = self.perm[:-val_size]
         self.val_idxs = self.perm[-val_size:]
         self.train_X = DataObj(self.X, self.train_idxs)
@@ -269,8 +271,11 @@ class DataDistributor:
     def order_into_batches(self, data, batch_size):
         length = data.shape[0]//batch_size
         tot_len = length*batch_size
-        trunc = data[:tot_len]
-        return trunc.reshape(batch_size, length, *data.shape[1:])
+        trunc = data[:tot_len].reshape(batch_size, length, *data.shape[1:])
+        trans_order = list(range(len(trunc.shape)))
+        trans_order[0], trans_order[1] = trans_order[1], trans_order[0]
+        trunc = trunc.transpose(trans_order)
+        return trunc
 
     def set_batch_size(self, batch_size):
         self.batch_size = batch_size
@@ -288,6 +293,7 @@ class DataDistributor:
 
     def train_sample(self, batch_size=None):
         n_loops = self.n_loops
+        # Allow for new batchsize argument
         if batch_size is None:
             batch_size = self.batch_size
         elif not (self.recurrent and not self.shuffle):
