@@ -17,7 +17,6 @@ import matplotlib.pyplot as plt
 from torchdeepretina.datas import loadexpt
 from torchdeepretina.physiology import Physio
 import torchdeepretina.intracellular as intracellular
-import torchdeepretina.batch_compute as bc
 import torchdeepretina.retinal_phenomena as rp
 import torchdeepretina.stimuli as stimuli
 import torchdeepretina.analysis as analysis
@@ -164,6 +163,7 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
     model = None
     metric_keys = ['loss', 'val_loss', 'val_acc', 'test_pearson']
     metric_lists = [losses, val_losses, val_accs, test_accs]
+    data = None
     for i in range(300):
         f_name = os.path.join(main_dir, folder,"test_epoch_{0}.pth".format(i))
         try:
@@ -181,7 +181,9 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
                 torch.save(data, f_name)
         except FileNotFoundError as e:
             pass
- 
+    if data is None:
+        print("No model files found for", folder,"!!")
+        return stats
     model = analysis.load_model(os.path.join(main_dir, folder), data)
     insp_layers = get_insp_layers(model, hyps)
     print("Inspection layers:", insp_layers)
@@ -240,7 +242,7 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
     
     print("Collecting Model Response")
     with torch.no_grad():
-        model_response = bc.batch_compute_model_response(test_data.X, model, batch_compute_size, 
+        model_response = analysis.batch_compute_model_response(test_data.X, model, batch_compute_size, 
                                                                         recurrent=model.recurrent,
                                                                         insp_keys=set(insp_layers))
 
@@ -256,7 +258,7 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
 
     # Compare to non-exponentiated outputs
     if not model.recurrent and noexp_seq is not None: 
-        noexp_modresp = bc.batch_compute_model_response(test_data.X, noexp_seq, batch_compute_size, 
+        noexp_modresp = analysis.batch_compute_model_response(test_data.X, noexp_seq, batch_compute_size, 
                                                                                 insp_keys=set())
         test_accs = [scipy.stats.pearsonr(noexp_modresp['output'][:, i], test_data.y[:, i])[0] 
                                                         for i in range(test_data.y.shape[-1])]
@@ -341,7 +343,7 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
             padded_stim = intracellular.pad_to_edge(scipy.stats.zscore(stim))
             if k not in model_responses:
                 model_responses[k] = []
-            model_responses[k].append(bc.batch_compute_model_response(stimuli.concat(padded_stim),
+            model_responses[k].append(analysis.batch_compute_model_response(stimuli.concat(padded_stim),
                                                                       model,batch_compute_size, 
                                                                       recurrent=model.recurrent,
                                                                       insp_keys=set(insp_layers)))

@@ -1,5 +1,4 @@
 __version__ = '0.1.0'
-import torchdeepretina.batch_compute
 import torchdeepretina.stimuli
 import torchdeepretina.datas
 import torchdeepretina.intracellular

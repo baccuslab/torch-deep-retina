@@ -7,12 +7,9 @@ import sys
 import pickle
 from torchdeepretina.models import *
 import matplotlib.pyplot as plt
-from torchdeepretina.datas import loadexpt
-from torchdeepretina.physiology import Physio
-import torchdeepretina.intracellular as intracellular
-import torchdeepretina.batch_compute as bc
 import torchdeepretina.stimuli as stimuli
 from torchdeepretina.utils import load_json
+from torchdeepretina.physiology import Physio
 import pyret.filtertools as ft
 import scipy
 import re
@@ -23,6 +20,8 @@ import resource
 import time
 import math
 import pandas as pd
+
+DEVICE = torch.device("cuda:0")
 
 #If you want to use stimulus that isnt just boxes
 def prepare_stim(stim, stim_type):
@@ -279,7 +278,7 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None):
 
     # Get gradient with respect to activations
     model.eval()
-    X.requires_grad = False
+    X.requires_grad = True
     n_loops = X.shape[0]//batch_size
     grads = []
     for i in tqdm(range(n_loops)):
@@ -287,7 +286,6 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None):
         idx = i*batch_size
         x = X[idx:idx+batch_size]
         x = x.to(device)
-        x.requires_grad = True
         if model.recurrent:
             _, hs = model(x, hs)
             hs = [h.data for h in hs]
@@ -302,7 +300,7 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None):
             fx = outs[:, cell_idx[0], cell_idx[1], cell_idx[2]]
         fx = fx.mean()
         fx.backward()
-        grads.append(x.grad.data.cpu().detach().numpy())
+        grads.append(X[idx:idx+batch_size].grad.data.cpu().detach().numpy())
         hook_handle.remove()
         outs = torch.zeros(outs.shape).to(device)
         def forward_hook(module, inps, outputs):
@@ -327,3 +325,55 @@ def compute_sta(model, contrast, layer, cell_index, layer_shape=None):
 
     del X
     return sta
+
+def batch_compute_model_response(stimulus, model, batch_size, recurrent=False, insp_keys={'all'}, cust_h_init=False):
+    '''
+    Computes a model response in batches in pytorch. Returns a dict of lists 
+    where each list is the sequence of batch responses.     
+    Args:
+        stimulus: 3-d checkerboard stimulus in (time, space, space)
+        model: the model
+        batch_size: the size of the batch
+        recurrent: bool
+            use recurrent approach to calculating model response
+        insp_keys: set (or dict) with keys of layers to be inspected in Physio
+    '''
+    phys = Physio(model)
+    model_response = None
+    batch_size = 1 if recurrent else batch_size
+    n_loops, leftover = divmod(stimulus.shape[0], batch_size)
+    hs = None
+    if recurrent:
+        hs = [torch.zeros(1, *h_shape).to(DEVICE) for h_shape in model.h_shapes]
+        if cust_h_init:
+            hs[0][:,0] = 1
+    with torch.no_grad():
+        responses = []
+        for i in tqdm(range(n_loops)):
+            stim = torch.FloatTensor(stimulus[i*batch_size:(i+1)*batch_size])
+            outs = phys.inspect(stim.to(DEVICE), hs=hs, insp_keys=insp_keys)
+            if type(outs) == type(tuple()):
+                outs, hs = outs[0].copy(), outs[1]
+            else:
+                outs = outs.copy()
+            for k in outs.keys():
+                if type(outs[k]) != type(np.array([])):
+                    outs[k] = outs[k].detach().cpu().numpy()
+            responses.append(outs)
+        if leftover > 0 and hs is None:
+            stim = torch.FloatTensor(stimulus[-leftover:])
+            outs = phys.inspect(stim.to(DEVICE), hs=hs, insp_keys=insp_keys).copy()
+            for k in outs.keys():
+                if type(outs[k]) != type(np.array([])):
+                    outs[k] = outs[k].detach().cpu().numpy()
+            responses.append(outs)
+        model_response = {}
+        for key in responses[0].keys():
+             model_response[key] = np.concatenate([x[key] for x in responses], axis=0)
+        del outs
+
+    # Get the last few samples
+    phys.remove_hooks()
+    phys.remove_refs()
+    del phys
+    return model_response

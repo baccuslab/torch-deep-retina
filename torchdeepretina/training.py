@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn import PoissonNLLLoss, MSELoss
+import torch.nn.functional as F
 import os.path as path
 from torchdeepretina.utils import get_cuda_info, save_checkpoint
 from torchdeepretina.datas import loadexpt, DataContainer, DataDistributor
@@ -117,17 +118,14 @@ class Trainer:
 
         # Train Loop
         hs = None
-        if "shapes" in model.__dict__:
-            h1_shape = model.h_shapes[0] # (H,W)
-            h2_shape = model.h_shapes[1] # (H, W)
-            
         for epoch in range(EPOCHS):
             print("Beginning Epoch", epoch, " -- ", SAVE)
             print()
             n_loops = data_distr.n_loops
             if model.recurrent:
-                hs = [torch.zeros(batch_size, *h1_shape).to(device),
-                        torch.zeros(batch_size, *h2_shape).to(device)]
+                hs = [torch.zeros(batch_size, *h).to(device) for h in model.h_shapes]
+                if hyps['model_type'] == "KineticsModel":
+                    hs[0][:,0] = 1
             model.train(mode=True)
             indices = torch.randperm(data_distr.train_shape[0]).long()
 
@@ -154,9 +152,12 @@ class Trainer:
                         if ri == 0:
                             hs = [h.clone() for h in hs]
                     y = torch.cat(ys, dim=1)
+                    error = loss_fn(y,label)/seq_len
+                    if hyps['model_type'] == "KineticsModel" and model.kinetics.kfr + model.kinetics.ksi > 1:
+                        error += ((1-(model.kinetics.kfr+model.kinetics.ksi))**2).mean()
                 else:
                     y = model(x.to(device))
-                error = loss_fn(y,label)
+                    error = loss_fn(y,label)
 
                 if LAMBDA1 > 0:
                     activity_l1 = LAMBDA1 * torch.norm(y, 1).float().mean()
@@ -178,12 +179,14 @@ class Trainer:
             model.eval()
             with torch.no_grad():
                 val_preds = []
+                val_targs = []
                 val_loss = 0
                 if model.recurrent:
                     step_size = 1
-                    hs = [torch.zeros(1, *h1_shape).to(device),
-                            torch.zeros(1, *h2_shape).to(device)]
+                    hs = [torch.zeros(step_size, *h).to(device) for h in model.h_shapes]
                     n_loops = data_distr.val_shape[0]
+                    if hyps['model_type'] == "KineticsModel":
+                        hs[0][:,0] = 1
                 else:
                     step_size = 500
                     n_loops = data_distr.val_shape[0]//step_size
@@ -192,21 +195,29 @@ class Trainer:
                     print("Validating")
                 for i, (val_x, val_y) in enumerate(data_distr.val_sample(step_size)):
                     if hs is not None:
+                        # val_x (batch_size, seq_len, depth, height, width)
+                        # val_y (batch_size, seq_len, n_ganlion)
                         outs, hs = model(val_x[:,0].to(device), hs)
                         val_y = val_y[:,0]
+                        val_preds.append(outs[:,None,:].cpu().detach().numpy())
+                        val_targs.append(val_y[:,None,:].cpu().detach().numpy())
                     else:
                         outs = model(val_x.to(device)).detach()
+                        val_preds.append(outs.cpu().detach().numpy())
+                        val_targs.append(val_y.cpu().detach().numpy())
                     val_loss += loss_fn(outs, val_y.to(device)).item()
                     if LAMBDA1 > 0:
                         val_loss += (LAMBDA1 * torch.norm(outs, 1).float()/outs.shape[0]).item()
-                    val_preds.append(outs.cpu().numpy())
-                    if verbose:
+                    if verbose and i%(n_loops//10) == 0:
                         print("{}/{}".format(i,data_distr.val_y.shape[0]), end="     \r")
                 val_loss = val_loss/n_loops
-                val_preds = np.concatenate(val_preds, axis=0)
-                val_targs = data_distr.val_y[:val_preds.shape[0]].numpy()
+                n_units = data_distr.val_y.shape[-1]
                 if recurrent:
-                    val_targs = val_targs[:,0]
+                    val_preds = np.concatenate(val_preds, axis=1).reshape((-1,n_units))
+                    val_targs = np.concatenate(val_targs, axis=1).reshape((-1,n_units))
+                else:
+                    val_preds = np.concatenate(val_preds, axis=0)
+                    val_targs = np.concatentate(val_targs, axis=0)
                 pearsons = []
                 for cell in range(val_preds.shape[-1]):
                     pearsons.append(pearsonr(val_preds[:, cell], val_targs[:,cell])[0])
@@ -217,7 +228,7 @@ class Trainer:
                 if hyps["log_poisson"] and hyps['softplus'] and not model.infr_exp:
                     val_preds = np.exp(val_preds)
                     for cell in range(val_preds.shape[-1]):
-                        pearsons.append(pearsonr(val_preds[:, cell], data_distr.val_y[:val_preds.shape[0]][:,cell].numpy())[0])
+                        pearsons.append(pearsonr(val_preds[:, cell], val_targs[:,cell])[0])
                     exp_val_acc = np.mean(pearsons)
                 stats_string += "Avg Val Pearson: {} -- Val Loss: {} -- Exp Val: {}\n".format(val_acc, val_loss, exp_val_acc)
                 scheduler.step(val_loss)

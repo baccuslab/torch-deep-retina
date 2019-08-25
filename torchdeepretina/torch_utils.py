@@ -374,6 +374,35 @@ class AbsConv2d(nn.Module):
         except:
             return "abs_bias={}".format(True)
 
+class SqrConv2d(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, abs_bias=False):
+        super().__init__()
+        self.abs_bias = abs_bias
+        self.bias = bias
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
+
+    def forward(self, x):
+        if self.bias:
+            try:
+                if not self.abs_bias:
+                    return nn.functional.conv2d(x, self.conv.weight**2, self.conv.bias, 
+                                                            self.conv.stride, self.conv.padding, 
+                                                            self.conv.dilation, self.conv.groups)
+            except:
+                pass
+            return nn.functional.conv2d(x, self.conv.weight**2, self.conv.bias.abs(), 
+                                                    self.conv.stride, self.conv.padding, 
+                                                    self.conv.dilation, self.conv.groups)
+        else:
+            return nn.functional.conv2d(x, self.conv.weight**2, None, 
+                                                self.conv.stride, self.conv.padding, 
+                                                self.conv.dilation, self.conv.groups)
+    def extra_repr(self):
+        try:
+            return 'bias={}, abs_bias={}'.format(self.bias, self.abs_bias)
+        except:
+            return "abs_bias={}".format(True)
+
 class DecoupledLinear(nn.Module):
     def __init__(self, in_features, out_features, bias=True, eps=1e-5):
         super(DecoupledLinear, self).__init__()
@@ -447,6 +476,49 @@ class AbsLinearStackedConv2d(nn.Module):
                         convs.append(nn.Dropout(drop_p))
         else:
             convs = [AbsConv2d(in_channels, out_channels, 3, bias=bias)]
+        self.convs = nn.Sequential(*convs)
+
+    def forward(self, x):
+        x = F.pad(x, (self.padding, self.padding, self.padding, self.padding))
+        return self.convs(x)
+
+    def extra_repr(self):
+        try:
+            return 'bias={}, abs_bnorm={}'.format(self.bias, self.abs_bnorm)
+        except:
+            return "bias={}, abs_bnorm={}".format(self.bias, True)
+
+class SqrLinearStackedConv2d(nn.Module):
+    '''
+    Builds argued kernel out of multiple 3x3 kernels without added nonlinearities.
+    '''
+    def __init__(self, in_channels, out_channels, kernel_size, bias=True, abs_bnorm=False, conv_bias=False, drop_p=0, padding=0):
+        super().__init__()
+        assert kernel_size % 2 == 1 # kernel must be odd
+        self.ksize = kernel_size
+        self.bias = bias
+        self.conv_bias = conv_bias
+        self.abs_bnorm = abs_bnorm
+        self.padding = padding
+        self.drop_p = drop_p
+        n_filters = int((kernel_size-1)/2)
+        if n_filters > 1:
+            convs = [SqrConv2d(in_channels, out_channels, 3, bias=conv_bias)]
+            if abs_bnorm:
+                convs.append(AbsBatchNorm2d(out_channels))
+            if drop_p > 0:
+                convs.append(nn.Dropout(drop_p))
+            for i in range(n_filters-1):
+                if i == n_filters-2:
+                    convs.append(SqrConv2d(out_channels, out_channels, 3, bias=bias))
+                else:
+                    convs.append(SqrConv2d(out_channels, out_channels, 3, bias=conv_bias))
+                    if abs_bnorm:
+                        convs.append(AbsBatchNorm2d(out_channels))
+                    if drop_p > 0:
+                        convs.append(nn.Dropout(drop_p))
+        else:
+            convs = [SqrConv2d(in_channels, out_channels, 3, bias=bias)]
         self.convs = nn.Sequential(*convs)
 
     def forward(self, x):
@@ -597,6 +669,62 @@ class DalesAmacRNNSimple(nn.Module):
         outs = outs + h
         bipolar_feedback = -self.bipolar(outs).abs()
         h_new = -self.amacrine(outs).abs()
+        return outs, bipolar_feedback, h_new
+
+class DalesAmacRNN(nn.Module):
+    def __init__(self, in_channels, out_channels, rnn_channels, kernel_size, padding=0, bias=True, stackconvs=True):
+        super().__init__()
+        self.in_chans = in_channels
+        self.out_chans = out_channels
+        self.rnn_chans = rnn_channels
+        self.ksize = kernel_size
+        self.padding = padding
+        self.bias = bias
+        self.stackconvs = stackconvs
+        if stackconvs:
+            print("Stride ignored in AmacRNN convolution due to linear stacked conv choice")
+            self.conv = AbsLinearStackedConv2d(in_channels+rnn_channels, out_channels, kernel_size=kernel_size, 
+                                                                                        bias=bias, drop_p=0)
+        else:
+            self.conv = AbsConv2d(in_channels+rnn_channels, out_channels, kernel_size, bias=bias)
+        assert kernel_size % 2 == 1 # Must have odd kernel size
+
+        self.rnn_padding = (kernel_size-1)//2
+        self.bipolar = AbsConvTranspose2d(out_channels, in_channels, kernel_size, padding=0, bias=True)
+        if stackconvs:
+            self.rnn_conv = AbsLinearStackedConv2d(in_channels+rnn_channels, rnn_channels*2, kernel_size=kernel_size, 
+                                                                                        padding=self.rnn_padding,
+                                                                                        bias=True)
+            self.rnn_conv = nn.Sequential(self.rnn_conv, nn.Sigmoid())
+            self.tan_conv = AbsLinearStackedConv2d(in_channels+rnn_channels, rnn_channels, kernel_size=kernel_size, 
+                                                                                        padding=self.rnn_padding,
+                                                                                        bias=True)
+            self.tan_conv = nn.Sequential(self.tan_conv, nn.Tanh())
+        else:
+            self.rnn_conv = nn.Sequential(AbsConv2d(in_channels+rnn_channels, rnn_channels*2, kernel_size=kernel_size, 
+                                                                                    padding=self.rnn_padding, bias=True),
+                                                                                                            nn.Sigmoid())
+            self.tan_conv = nn.Sequential(AbsConv2d(in_channels+rnn_channels, rnn_channels, kernel_size=kernel_size, 
+                                                                                padding=self.rnn_padding, bias=True),
+                                                                                                          nn.Tanh())
+    
+    def forward(self, x, h):
+        """
+        Creates a unique h for both self feedback and bipolar feedback.
+
+        x: torch tensor (B, IN_CHAN, H, W)
+            the new input
+        h: torch tensor (B, RNN_CHAN, H, W) 
+            the recurrent input for the amacrine cells
+        """
+        ins = torch.cat([x,h], dim=1)
+        outs = self.conv(ins)
+        bipolar_feedback = self.bipolar(-outs.abs()) # Need negative outs here for inhibitory effect
+        temp = self.rnn_conv(ins)
+        z,r = (temp[:,:self.rnn_chans], temp[:,self.rnn_chans:])
+        tanin = torch.cat([x,h*r], dim=1)
+        tanout = self.tan_conv(tanin)
+        h_new = -(z*h + (1-z)*tanout).abs()
         return outs, bipolar_feedback, h_new
 
 class AmacRNNFull(nn.Module):
@@ -842,6 +970,45 @@ class DalesSkipConnection(nn.Module):
     def forward(self, x):
         fx = self.sequential(x)
         return torch.cat([x,fx], dim=1)
+
+class Kinetics(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.ka = nn.Parameter(torch.rand(1).abs()/10)
+        self.kfi = nn.Parameter(torch.rand(1).abs()/10)
+        self.kfr = nn.Parameter(torch.rand(1).abs()/10)
+        self.ksi = nn.Parameter(torch.rand(1).abs()/10)
+        self.ksr = nn.Parameter(torch.rand(1).abs()/10)
+
+    def clamp_params(self, low, high):
+        for param in self.parameters():
+            param.data = torch.clamp(param.data, low, high)
+
+    def forward(self, rate, pop):
+        """
+        rate - FloatTensor (B, N)
+            firing rates
+        pop - FloatTensor (B, S, N)
+            populations should have 4 states for each neuron.
+            States should be:
+                0: R
+                1: A
+                2: I1
+                3: I2
+        """
+        self.clamp_params(1e-5,.99999)
+        dt = 0.001
+        ka  = self.ka*rate*pop[:,0]
+        kfi = self.kfi*pop[:,1]
+        kfr = self.kfr*pop[:,2]
+        ksi = self.ksi*pop[:,2]
+        ksr = self.ksr*rate*pop[:,3]
+        new_pop = torch.zeros_like(pop)
+        new_pop[:,0] = pop[:,0] + dt*(-ka + kfr)
+        new_pop[:,1] = pop[:,1] + dt*(-kfi + ka)
+        new_pop[:,2] = pop[:,2] + dt*(-kfr - ksi + kfi + ksr)
+        new_pop[:,3] = pop[:,3] + dt*(-ksr + ksi)
+        return new_pop[:,1], new_pop
 
 
 

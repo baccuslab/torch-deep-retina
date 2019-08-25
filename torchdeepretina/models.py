@@ -316,16 +316,15 @@ class RNNCNN(TDRModel):
         return fx, [h1, h2]
 
 class LinearStackedBNCNN(TDRModel):
-    def __init__(self, bnorm=True, drop_p=0, **kwargs):
+    def __init__(self, drop_p=0, **kwargs):
         super().__init__(**kwargs)
         self.name = 'StackedNet'
-        self.bnorm = bnorm
         self.drop_p = drop_p
         shape = self.img_shape[1:] # (H, W)
         self.shapes = []
 
         modules = []
-        modules.append(LinearStackedConv2d(self.img_shape[0],self.chans[0],kernel_size=self.ksizes[0], abs_bnorm=self.bnorm, 
+        modules.append(LinearStackedConv2d(self.img_shape[0],self.chans[0],kernel_size=self.ksizes[0], abs_bnorm=False, 
                                                                                     bias=self.bias, drop_p=self.drop_p))
         shape = update_shape(shape, self.ksizes[0])
         self.shapes.append(tuple(shape))
@@ -334,7 +333,7 @@ class LinearStackedBNCNN(TDRModel):
         modules.append(GaussianNoise(std=self.noise))
         modules.append(nn.ReLU())
         modules.append(Reshape((-1,self.chans[0],shape[0], shape[1])))
-        modules.append(LinearStackedConv2d(self.chans[0],self.chans[1],kernel_size=self.ksizes[1], abs_bnorm=self.bnorm, 
+        modules.append(LinearStackedConv2d(self.chans[0],self.chans[1],kernel_size=self.ksizes[1], abs_bnorm=False, 
                                                                                 bias=self.bias, drop_p=self.drop_p))
         shape = update_shape(shape, self.ksizes[1])
         self.shapes.append(tuple(shape))
@@ -356,17 +355,18 @@ class LinearStackedBNCNN(TDRModel):
         return self.sequential(x)
 
 class KineticsModel(TDRModel):
-    def __init__(self, bnorm=True, drop_p=0, **kwargs):
+    def __init__(self, bnorm=True, drop_p=0, scale_kinet=False, **kwargs):
         super().__init__(**kwargs)
         self.bnorm = bnorm
         self.drop_p = drop_p
         self.recurrent = True
+        self.scale_kinet = scale_kinet
         shape = self.img_shape[1:] # (H, W)
         self.shapes = []
         self.h_shapes = []
 
         modules = []
-        modules.append(LinearStackedConv2d(self.img_shape[0],self.chans[0],kernel_size=self.ksizes[0], abs_bnorm=self.bnorm, 
+        modules.append(LinearStackedConv2d(self.img_shape[0],self.chans[0],kernel_size=self.ksizes[0], abs_bnorm=False, 
                                                                                     bias=self.bias, drop_p=self.drop_p))
         shape = update_shape(shape, self.ksizes[0])
         self.shapes.append(tuple(shape))
@@ -375,14 +375,16 @@ class KineticsModel(TDRModel):
         modules.append(Flatten())
         modules.append(AbsBatchNorm1d(self.chans[0]*shape[0]*shape[1], eps=1e-3, momentum=self.bn_moment))
         modules.append(GaussianNoise(std=self.noise))
-        modules.append(nn.ReLU())
+        modules.append(nn.Sigmoid())
         self.bipolar = nn.Sequential(*modules)
 
         self.kinetics = Kinetics()
+        if scale_kinet:
+            self.kinet_scale = ScaleShift(self.chans[0]*shape[0]*shape[1])
 
         modules = []
         modules.append(Reshape((-1,self.chans[0],shape[0], shape[1])))
-        modules.append(LinearStackedConv2d(self.chans[0],self.chans[1],kernel_size=self.ksizes[1], abs_bnorm=self.bnorm, 
+        modules.append(LinearStackedConv2d(self.chans[0],self.chans[1],kernel_size=self.ksizes[1], abs_bnorm=False, 
                                                                                 bias=self.bias, drop_p=self.drop_p))
         shape = update_shape(shape, self.ksizes[1])
         self.shapes.append(tuple(shape))
@@ -409,6 +411,8 @@ class KineticsModel(TDRModel):
         """
         fx = self.bipolar(x)
         fx, new_pop = self.kinetics(fx, pop[0])
+        if self.scale_kinet:
+            fx = self.kinet_scale(fx)
         fx = self.amacrine(fx)
         fx = self.ganglion(fx)
         if not self.training and self.infr_exp:

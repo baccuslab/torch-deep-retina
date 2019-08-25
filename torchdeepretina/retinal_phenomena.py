@@ -10,7 +10,7 @@ from itertools import repeat
 import torchdeepretina.batch_compute as bc
 import torchdeepretina.stimuli as stim
 import torchdeepretina.visualizations as viz
-from torchdeepretina.analysis import compute_sta
+from torchdeepretina.analysis import compute_sta, batch_compute_model_response
 from tqdm import tqdm, trange
 import torch
 
@@ -858,7 +858,7 @@ def filter_and_nonlinearity(model, contrast, layer_name='sequential.0',
 
     # Inspecting model response
     stim_tensor = torch.FloatTensor(stim.concat(stimulus))
-    model_response = bc.batch_compute_model_response(stim_tensor, model, 500, insp_keys={layer_name})
+    model_response = batch_compute_model_response(stim_tensor, model, 500, insp_keys={layer_name})
     if type(unit_index) == type(int()):
         response = model_response[layer_name][:,unit_index]
     elif len(unit_index) == 1:

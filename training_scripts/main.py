@@ -29,9 +29,9 @@ if __name__ == "__main__":
                 elif "ranges" == temp[0]:
                     hyperranges_file = temp[1]
             else:
-                if i == 0 or "hyperparams" in arg:
+                if i == 0:
                     hyperparams_file = arg
-                elif i == 1 or "hyperranges" in arg:
+                elif i == 1:
                     hyperranges_file = arg
     print()
     print("Using hyperparams file:", hyperparams_file)
@@ -76,17 +76,32 @@ if __name__ == "__main__":
             i,_,_ = select.select([sys.stdin], [],[],sleep_time)
             if not (i and sys.stdin.readline().strip().lower() == "n"):
                 hyps['starting_exp_num'] = nums[-1]+1
-            print("Using:", hyps['starting_exp_num'])
+            elif i and sys.stdin.readline().strip().lower() != "":
+                try:
+                    hyps['starting_exp_num'] = int(sys.stdin.readline().strip().lower())
+                except:
+                    pass
         else:
             print("You have "+str(sleep_time)+" seconds to cancel experiment name "+
                         hyps['exp_name']+" (num "+ str(hyps['starting_exp_num'])+"): ")
-            time.sleep(sleep_time)
+            i,_,_ = select.select([sys.stdin], [],[],sleep_time)
+            if i:
+                try:
+                    hyps['starting_exp_num'] = int(sys.stdin.readline().strip().lower())
+                except:
+                    pass
     else:
         if hyps['starting_exp_num'] is None:
             hyps['starting_exp_num'] = 0
         print("You have "+str(sleep_time)+" seconds to cancel experiment name "+
                     hyps['exp_name']+" (num "+ str(hyps['starting_exp_num'])+"): ")
-        time.sleep(sleep_time)
+        i,_,_ = select.select([sys.stdin], [],[],sleep_time)
+        if i:
+            try:
+                hyps['starting_exp_num'] = int(sys.stdin.readline().strip().lower())
+            except:
+                pass
+    print("Using start num:", hyps['starting_exp_num'])
     print()
 
     keys = list(hyp_ranges.keys())
