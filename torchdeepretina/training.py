@@ -11,11 +11,13 @@ import os.path as path
 from torchdeepretina.utils import get_cuda_info, save_checkpoint
 from torchdeepretina.datas import loadexpt, DataContainer, DataDistributor
 from torchdeepretina.models import *
+import torchdeepretina.analysis as analysis
 import time
 from tqdm import tqdm
 import math
 import torch.multiprocessing as mp
 from queue import Queue
+from collections import deque
 import psutil
 import gc
 import resource
@@ -55,192 +57,379 @@ class Trainer:
                 print("Caught error",e,"on", train_args[0]['exp_num'], "will retry in 100 seconds...")
                 sleep(100)
 
-    def train(self, hyps, model_hyps, device, verbose=False):
-        SAVE = hyps['save_folder']
-        if 'skip_nums' in hyps and len(hyps['skip_nums']) > 0 and hyps['exp_num'] in hyps['skip_nums']:
-            print("Skipping", SAVE)
-            results = {"save_folder":SAVE, "Loss":None, "ValAcc":None, "ValLoss":None, "TestPearson":None}
-            return results
-            
-        # Get Data
+    def get_data(self, hyps):
+        """
+        hyps: dict
+            dict of relevant hyperparameters
+        """
         img_depth, img_height, img_width = hyps['img_shape']
         train_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'], hyps['stim_type'],'train',img_depth,0))
         norm_stats = [train_data.stats['mean'], train_data.stats['std']] 
+
         test_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],hyps['stim_type'],'test',img_depth,0, 
                                                                             norm_stats=norm_stats))
         test_data.X = test_data.X[:500]
-        test_x = torch.from_numpy(test_data.X)
         test_data.y = test_data.y[:500]
+        return train_data, test_data
 
-        # Make model
-        model_hyps["n_units"] = test_data.y.shape[-1]
+    def get_model_and_distr(self, hyps, model_hyps, train_data):
+        """
+        hyps: dict
+            dict of relevant hyperparameters
+        model_hyps: dict
+            dict of relevant hyperparameters
+        train_data: DataContainer
+            a DataContainer of the training data as returned by self.get_data
+        """
         model = hyps['model_class'](**model_hyps)
-        model = model.to(device)
+        model = model.to(hyps['device'])
+        num_val = 10000
+        seq_len = 1 if not model.recurrent else hyps['recur_seq_len']
+        data_distr = DataDistributor(train_data, num_val, batch_size=hyps['batch_size'], shuffle=hyps['shuffle'], 
+                                                            recurrent=model.recurrent, seq_len=seq_len)
+        data_distr.torch()
+        return model, data_distr
 
-        # Initialize miscellaneous parameters 
-        if not os.path.exists(SAVE):
-            os.mkdir(SAVE)
-        LR = hyps['lr']
-        LAMBDA1 = hyps['l1']
-        LAMBDA2 = hyps['l2']
-        EPOCHS = hyps['n_epochs']
-        batch_size = hyps['batch_size']
-        with open(SAVE + "/hyperparams.txt",'w') as f:
+    def record_session(self, hyps, model):
+        """
+        hyps: dict
+            dict of relevant hyperparameters
+        model: torch nn.Module
+            the model to be trained
+        """
+        if not os.path.exists(hyps['save_folder']):
+            os.mkdir(hyps['save_folder'])
+        with open(os.path.join(hyps['save_folder'],"hyperparams.txt"),'w') as f:
             f.write(str(model)+'\n')
             for k in sorted(hyps.keys()):
                 f.write(str(k) + ": " + str(hyps[k]) + "\n")
-
-        with open(SAVE + "/hyperparams.json",'w') as f:
+        with open(os.path.join(hyps['save_folder'],"hyperparams.json"),'w') as f:
             temp_hyps = {k:v for k,v in hyps.items()}
             del temp_hyps['model_class']
             json.dump(temp_hyps, f)
 
-        # train/val split
-        num_val = 10000
-        shuffle = hyps['shuffle']
-        recurrent = model.recurrent
-        seq_len = 1
-        if recurrent:
-            seq_len = hyps['recur_seq_len']
-        data_distr = DataDistributor(train_data, num_val, batch_size=batch_size, shuffle=shuffle, 
-                                                            recurrent=recurrent, seq_len=seq_len)
-        data_distr.torch()
-    
-        # Make optimization objects (lossfxn, optimizer, scheduler)
+    def get_optim_objs(self, hyps, model):
+        """
+        hyps: dict
+            dict of relevant hyperparameters
+        model: torch nn.Module
+            the model to be trained
+        """
         if 'lossfxn' not in hyps:
             hyps['lossfxn'] = "PoissonNLLLoss"
         if hyps['lossfxn'] == "PoissonNLLLoss" and 'log_poisson' in hyps:
             loss_fn = globals()[hyps['lossfxn']](log_input=hyps['log_poisson'])
         else:
             loss_fn = globals()[hyps['lossfxn']]()
-        optimizer = torch.optim.Adam(model.parameters(), lr = LR, weight_decay = LAMBDA2)
+        optimizer = torch.optim.Adam(model.parameters(), lr = hyps['lr'], weight_decay = hyps['l2'])
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.1)
+        return optimizer, scheduler, loss_fn
 
-        # Train Loop
+    def get_hs(self, hyps, model, batch_size=None):
+        """
+        hyps: dict
+            dict of relevant hyperparameters
+        model: torch nn.Module
+            the model to be trained
+        batch_size: int
+        """
         hs = None
-        for epoch in range(EPOCHS):
-            print("Beginning Epoch", epoch, " -- ", SAVE)
+        device = hyps['device']
+        if model.recurrent:
+            if batch_size is None:
+                batch_size = hyps['batch_size']
+            hs = [torch.zeros(batch_size, *h).to(device) for h in model.h_shapes]
+            if model.kinetic:
+                hs[0][:,0] = hyps['intl_pop']
+                hs[1] = deque([],maxlen=hyps['recur_seq_len'])
+                for i in range(hyps['recur_seq_len']):
+                    hs[1].append(torch.zeros(batch_size, *model.h_shapes[1]).to(device))
+        return hs
+
+    def recurrent_eval(self, hyps, x, label, model, hs, loss_fn, teacher=None):
+        """
+        hyps: dict
+            dict of relevant hyperparameters
+        x: torch FloatTensor
+            a batch of the training data
+        label: torch FloatTensor
+            a batch of the training labels
+        model: torch nn.Module
+            the model to be trained
+        hs: list
+            the hidden states of the recurrent model as obtained through self.get_hs
+        """
+        hs_out = hs
+        batch_size = hyps['batch_size']
+        ys = []
+        answers = []
+        device = hyps['device']
+        teacher_device = device
+        if teacher is None:
+            teacher = lambda x: None
+            teacher_device = torch.device("cpu")
+        for ri in range(hyps['recur_seq_len']):
+            ins = x[:,ri]
+            y, hs_out = model(ins.to(device), hs_out)
+            ys.append(y.view(batch_size, 1, label.shape[-1]))
+            with torch.no_grad():
+                ans = teacher(x.to(teacher_device))
+            answers.append(ans)
+            if ri == 0 and not hyps['reset_hs']:
+                if model.kinetic:
+                    hs[0] = hs_out[0].data.clone()
+                    hs[1] = deque([h.data.clone() for h in hs[1]], maxlen=hyps['recur_seq_len'])
+                else:
+                    hs = [h.data.clone() for h in hs_out]
+        y = torch.cat(ys, dim=1)
+        error = loss_fn(y,label)/hyps['recur_seq_len']
+
+        # Teacher
+        if answers[0] is not None:
+            answers = torch.cat(answers, dim=1)
+            grade = hyps['teacher_coef']*F.mse_loss(y,answers.data)/hyps['recur_seq_len']
+            hyps['teacher_coef'] *= hyps['teacher_decay']
+        else:
+            grade = torch.zeros(1).to(device)
+
+        # Kinetics
+        if hyps['model_type'] == "KineticsModel" and model.kinetics.kfr + model.kinetics.ksi > 1:
+            error += ((1-(model.kinetics.kfr+model.kinetics.ksi))**2).mean()
+
+        return y, error, grade, hs
+
+    def static_eval(self, hyps, x, label, model, loss_fn, teacher=None):
+        """
+        hyps: dict
+            dict of relevant hyperparameters
+        x: torch FloatTensor
+            a batch of the training data
+        label: torch FloatTensor
+            a batch of the training labels
+        model: torch nn.Module
+            the model to be trained
+        teacher: torch nn.Module
+            optional teacher network
+        """
+        device = hyps['device']
+        y = model(x.to(device))
+        error = loss_fn(y,label)
+        if teacher is not None:
+            with torch.no_grad():
+                ans = teacher(x.to(device))
+            grade = F.mse_loss(y,ans.data)
+        else:
+            grade = torch.zeros(1).to(device)
+        return y,error,grade
+
+    def print_train_update(self, error, grade, l1, model, n_loops, i):
+        loss = error + grade + l1
+        s = "Loss: {:.5e} – ".format(loss.item())
+        if grade.item() > 0:
+            s += "Error: {:.5e} – Grade: {:.5e} – ".format(error.item(), grade.item())
+        if model.kinetic:
+            ps = model.kinetics.named_parameters()
+            s += " – ".join([str(name)+":"+str(round(p.data.item(),4)) for name,p in list(ps)]) + " – "
+        print(s, i, "/", n_loops, end="       \r")
+
+    def validate_recurrent(self, hyps, model, data_distr, hs, loss_fn, verbose=False):
+        """
+        hyps: dict
+            dict of relevant hyperparameters
+        model: torch nn.Module
+            the model to be trained
+        data_distr: DataDistributor
+            the data distribution object as obtained through self.get_model_and_distr
+        hs: list
+            the hidden states of the recurrent model as obtained through self.get_hs
+        loss_fn: loss function
+            the loss function
+        """
+        val_preds = []
+        val_targs = []
+        val_loss = 0
+        batch_size = hyps['batch_size']
+        n_loops = data_distr.val_shape[0]*batch_size
+        step_size = 1
+        device = hyps['device']
+        for b in range(batch_size):
+            for i, (val_x, val_y) in enumerate(data_distr.val_sample(step_size)):
+                # val_x (batch_size, seq_len, depth, height, width)
+                # val_y (batch_size, seq_len, n_ganlion)
+                outs, hs = model(val_x[b:b+1,0].to(device), hs)
+                val_y = val_y[:,0]
+                val_preds.append(outs[:,None,:].cpu().detach().numpy())
+                val_targs.append(val_y[b:b+1,None,:].cpu().detach().numpy())
+                val_loss += loss_fn(outs, val_y.to(device)).item()
+                if hyps['l1'] > 0:
+                    val_loss += (hyps['l1'] * torch.norm(outs, 1).float()/outs.shape[0]).item()
+                if verbose and i%(n_loops//10) == 0:
+                    print("{}/{}".format(b*data_distr.val_shape[0] + i,data_distr.val_shape[0]*batch_size), end="     \r")
+        return val_loss, val_preds, val_targs
+
+    def validate_static(self, hyps, model, data_distr, loss_fn, step_size=500, verbose=False):
+        """
+        hyps: dict
+            dict of relevant hyperparameters
+        model: torch nn.Module
+            the model to be trained
+        data_distr: DataDistributor
+            the data distribution object as obtained through self.get_model_and_distr
+        loss_fn: loss function
+            the loss function
+        step_size: int
+            optional size of batches when evaluating validation set
+        """
+        val_preds = []
+        val_targs = []
+        val_loss = 0
+        n_loops = data_distr.val_shape[0]//step_size
+        device = hyps['device']
+        for i, (val_x, val_y) in enumerate(data_distr.val_sample(step_size)):
+            outs = model(val_x.to(device)).detach()
+            val_preds.append(outs.cpu().detach().numpy())
+            val_targs.append(val_y.cpu().detach().numpy())
+            val_loss += loss_fn(outs, val_y.to(device)).item()
+            if hyps['l1'] > 0:
+                val_loss += (hyps['l1'] * torch.norm(outs, 1).float()/outs.shape[0]).item()
+            if verbose and i%(n_loops//10) == 0:
+                print("{}/{}".format(i*step_size,data_distr.val_y.shape[0]), end="     \r")
+        return val_loss, val_preds, val_targs
+
+    def train(self, hyps, model_hyps, device, verbose=False):
+        """
+        hyps: dict
+            dict of relevant hyperparameters
+        model_hyps: dict
+            dict of relevant hyperparameters
+        model: torch nn.Module
+            the model to be trained
+        train_data: DataContainer
+            a DataContainer of the training data as returned by self.get_data
+        """
+        # Initialize miscellaneous parameters 
+        torch.cuda.empty_cache()
+        hyps['device'] = device
+        batch_size = hyps['batch_size']
+        if 'skip_nums' in hyps and len(hyps['skip_nums']) > 0 and hyps['exp_num'] in hyps['skip_nums']:
+            print("Skipping", hyps['save_folder'])
+            results = {"save_folder":hyps['save_folder'], "Loss":None, "ValAcc":None, "ValLoss":None, "TestPearson":None}
+            return results
+
+        # Get Data, Make Model, Record Initial Hyps and Model
+        train_data, test_data = self.get_data(hyps)
+        model_hyps["n_units"] = train_data.y.shape[-1]
+        model, data_distr = self.get_model_and_distr(hyps, model_hyps, train_data)
+        self.record_session(hyps, model)
+        teacher = None
+        if 'teacher' in hyps and hyps['teacher'] is not None:
+            teacher = analysis.read_model_file(hyps['teacher'])
+            teacher.to(device)
+            teacher.eval()
+            #if hyps['teacher_layers'] is not None:
+
+        # Make optimization objects (lossfxn, optimizer, scheduler)
+        optimizer, scheduler, loss_fn = self.get_optim_objs(hyps, model)
+
+        # Training
+        for epoch in range(hyps['n_epochs']):
+            print("Beginning Epoch", epoch, " -- ", hyps['save_folder'])
             print()
             n_loops = data_distr.n_loops
-            if model.recurrent:
-                hs = [torch.zeros(batch_size, *h).to(device) for h in model.h_shapes]
-                if hyps['model_type'] == "KineticsModel":
-                    hs[0][:,0] = 1
+            hs = self.get_hs(hyps, model)
             model.train(mode=True)
-            indices = torch.randperm(data_distr.train_shape[0]).long()
-
-            losses = []
             epoch_loss = 0
-            stats_string = 'Epoch ' + str(epoch) + " -- " + SAVE + "\n"
-            
+            stats_string = 'Epoch ' + str(epoch) + " -- " + hyps['save_folder'] + "\n"
             starttime = time.time()
-            activity_l1 = torch.zeros(1).to(device)
+
+            # Train Loop
             for i,(x,label) in enumerate(data_distr.train_sample()):
                 optimizer.zero_grad()
-                label = label.float()
-                label = label.to(device)
+                label = label.float().to(device)
 
-                # Recurrent loop
-                if hs is not None:
-                    seq_len = hyps['recur_seq_len']
-                    hs_out = hs
-                    ys = []
-                    for ri in range(seq_len):
-                        ins = x[:,ri]
-                        y, hs_out = model(ins.to(device), hs_out)
-                        ys.append(y.view(batch_size, 1, label.shape[-1]))
-                        if ri == 0:
-                            hs = [h.clone() for h in hs]
-                    y = torch.cat(ys, dim=1)
-                    error = loss_fn(y,label)/seq_len
-                    if hyps['model_type'] == "KineticsModel" and model.kinetics.kfr + model.kinetics.ksi > 1:
-                        error += ((1-(model.kinetics.kfr+model.kinetics.ksi))**2).mean()
+                # Error Evaluation
+                if model.recurrent:
+                    y,error,grade,hs = self.recurrent_eval(hyps, x, label, model, hs, loss_fn, teacher=teacher)
                 else:
-                    y = model(x.to(device))
-                    error = loss_fn(y,label)
+                    y,error,grade = self.static_eval(hyps, x, label, model, loss_fn, teacher=teacher)
+                activity_l1 = torch.zeros(1).to(device) if hyps['l1']<=0 else hyps['l1'] * torch.norm(y, 1).float().mean()
 
-                if LAMBDA1 > 0:
-                    activity_l1 = LAMBDA1 * torch.norm(y, 1).float().mean()
-                loss = error + activity_l1
+                # Backwards Pass
+                loss = error + activity_l1 + grade
                 loss.backward()
                 optimizer.step()
+
                 epoch_loss += loss.item()
                 if verbose:
-                    print("Loss:", round(loss.item(), 6), " -- ", i, "/", n_loops, end="       \r")
-                if math.isnan(epoch_loss) or math.isinf(epoch_loss):
+                    self.print_train_update(error, grade, activity_l1, model, n_loops, i)
+                if math.isnan(epoch_loss) or math.isinf(epoch_loss) or hyps['exp_name']=="test":
                     break
+
+            # Clean Up Train Loop
             avg_loss = epoch_loss/n_loops
             stats_string += 'Avg Loss: ' + str(avg_loss) + " -- exec time:"+ str(time.time() - starttime) +"\n"
-
-            #validate model
             del x
             del y
             del label
+
+            # Validation
             model.eval()
             with torch.no_grad():
-                val_preds = []
-                val_targs = []
-                val_loss = 0
+
+                # Miscellaneous Initializations
                 if model.recurrent:
                     step_size = 1
-                    hs = [torch.zeros(step_size, *h).to(device) for h in model.h_shapes]
-                    n_loops = data_distr.val_shape[0]
-                    if hyps['model_type'] == "KineticsModel":
-                        hs[0][:,0] = 1
+                    n_loops = data_distr.val_shape[0]*batch_size
+                    hs = self.get_hs(hyps, model, batch_size=step_size)
                 else:
                     step_size = 500
                     n_loops = data_distr.val_shape[0]//step_size
                 if verbose:
                     print()
                     print("Validating")
-                for i, (val_x, val_y) in enumerate(data_distr.val_sample(step_size)):
-                    if hs is not None:
-                        # val_x (batch_size, seq_len, depth, height, width)
-                        # val_y (batch_size, seq_len, n_ganlion)
-                        outs, hs = model(val_x[:,0].to(device), hs)
-                        val_y = val_y[:,0]
-                        val_preds.append(outs[:,None,:].cpu().detach().numpy())
-                        val_targs.append(val_y[:,None,:].cpu().detach().numpy())
-                    else:
-                        outs = model(val_x.to(device)).detach()
-                        val_preds.append(outs.cpu().detach().numpy())
-                        val_targs.append(val_y.cpu().detach().numpy())
-                    val_loss += loss_fn(outs, val_y.to(device)).item()
-                    if LAMBDA1 > 0:
-                        val_loss += (LAMBDA1 * torch.norm(outs, 1).float()/outs.shape[0]).item()
-                    if verbose and i%(n_loops//10) == 0:
-                        print("{}/{}".format(i,data_distr.val_y.shape[0]), end="     \r")
+
+                # Validation Block
+                if model.recurrent:
+                    val_loss, val_preds, val_targs = self.validate_recurrent(hyps, model, data_distr, hs,
+                                                                                loss_fn, verbose=verbose)
+                else:
+                    val_loss, val_preds, val_targs = self.validate_static(hyps, model, data_distr, loss_fn,
+                                                                       step_size=step_size, verbose=verbose)
+
+                # Validation Evaluation
                 val_loss = val_loss/n_loops
                 n_units = data_distr.val_y.shape[-1]
-                if recurrent:
+                if model.recurrent:
                     val_preds = np.concatenate(val_preds, axis=1).reshape((-1,n_units))
                     val_targs = np.concatenate(val_targs, axis=1).reshape((-1,n_units))
                 else:
                     val_preds = np.concatenate(val_preds, axis=0)
-                    val_targs = np.concatentate(val_targs, axis=0)
+                    val_targs = np.concatenate(val_targs, axis=0)
                 pearsons = []
                 for cell in range(val_preds.shape[-1]):
                     pearsons.append(pearsonr(val_preds[:, cell], val_targs[:,cell])[0])
                 stats_string += "Val Cell Pearsons:" + " - ".join([str(p) for p in pearsons])+'\n'
                 val_acc = np.mean(pearsons)
                 stop = self.stop_early(val_acc)
+
+                # Exp Validation
                 exp_val_acc = None
                 if hyps["log_poisson"] and hyps['softplus'] and not model.infr_exp:
                     val_preds = np.exp(val_preds)
                     for cell in range(val_preds.shape[-1]):
                         pearsons.append(pearsonr(val_preds[:, cell], val_targs[:,cell])[0])
                     exp_val_acc = np.mean(pearsons)
+
+                # Clean Up
                 stats_string += "Avg Val Pearson: {} -- Val Loss: {} -- Exp Val: {}\n".format(val_acc, val_loss, exp_val_acc)
                 scheduler.step(val_loss)
                 del val_preds
-                del outs
 
-                if hs is not None:
-                    avg_pearson = 0
-                else:
+                # Validation on Test Subset (Static Only)
+                avg_pearson = 0
+                if not model.recurrent:
+                    test_x = torch.from_numpy(test_data.X)
                     test_obs = model(test_x.to(device)).cpu().detach().numpy()
-
-                    avg_pearson = 0
                     rng = range(test_obs.shape[-1])
                     if verbose:
                         rng = tqdm(rng)
@@ -253,7 +442,8 @@ class Trainer:
                     avg_pearson = avg_pearson / float(test_obs.shape[-1])
                     stats_string += "Avg Test Pearson: "+ str(avg_pearson) + "\n"
                     del test_obs
-    
+
+            # Save Model Snapshot
             optimizer.zero_grad()
             save_dict = {
                 "model_type": hyps['model_type'],
@@ -271,7 +461,9 @@ class Trainer:
             for k in hyps.keys():
                 if k not in save_dict:
                     save_dict[k] = hyps[k]
-            save_checkpoint(save_dict, SAVE, 'test', del_prev=True)
+            save_checkpoint(save_dict, hyps['save_folder'], 'test', del_prev=True)
+
+            # Print Epoch Stats
             gc.collect()
             max_mem_used = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             stats_string += "Memory Used: {:.2f} mb".format(max_mem_used / 1024)+"\n"
@@ -280,8 +472,9 @@ class Trainer:
             if math.isnan(avg_loss) or math.isinf(avg_loss) or stop:
                 break
 
-        results = {"save_folder":SAVE, "Loss":avg_loss, "ValAcc":val_acc, "ValLoss":val_loss, "TestPearson":avg_pearson}
-        with open(SAVE + "/hyperparams.txt",'a') as f:
+        # Final save
+        results = {"save_folder":hyps['save_folder'], "Loss":avg_loss, "ValAcc":val_acc, "ValLoss":val_loss, "TestPearson":avg_pearson}
+        with open(hyps['save_folder'] + "/hyperparams.txt",'a') as f:
             f.write("\n" + " ".join([str(k)+":"+str(results[k]) for k in sorted(results.keys())]) + '\n')
         return results
 
@@ -444,8 +637,35 @@ def hyper_search(hyps, hyp_ranges, keys, device, early_stopping=10, stop_toleran
             results = " -- ".join([str(k)+":"+str(results[k]) for k in sorted(results.keys())])
             f.write("\n"+results+"\n")
 
+class ModulePackage:
+    def __init__(self, model, layer_keys):
+        self.model = model
+        self.layer_keys = set(layer_keys)
+        self.layers = dict()
+        self.handles = []
+        for name, mod in model.named_modules():
+            if name in self.layer_keys:
+                self.handles.append(mod.register_forward_hook(self.get_hook(name)))
 
+    def get_hook(self, layer_key):
+        def hook(module, inp, out):
+            self.layers[layer_key] = out
+        return hook
 
+    def remove_hooks(self):
+        for h in self.handles:
+            h.remove()
+        self.handles = []
 
+    def detach_all(self):
+        self.remove_hooks()
+        for k in self.layers.keys():
+            try:
+                self.layers[k].detach().cpu()
+                del self.layers[k]
+            except:
+                pass
 
+    def __call__(self, x):
+        return self.model(x)
 
