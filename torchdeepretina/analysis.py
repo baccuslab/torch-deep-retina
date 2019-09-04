@@ -300,7 +300,7 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None):
             fx = outs[:, cell_idx[0], cell_idx[1], cell_idx[2]]
         fx = fx.mean()
         fx.backward()
-        grads.append(X[idx:idx+batch_size].grad.data.cpu().detach().numpy())
+        grads.append(X.grad[idx:idx+batch_size].data.cpu().detach().numpy())
         hook_handle.remove()
         outs = torch.zeros(outs.shape).to(device)
         def forward_hook(module, inps, outputs):
