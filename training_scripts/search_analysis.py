@@ -36,27 +36,27 @@ DEVICE = torch.device("cuda:0")
 def normalize(x):
     return (x-x.mean())/(x.std()+1e-7)
 
-def retinal_phenomena_figs(model):
+def retinal_phenomena_figs(model, filt_depth=40):
     figs = []
     fig_names = []
     metrics = dict()
 
-    (fig, (ax0,ax1)), X, resp = rp.step_response(model)
+    (fig, (ax0,ax1)), X, resp = rp.step_response(model, filt_depth=filt_depth)
     figs.append(fig)
     fig_names.append("step_response")
     metrics['step_response'] = None
 
-    (fig, (ax0,ax1)), X, resp, osr_resp_proportion = rp.osr(model, duration=1)
+    (fig, (ax0,ax1)), X, resp, osr_resp_proportion = rp.osr(model, duration=1, filt_depth=filt_depth)
     figs.append(fig)
     fig_names.append("osr")
     metrics['osr'] = osr_resp_proportion 
 
-    (fig, (ax0,ax1)), X, resp = rp.reversing_grating(model)
+    (fig, (ax0,ax1)), X, resp = rp.reversing_grating(model, filt_depth=filt_depth)
     figs.append(fig)
     fig_names.append("reversing_grating")
     metrics['reversing_grating'] = None
 
-    (fig, (ax0,ax1)), envelope, responses = rp.contrast_adaptation(model, .35, .05)
+    (fig, (ax0,ax1)), envelope, responses = rp.contrast_adaptation(model, .35, .05, filt_depth=filt_depth)
     figs.append(fig)
     fig_names.append("contrast_adaptation")
     metrics['contrast_adaptation'] = None
@@ -69,19 +69,19 @@ def retinal_phenomena_figs(model):
     #fig_names.append("contrast_fig")
     #metrics['contrast_fig'] = None
 
-    (fig, ax), (speed_left, speed_right), (rtl, resp_rtl), (ltr, resp_ltr), avg_resp = rp.motion_reversal(model)
+    (fig, ax), (speed_left, speed_right), (rtl, resp_rtl), (ltr, resp_ltr), avg_resp = rp.motion_reversal(model, filt_depth=filt_depth)
     figs.append(fig)
     fig_names.append("motion_reversal")
     metrics['motion_reversal'] = None
 
-    tup = rp.motion_anticipation(model)
+    tup = rp.motion_anticipation(model, filt_depth=filt_depth)
     (fig, ax), (speed_left, speed_right), (c_right, stim_right, resp_right), (c_left, stim_left, resp_left), (flash_centers, flash_responses) = tup
     figs.append(fig)
     fig_names.append("motion_anticipation")
     #metrics['motion_anticipation'] = (symmetry, continuity, peak_height, right_anticipation, left_anticipation)
     metrics['motion_anticipation'] = None
 
-    fig, diff_vid, global_vid, diff_response, global_response = rp.oms_random_differential(model)
+    fig, diff_vid, global_vid, diff_response, global_response = rp.oms_random_differential(model, filt_depth=filt_depth)
     figs.append(fig)
     fig_names.append("oms")
     oms_ratios = global_response.mean(0)/diff_response.mean(0)
@@ -105,7 +105,7 @@ def get_insp_layers(model, hyps):
             return insp_layers
     return ['sequential.2', 'sequential.8']
 
-def load_interneuron_data(root_path="~/interneuron_data/"):
+def load_interneuron_data(root_path="~/interneuron_data/", filter_length=40):
     # Load data
     # num_pots stores the number of cells per stimulus
     # mem_pots stores the membrane potential
@@ -113,7 +113,6 @@ def load_interneuron_data(root_path="~/interneuron_data/"):
     files = ['bipolars_late_2012.h5', 'bipolars_early_2012.h5', 'amacrines_early_2012.h5', 
              'amacrines_late_2012.h5', 'horizontals_early_2012.h5', 'horizontals_late_2012.h5']
     files = [os.path.expanduser(root_path + name) for name in files]
-    filter_length = 40
     window_size = 2
     num_pots = []
     stims = dict()
@@ -137,7 +136,7 @@ def load_interneuron_data(root_path="~/interneuron_data/"):
             num_pots.append(num)
     return num_pots, stims, mem_pots, files
 
-def analyze_model(folder, interneuron_data, test_data=None, main_dir="../training_scripts/", record_figs=True):
+def analyze_model(folder, interneuron_data=None, test_data=None, main_dir="../training_scripts/", record_figs=True):
     """
     Does the model analysis for the saved model.
 
@@ -146,9 +145,6 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
 
     """
     starttime = time.time()
-    # Read interneuron data
-    # num_pots is the number of recorded potentials for each data file
-    num_pots, stims, mem_pots, intrnrn_files = interneuron_data
     
     batch_compute_size = 500
     stats = dict()
@@ -214,6 +210,7 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
     
     model_hyps = data['model_hyps']
     chans = model_hyps['chans']
+    filt_depth = model_hyps['img_shape'][0]
     
     # Load data
     try:
@@ -229,9 +226,10 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
     except:
         norm_stats = [51.49175, 53.62663279042969]
 
-    test_data = loadexpt(dataset,cells,stim_type,'test',40,0, norm_stats=norm_stats)
+    if test_data is None:
+        test_data = loadexpt(dataset,cells,stim_type,'test',filt_depth,0,norm_stats=norm_stats)
     test_x = torch.from_numpy(test_data.X)
-    
+
     stats['final_loss'] = losses[-1]
     stats['final_val'] = val_losses[-1]
     stats['val_acc'] = val_accs[-1]
@@ -306,7 +304,7 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
         plt.savefig(os.path.join(folder, "acc_curve.png"))
         
         ## Get retinal phenomena plots
-        figs, fig_names, metrics = retinal_phenomena_figs(model)
+        figs, fig_names, metrics = retinal_phenomena_figs(model, filt_depth=filt_depth)
 
         for fig, name in zip(figs, fig_names):
             save_name = name + ".png"
@@ -318,11 +316,17 @@ def analyze_model(folder, interneuron_data, test_data=None, main_dir="../trainin
         #stats['std_oms_ratio'] = np.std(oms_ratios)
     
     print("Calculating interneuron model responses...")
+    # Read interneuron data
+    # num_pots is the number of recorded potentials for each data file
+    if interneuron_data is None:
+        interneuron_data = load_interneuron_data(filter_length=filt_depth)
+    num_pots, stims, mem_pots, intrnrn_files = interneuron_data
+    
     # Computes the model responses for each stimulus 
     # and interneuron type labels y_true (0 for bipolar, 1 for amacrine, 2 for horizontal)
     y_true = []
     cell_ids = []
-    filter_length = 40
+    filter_length = filt_depth
     model_responses = dict()
     for i in tqdm(range(len(intrnrn_files))):
         file_name = intrnrn_files[i]
@@ -501,14 +505,6 @@ def analyze_models(grand_folder, model_folders):
         "correlation", "layer", "channel", "row", "col"
     ]
 
-    #Load data
-    intrnrn_data = load_interneuron_data()
-    cells = "all"
-    dataset = "15-10-07"
-    stim_type = "naturalscene"
-    norm_stats = [51.49175, 53.62663279042969]
-    test_data = loadexpt(dataset,cells,stim_type,'test',40,0, norm_stats=norm_stats)
-    
     # Create existing folder sets
     main_existing_folders = set()
     table_path = os.path.join(grand_folder, "model_data.csv")
@@ -533,7 +529,7 @@ def analyze_models(grand_folder, model_folders):
             continue
         model_stats = dict()
         print("\nAnalyzing", folder, " -- ", len(model_folders) - fcount, "folders left...")
-        model_stats[folder] = analyze_model(folder, intrnrn_data, test_data=test_data,
+        model_stats[folder] = analyze_model(folder, interneuron_data=None, test_data=None,
                                                         record_figs=True)
 
         # Record all intrnrn data for later analysis
