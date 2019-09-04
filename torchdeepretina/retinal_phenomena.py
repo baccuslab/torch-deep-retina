@@ -7,7 +7,6 @@ from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 import collections
 from tqdm import tqdm
 from itertools import repeat
-import torchdeepretina.batch_compute as bc
 import torchdeepretina.stimuli as stim
 import torchdeepretina.visualizations as viz
 from torchdeepretina.analysis import compute_sta, batch_compute_model_response
@@ -17,9 +16,9 @@ import torch
 DEVICE = torch.device("cuda:0")
 device = DEVICE
 
-def step_response(model, duration=100, delay=50, nsamples=200, intensity=-1.):
+def step_response(model, duration=100, delay=50, nsamples=200, intensity=-1., filt_depth=40):
     """Step response"""
-    X = stim.concat(stim.flash(duration, delay, nsamples, intensity=intensity))
+    X = stim.concat(stim.flash(duration, delay, nsamples, intensity=intensity), nh=filt_depth)
     X_torch = torch.from_numpy(X).to(DEVICE)
     with torch.no_grad():
         if model.recurrent:
@@ -104,10 +103,10 @@ def paired_flash(model, ifis=(2, 20), duration=1, intensity=-2.0, total=100, del
     return map(np.stack, (s1, r1, s2, r2, stimuli, responses))
 
 
-def reversing_grating(model, size=5, phase=0.):
+def reversing_grating(model, size=5, phase=0., filt_depth=40):
     """A reversing grating stimulus"""
     grating = stim.grating(barsize=(size, 0), phase=(phase, 0.0), intensity=(1.0, 1.0), us_factor=1, blur=0)
-    X = stim.concat(stim.reverse(grating, halfperiod=50, nsamples=300))
+    X = stim.concat(stim.reverse(grating, halfperiod=50, nsamples=300), nh=filt_depth)
     X_torch = torch.from_numpy(X).to(DEVICE)
     with torch.no_grad():
         if model.recurrent:
@@ -124,7 +123,7 @@ def reversing_grating(model, size=5, phase=0.):
     return (fig, (ax0,ax1)), X, resp
 
 
-def contrast_adaptation(model, c0, c1, duration=50, delay=50, nsamples=140, nrepeats=10):
+def contrast_adaptation(model, c0, c1, duration=50, delay=50, nsamples=140, nrepeats=10, filt_depth=40):
     """Step change in contrast"""
 
     # the contrast envelope
@@ -135,7 +134,7 @@ def contrast_adaptation(model, c0, c1, duration=50, delay=50, nsamples=140, nrep
     responses = []
     with torch.no_grad():
         for _ in trange(nrepeats):
-            x = torch.from_numpy(stim.concat(np.random.randn(*envelope.shape) * envelope)).to(DEVICE)
+            x = torch.from_numpy(stim.concat(np.random.randn(*envelope.shape) * envelope, nh=filt_depth)).to(DEVICE)
             if model.recurrent:
                 hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
                 resps = []
@@ -153,7 +152,7 @@ def contrast_adaptation(model, c0, c1, duration=50, delay=50, nsamples=140, nrep
 
     return (fig, (ax0,ax1)), envelope, responses
 
-def oms_random_differential(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=8, background_velocity=.3, foreground_velocity=.5, seed=None, bar_size=2, inner_bar_size=None):
+def oms_random_differential(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=8, background_velocity=.3, foreground_velocity=.5, seed=None, bar_size=2, inner_bar_size=None, filt_depth=40):
     """
     Plays a video of differential motion by keeping a circular window fixed in space on a 2d background grating.
     A grating exists behind the circular window that moves counter to the background grating. Each grating is jittered
@@ -212,7 +211,7 @@ def oms_random_differential(model, duration=5, sample_rate=30, pre_frames=40, po
         diff_response = None
         global_response = None
     else:
-        x = torch.FloatTensor(stim.concat(diff_vid)).to(DEVICE)
+        x = torch.FloatTensor(stim.concat(diff_vid, nh=filt_depth)).to(DEVICE)
         with torch.no_grad():
             if model.recurrent:
                 hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
@@ -225,7 +224,7 @@ def oms_random_differential(model, duration=5, sample_rate=30, pre_frames=40, po
                 resp = model(x)
         diff_response = resp.cpu().detach().numpy()
 
-        x = torch.FloatTensor(stim.concat(global_vid)).to(DEVICE)
+        x = torch.FloatTensor(stim.concat(global_vid, nh=filt_depth)).to(DEVICE)
         with torch.no_grad():
             if model.recurrent:
                 hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
@@ -320,7 +319,7 @@ def periodic_differential(duration=5, sample_rate=30, pre_frames=40,
         vid.append(global_vid)
     return np.concatenate(vid, axis=0)
 
-def oms_differential(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=8, background_velocity=0, foreground_velocity=.5, seed=None, bar_size=2, inner_bar_size=None):
+def oms_differential(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=8, background_velocity=0, foreground_velocity=.5, seed=None, bar_size=2, inner_bar_size=None, filt_depth=40):
     """
     Plays a video of differential motion by keeping a circular window fixed in space on a 2d background grating.
     A grating exists behind the circular window that moves counter to the background grating. 
@@ -379,7 +378,7 @@ def oms_differential(model, duration=5, sample_rate=30, pre_frames=40, post_fram
         diff_response = None
         global_response = None
     else:
-        x = torch.FloatTensor(stim.concat(diff_vid)).to(DEVICE)
+        x = torch.FloatTensor(stim.concat(diff_vid, nh=filt_depth)).to(DEVICE)
         with torch.no_grad():
             if model.recurrent:
                 hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
@@ -392,7 +391,7 @@ def oms_differential(model, duration=5, sample_rate=30, pre_frames=40, post_fram
                 resp = model(x)
         diff_response = resp.cpu().detach().numpy()
 
-        x = torch.FloatTensor(stim.concat(global_vid)).to(DEVICE)
+        x = torch.FloatTensor(stim.concat(global_vid, nh=filt_depth)).to(DEVICE)
         with torch.no_grad():
             if model.recurrent:
                 hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
@@ -415,7 +414,7 @@ def oms_differential(model, duration=5, sample_rate=30, pre_frames=40, post_fram
         global_response = global_response[pre_frames-40:tot_frames-post_frames]
     return fig, diff_vid, global_vid, diff_response, global_response
 
-def oms_jitter(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=5, seed=None, bar_size=2, inner_bar_size=None, jitter_freq=.5, step_size=1):
+def oms_jitter(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=5, seed=None, bar_size=2, inner_bar_size=None, jitter_freq=.5, step_size=1, filt_depth=40):
     """
     Plays a video of a jittered circle window onto a grating different than that of the background.
 
@@ -462,7 +461,7 @@ def oms_jitter(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40,
         fig = None
         response = None
     else:
-        x = torch.FloatTensor(stim.concat(vid)).to(DEVICE)
+        x = torch.FloatTensor(stim.concat(vid, nh=filt_depth)).to(DEVICE)
         with torch.no_grad():
             if model.recurrent:
                 hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
@@ -551,7 +550,7 @@ def oms(duration=5, sample_rate=0.01, transition_duration=0.07, silent_duration=
     return movie
 
 
-def osr(model=None, duration=2, interval=10, nflashes=5, intensity=-2.0):
+def osr(model=None, duration=2, interval=10, nflashes=5, intensity=-2.0, filt_depth=40):
     """Omitted stimulus response
     Parameters
     ----------
@@ -570,7 +569,7 @@ def osr(model=None, duration=2, interval=10, nflashes=5, intensity=-2.0):
     omitted_flash = stim.flash(duration, interval, interval * 2, intensity=0.0)
     flash_group = list(repeat(single_flash, nflashes))
     zero_pad = np.zeros((interval, 1, 1))
-    X = stim.concat(zero_pad, *flash_group, omitted_flash, *flash_group, nx=50, nh=40)
+    X = stim.concat(zero_pad, *flash_group, omitted_flash, *flash_group, nx=50, nh=filt_depth)
     X[X!=0] = 1
     if model is not None:
         X_torch = torch.from_numpy(X).to(DEVICE)
@@ -606,7 +605,7 @@ def osr(model=None, duration=2, interval=10, nflashes=5, intensity=-2.0):
 
     return (fig, (ax0,ax1)), X, resp, resp_ratio
 
-def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_duration=2):
+def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_duration=2, filt_depth=40):
     """Generates the Berry motion anticipation stimulus
     Stimulus from the paper:
     Anticipation of moving stimuli by the retina,
@@ -662,7 +661,7 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
     flash_responses = []
     with torch.no_grad():
         for f in tqdm(flashes):
-            x = torch.from_numpy(stim.concat(f)).to(DEVICE)
+            x = torch.from_numpy(stim.concat(f, nh=filt_depth)).to(DEVICE)
             if model.recurrent:
                 hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
                 resps = []
@@ -726,7 +725,7 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
 
     return (fig, ax), (speed_left, speed_right), (c_right, stim_right, resp_right),(c_left, stim_left, resp_left), (flash_centers, flash_responses)#, (symmetry, continuity, peak_height, right_anticipation, left_anticipation)
 
-def motion_reversal(model, scale_factor=55, velocity=0.08, width=2):
+def motion_reversal(model, scale_factor=55, velocity=0.08, width=2, filt_depth=40):
     """
     Moves a bar to the right and reverses it in the center, then does the same to the left. 
     The responses are averaged.
@@ -768,7 +767,7 @@ def motion_reversal(model, scale_factor=55, velocity=0.08, width=2):
         cutoff = right_halfway-left_halfway
         rtl = rtl[cutoff:-cutoff]
  
-    rtl_blocks = stim.concat(rtl)
+    rtl_blocks = stim.concat(rtl, nh=filt_depth)
     rtl_blocks = torch.from_numpy(rtl_blocks).to(DEVICE)
     with torch.no_grad():
         if model.recurrent:
@@ -782,7 +781,7 @@ def motion_reversal(model, scale_factor=55, velocity=0.08, width=2):
             resp = model(rtl_blocks)
     resp_rtl = resp.cpu().detach().numpy()
 
-    ltr_blocks = stim.concat(ltr)
+    ltr_blocks = stim.concat(ltr, nh=filt_depth)
     ltr_blocks = torch.from_numpy(ltr_blocks).to(DEVICE)
     with torch.no_grad():
         if model.recurrent:
@@ -846,7 +845,7 @@ def normalize_filter(sta, stimulus, target_sd):
     return (theta * sta, theta, res.fun)
 
 def filter_and_nonlinearity(model, contrast, layer_name='sequential.0',
-                                  unit_index=(0,15,15), nonlinearity_type='bin'):
+                                  unit_index=(0,15,15), nonlinearity_type='bin', filt_depth=40):
     # Computing STA
     sta = compute_sta(model, contrast, layer_name, unit_index)
     sta = np.flip(sta, axis=0)
@@ -857,7 +856,7 @@ def filter_and_nonlinearity(model, contrast, layer_name='sequential.0',
     filtered_stim = ft.linear_response(normed_sta, stimulus)
 
     # Inspecting model response
-    stim_tensor = torch.FloatTensor(stim.concat(stimulus))
+    stim_tensor = torch.FloatTensor(stim.concat(stimulus, nh=filt_depth))
     model_response = batch_compute_model_response(stim_tensor, model, 500, insp_keys={layer_name})
     if type(unit_index) == type(int()):
         response = model_response[layer_name][:,unit_index]
