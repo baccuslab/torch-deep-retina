@@ -830,6 +830,37 @@ class InvertSign(nn.Module):
     def forward(self, x):
         return -x
 
+class Add(nn.Module):
+    def __init__(self, additive, trainable=False):
+        super().__init__()
+        self.trainable = trainable
+        self.additive = nn.Parameter(torch.ones(1)*additive, requires_grad=trainable)
+
+    def forward(self, x):
+        if not self.trainable and self.additive.requires_grad:
+            self.additive.requires_grad = False
+        return x+self.additive
+
+class Clamp(nn.Module):
+    def __init__(self, low, high):
+        super().__init__()
+        self.low = low
+        self.high = high
+
+    def forward(self, x):
+        return torch.clamp(x, self.low, self.high)
+
+class Multiply(nn.Module):
+    def __init__(self, multiplier, trainable=False):
+        super().__init__()
+        self.trainable = trainable
+        self.multiplier = nn.Parameter(torch.ones(1)*multiplier, requires_grad=trainable)
+
+    def forward(self, x):
+        if not self.trainable and self.multiplier.requires_grad:
+            self.multiplier.requires_grad = False
+        return x+self.multiplier
+
 class Flatten(nn.Module):
     def __init__(self):
         super(Flatten, self).__init__()
@@ -972,17 +1003,24 @@ class DalesSkipConnection(nn.Module):
         return torch.cat([x,fx], dim=1)
 
 class Kinetics(nn.Module):
-    def __init__(self):
+    def __init__(self, dt=0.001):
         super().__init__()
         self.ka = nn.Parameter(torch.rand(1).abs()/10)
         self.kfi = nn.Parameter(torch.rand(1).abs()/10)
         self.kfr = nn.Parameter(torch.rand(1).abs()/10)
         self.ksi = nn.Parameter(torch.rand(1).abs()/10)
         self.ksr = nn.Parameter(torch.rand(1).abs()/10)
+        self.dt = 0.001
+
+    def extra_repr(self):
+        return "dt={}".format(self.dt)
 
     def clamp_params(self, low, high):
-        for param in self.parameters():
-            param.data = torch.clamp(param.data, low, high)
+        self.ka.data  = torch.clamp(self.ka.data,  low, high)
+        self.kfi.data = torch.clamp(self.kfi.data, low, high)
+        self.kfr.data = torch.clamp(self.kfr.data, low, high)
+        self.ksi.data = torch.clamp(self.ksi.data, low, high)
+        self.ksr.data = torch.clamp(self.ksr.data, low, high)
 
     def forward(self, rate, pop):
         """
@@ -996,13 +1034,13 @@ class Kinetics(nn.Module):
                 2: I1
                 3: I2
         """
-        self.clamp_params(1e-5,.99999)
-        dt = 0.001
-        ka  = self.ka*rate*pop[:,0]
-        kfi = self.kfi*pop[:,1]
-        kfr = self.kfr*pop[:,2]
-        ksi = self.ksi*pop[:,2]
-        ksr = self.ksr*rate*pop[:,3]
+        self.clamp_params(-.99999,.99999)
+        dt = self.dt
+        ka  = self.ka.abs()*rate*pop[:,0]
+        kfi = self.kfi.abs()*pop[:,1]
+        kfr = self.kfr.abs()*pop[:,2]
+        ksi = self.ksi.abs()*pop[:,2]
+        ksr = self.ksr.abs()*rate*pop[:,3]
         new_pop = torch.zeros_like(pop)
         new_pop[:,0] = pop[:,0] + dt*(-ka + kfr)
         new_pop[:,1] = pop[:,1] + dt*(-kfi + ka)
@@ -1010,7 +1048,34 @@ class Kinetics(nn.Module):
         new_pop[:,3] = pop[:,3] + dt*(-ksr + ksi)
         return new_pop[:,1], new_pop
 
+class RunningNorm(nn.Module):
+    pass
+    #def __init__(self, n_units, bias=True, abs_bias=False, momentum=.1, eps=1e-5):
+    #    super().__init__()
+    #    self.n_units = n_units
+    #    self.momentum = momentum
+    #    self.eps = eps
+    #    self.running_mean = nn.Parameter(torch.zeros(n_units))
+    #    self.running_var = nn.Parameter(torch.ones(n_units))
+    #    self.scale = nn.Parameter(torch.ones(n_units).float())
+    #    self.bias = bias
+    #    self.abs_bias = abs_bias
+    #    self.shift = nn.Parameter(torch.zeros(n_units).float())
 
+    #def forward(self, x):
+    #    assert len(x.shape) == 2
+    #    self.shift.requires_grad = self.bias
+    #    if self.abs_bias:
+    #        return torch.nn.functional.batch_norm(x, self.running_mean.data, self.running_var.data,
+    #                                        weight=self.scale.abs(), bias=self.shift.abs(), eps=self.eps, 
+    #                                        momentum=self.momentum, training=self.training)
+    #    return torch.nn.functional.batch_norm(x, self.running_mean.data, self.running_var.data,
+    #                                        weight=self.scale.abs(), bias=self.shift, eps=self.eps, 
+    #                                        momentum=self.momentum, training=self.training)
+
+    #def extra_repr(self):
+    #    return 'bias={}, abs_bias={}, momentum={}, eps={}'.format(self.bias, self.abs_bias, self.momentum, self.eps)
+    #                                        
 
 
 
