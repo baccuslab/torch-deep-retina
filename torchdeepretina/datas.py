@@ -222,6 +222,7 @@ class DataDistributor:
         batch_size - size of batches yielded by train_sample generator
         """
         self.batch_size = batch_size
+        self.is_torch = False
         self.seq_len = seq_len
         self.shuffle = shuffle
         self.rand_sample = rand_sample
@@ -269,27 +270,48 @@ class DataDistributor:
         return self.X[self.perm[idx]]
 
     def order_into_batches(self, data, batch_size):
+        switch_back = False
+        if type(data) != type(np.array([])):
+            data = data.numpy()
+            switch_back = True
         length = data.shape[0]//batch_size
         tot_len = length*batch_size
         trunc = data[:tot_len].reshape(batch_size, length, *data.shape[1:])
         trans_order = list(range(len(trunc.shape)))
         trans_order[0], trans_order[1] = trans_order[1], trans_order[0]
         trunc = trunc.transpose(trans_order)
+        if switch_back:
+            trunc = torch.from_numpy(trunc)
         return trunc
+
+    def undo_batch_order(self, data):
+        switch_back = False
+        if type(data) == type(np.array([])):
+            data = torch.from_numpy(data)
+            switch_back = True
+        trans_idxs = list(range(len(data.shape)))
+        trans_idxs[0], trans_idxs[1] = trans_idxs[1], trans_idxs[0]
+        data = data.permute(*trans_idxs)
+        data = data.view(-1, *data.shape[2:])
+        if switch_back:
+            data = data.numpy()
+        return data
 
     def set_batch_size(self, batch_size):
         self.batch_size = batch_size
         self.n_loops = self.train_shape[0]//batch_size
 
     def val_sample(self, step_size):
+        val_X = self.val_X
+        val_y = self.val_y
         n_loops = self.val_shape[0]//step_size
-        arange = torch.arange(self.train_shape[0]).long()
+        arange = torch.arange(n_loops*step_size).long()
         for i in range(n_loops):
-            if self.recurrent and not self.shuffle:
+            if self.recurrent:
                 idxs = i
             else:
                 idxs = arange[i*step_size:(i+1)*step_size]
-            yield self.val_X[idxs], self.val_y[idxs]
+            yield val_X[idxs], val_y[idxs]
 
     def train_sample(self, batch_size=None):
         n_loops = self.n_loops
@@ -313,6 +335,7 @@ class DataDistributor:
             yield self.train_X[idxs], self.train_y[idxs]
     
     def torch(self):
+        self.is_torch = True
         self.X = torch.FloatTensor(self.X)
         self.y = torch.FloatTensor(self.y)
         self.perm = torch.LongTensor(self.perm)
@@ -324,6 +347,7 @@ class DataDistributor:
         self.val_y = DataObj(self.y, self.val_idxs)
 
     def numpy(self):
+        self.is_torch = False
         self.X = np.asarray(self.X)
         self.y = np.asarray(self.y)
         self.perm = np.asarray(self.perm).astype('int')
