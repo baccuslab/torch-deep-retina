@@ -102,7 +102,7 @@ def response1D(x, r, dt=0.01, us_factor=50, figsize=(8, 5)):
     ----------
     x : array_like
         A 1-D representation of the stimulus
-    x : array_like
+    r : array_like
         A (t, n) array of the response of n cells to the t time points in the stimulus
     dt : float
         The temporal sampling period, in seconds (default: 0.01)
