@@ -11,7 +11,8 @@ def try_kwarg(kwargs, key, default):
 
 class TDRModel(nn.Module):
     def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, chans=[8,8], bn_moment=.01, 
-                                 softplus=True, inference_exp=False, img_shape=(40,50,50), ksizes=(15,11), recurrent=False, **kwargs):
+                                 softplus=True, inference_exp=False, img_shape=(40,50,50), ksizes=(15,11), 
+                                 recurrent=False, kinetic=False, **kwargs):
         super().__init__()
         self.n_units = n_units
         self.chans = chans 
@@ -24,6 +25,7 @@ class TDRModel(nn.Module):
         self.noise = noise 
         self.bn_moment = bn_moment 
         self.recurrent = recurrent
+        self.kinetic = kinetic
     
     def forward(self, x):
         return x
@@ -65,7 +67,30 @@ class BNCNN(TDRModel):
         modules.append(nn.ReLU())
         modules.append(nn.Linear(self.chans[1]*shape[0]*shape[1],self.n_units, bias=self.linear_bias))
         modules.append(nn.BatchNorm1d(self.n_units, eps=1e-3, momentum=self.bn_moment))
-        if softplus:
+        if self.softplus:
+            modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
+        self.sequential = nn.Sequential(*modules)
+        
+    def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
+        return self.sequential(x)
+
+class LN(TDRModel):
+    def __init__(self, drop_p=0, **kwargs):
+        super().__init__(**kwargs)
+        modules = []
+        self.shapes = []
+        shape = self.img_shape
+        self.drop_p = drop_p
+        modules.append(Flatten())
+        modules.append(GaussianNoise(std=self.noise))
+        modules.append(nn.Dropout(self.drop_p))
+        modules.append(nn.Linear(shape[2]*shape[0]*shape[1], self.n_units, bias=self.linear_bias))
+        modules.append(nn.BatchNorm1d(self.n_units, eps=1e-3, momentum=self.bn_moment))
+        if self.softplus:
             modules.append(nn.Softplus())
         else:
             modules.append(Exponential(train_off=True))
@@ -355,12 +380,14 @@ class LinearStackedBNCNN(TDRModel):
         return self.sequential(x)
 
 class KineticsModel(TDRModel):
-    def __init__(self, bnorm=True, drop_p=0, scale_kinet=False, **kwargs):
+    def __init__(self, bnorm=True, drop_p=0, scale_kinet=False, recur_seq_len=5, **kwargs):
         super().__init__(**kwargs)
         self.bnorm = bnorm
         self.drop_p = drop_p
         self.recurrent = True
+        self.kinetic = True
         self.scale_kinet = scale_kinet
+        self.seq_len = recur_seq_len
         shape = self.img_shape[1:] # (H, W)
         self.shapes = []
         self.h_shapes = []
@@ -372,19 +399,24 @@ class KineticsModel(TDRModel):
         self.shapes.append(tuple(shape))
         n_states = 4
         self.h_shapes.append((n_states, self.chans[0]*shape[0]*shape[1]))
+        self.h_shapes.append((self.chans[0]*shape[0]*shape[1],))
         modules.append(Flatten())
         modules.append(AbsBatchNorm1d(self.chans[0]*shape[0]*shape[1], eps=1e-3, momentum=self.bn_moment))
         modules.append(GaussianNoise(std=self.noise))
-        modules.append(nn.Sigmoid())
+        #modules.append(Add(-1.5))
+        modules.append(nn.Softplus())
+        max_clamp = 10
+        modules.append(Clamp(0,max_clamp))
+        modules.append(Multiply(1/max_clamp))
         self.bipolar = nn.Sequential(*modules)
 
         self.kinetics = Kinetics()
         if scale_kinet:
-            self.kinet_scale = ScaleShift(self.chans[0]*shape[0]*shape[1])
+            self.kinet_scale = ScaleShift(self.seq_len*self.chans[0]*shape[0]*shape[1])
 
         modules = []
-        modules.append(Reshape((-1,self.chans[0],shape[0], shape[1])))
-        modules.append(LinearStackedConv2d(self.chans[0],self.chans[1],kernel_size=self.ksizes[1], abs_bnorm=False, 
+        modules.append(Reshape((-1,self.seq_len*self.chans[0],shape[0], shape[1])))
+        modules.append(LinearStackedConv2d(self.seq_len*self.chans[0],self.chans[1],kernel_size=self.ksizes[1], abs_bnorm=False, 
                                                                                 bias=self.bias, drop_p=self.drop_p))
         shape = update_shape(shape, self.ksizes[1])
         self.shapes.append(tuple(shape))
@@ -403,20 +435,24 @@ class KineticsModel(TDRModel):
             modules.append(Exponential(train_off=True))
         self.ganglion = nn.Sequential(*modules)
 
-    def forward(self, x, pop):
+    def forward(self, x, hs):
         """
         x - FloatTensor (B, C, H, W)
-        pop - list [(B,S,N)]
+        hs - list [(B,S,N),(B,D,H1,W1)]
             First list element should be a torch FloatTensor of state population values.
+            Second element should be deque of activated population values over past D time steps
         """
         fx = self.bipolar(x)
-        fx, new_pop = self.kinetics(fx, pop[0])
+        fx, h0 = self.kinetics(fx, hs[0])
+        hs[1].append(fx)
+        h1 = hs[1]
+        fx = torch.cat(list(h1), dim=1)
         if self.scale_kinet:
             fx = self.kinet_scale(fx)
         fx = self.amacrine(fx)
         fx = self.ganglion(fx)
         if not self.training and self.infr_exp:
             fx = torch.exp(fx)
-        return fx, [new_pop]
+        return fx, [h0, h1]
 
 
