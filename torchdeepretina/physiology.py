@@ -17,12 +17,12 @@ class Physio:
         def hook(module, inp, out):
             self.dict[name+'_grad'] = out[0].cpu().detach().numpy()
         return hook
-    
+
     def injection(self, subtype, constant):
         def hook(module, inp, out):
             module.weight[subtype, :, :] = module.weight[subtype, :, :] * constant
             module.bias[subtype] = module.bias[subtype] * constant
-    
+
     # activity_dict = phys.inspect(stim)
     # activity_dict['conv1'] <--- gets the conv2d_1 layer activity
     def inspect(self, stim, hs=None, insp_keys={"all"}):
