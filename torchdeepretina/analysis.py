@@ -208,6 +208,9 @@ def requires_grad(model, state):
             pass
 
 def read_model(folder):
+    """
+    Recreates model architecture and loads the saved statedict from a model folder
+    """
     try:
         _, _, fs = next(os.walk(folder.strip()))
     except Exception as e:
