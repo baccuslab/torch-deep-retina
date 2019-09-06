@@ -244,7 +244,7 @@ class DataDistributor:
         if seq_len > 1:
             self.X = rolling_window(self.X, seq_len)
             self.y = rolling_window(self.y, seq_len)
-        if recurrent and not shuffle:
+        if recurrent:
             self.X = self.order_into_batches(self.X, batch_size)
             self.y = self.order_into_batches(self.y, batch_size)
         if type(self.X) == type(np.array([])):
@@ -270,7 +270,7 @@ class DataDistributor:
         self.val_y = DataObj(self.y, self.val_idxs)
         self.train_shape = (len(self.train_idxs), *self.X.shape[1:])
         self.val_shape = (len(self.val_idxs), *self.X.shape[1:])
-        if self.recurrent and not self.shuffle:
+        if self.recurrent:
             self.n_loops = self.train_shape[0]
         else:
             self.n_loops = self.train_shape[0]//batch_size
@@ -309,10 +309,6 @@ class DataDistributor:
             data = data.numpy()
         return data
 
-    def set_batch_size(self, batch_size):
-        self.batch_size = batch_size
-        self.n_loops = self.train_shape[0]//batch_size
-
     def val_sample(self, step_size):
         val_X = self.val_X
         val_y = self.val_y
@@ -340,8 +336,8 @@ class DataDistributor:
         else:
             batch_perm = torch.arange(self.train_shape[0]).long()
         for i in range(n_loops):
-            if self.recurrent and not self.shuffle:
-                idxs = i
+            if self.recurrent:
+                idxs = batch_perm[i]
             else:
                 idxs = batch_perm[i*batch_size:(i+1)*batch_size]
             yield self.train_X[idxs], self.train_y[idxs]
