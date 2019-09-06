@@ -11,8 +11,7 @@ Rough Outline:
     The test data can be found by arguing the appropriate parameters to the loadexpt() function
 """
 
-from torchdeepretina.analysis import read_model_file
-from torchdeepretina.batch_compute import batch_compute_model_response
+from torchdeepretina.analysis import read_model_file, batch_compute_model_response
 from torchdeepretina.datas import loadexpt
 import scipy.stats
 import torch
