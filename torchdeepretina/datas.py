@@ -27,7 +27,7 @@ CELLS = {
 }
 
 Exptdata = namedtuple('Exptdata', ['X', 'y', 'spkhist', 'stats', "cells"])
-__all__ = ['loadexpt', 'stimcut', 'CELLS', ]
+__all__ = ['loadexpt', 'stimcut', 'CELLS', "DataContainer","DataObj", "DataDistributor"]
 
 class DataContainer():
     def __init__(self, data):
@@ -215,11 +215,21 @@ class DataDistributor:
     This class is used to abstract away the manipulations required for shuffling or organizing data for rnns.
     """
 
-    def __init__(self, data, val_size=30000, batch_size=512, seq_len=1, shuffle=True, rand_sample=None, recurrent=False):
+    def __init__(self, data, val_size=30000, batch_size=512, seq_len=1, shuffle=True, rand_sample=None, recurrent=False, shift_labels=False):
         """
         data - a class or named tuple containing an X and y member variable.
         val_size - the number of samples dedicated to validation
         batch_size - size of batches yielded by train_sample generator
+        seq_len - int describing how long the data sequences should be.
+                    if not doing recurrent training, set to 1
+        shuffle - bool describing if data should be shuffled (the shuffling
+                    preserves the frame order within each data point)
+        rand_sample - bool similar to shuffle but specifies the sampling method rather
+                        than the storage method. Allows for the data to be
+                        unshuffled but sampled randomly. Defaults to the state of shuffle
+                        if left as None
+        recurrent - bool describing if model is recurrent
+        shift_labels - bool describing if labels should be shifted for null model training
         """
         self.batch_size = batch_size
         self.is_torch = False
@@ -248,6 +258,8 @@ class DataDistributor:
             else:
                 self.perm = torch.arange(self.X.shape[0]).long()
 
+        if shift_labels:
+            self.y = np.roll(self.y, len(self.y)//2, axis=0)
         if val_size > len(self.perm):
             val_size = int(len(self.perm)*0.05)
         self.train_idxs = self.perm[:-val_size]
