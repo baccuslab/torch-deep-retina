@@ -210,7 +210,10 @@ def analyze_model(folder, interneuron_data=None, test_data=None, main_dir="../tr
     
     model_hyps = data['model_hyps']
     chans = model_hyps['chans']
-    filt_depth = model_hyps['img_shape'][0]
+    if 'img_shape' in model_hyps:
+        filt_depth = model_hyps['img_shape'][0]
+    else:
+        filt_depth = 40
     
     # Load data
     try:
@@ -274,9 +277,9 @@ def analyze_model(folder, interneuron_data=None, test_data=None, main_dir="../tr
         print("NaN results, continuing...\n")
         return stats
 
-    if avg_test_acc <= .45:
-        print("Results too low, continuing...\n")
-        return stats
+    #if avg_test_acc <= .45:
+    #    print("Results too low, continuing...\n")
+    #    return stats
     
     if record_figs:
         # Plot firing rate sample
