@@ -43,6 +43,13 @@ class TDRModel(nn.Module):
             except:
                 pass
 
+    def requires_grad(self, state):
+        for p in self.parameters():
+            try:
+                p.requires_grad = state
+            except:
+                pass
+
 class BNCNN(TDRModel):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
