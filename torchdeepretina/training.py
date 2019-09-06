@@ -66,10 +66,13 @@ class Trainer:
         train_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'], hyps['stim_type'],'train',img_depth,0))
         norm_stats = [train_data.stats['mean'], train_data.stats['std']] 
 
-        test_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],hyps['stim_type'],'test',img_depth,0, 
-                                                                            norm_stats=norm_stats))
-        test_data.X = test_data.X[:500]
-        test_data.y = test_data.y[:500]
+        try:
+            test_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],hyps['stim_type'],'test',img_depth,0, 
+                                                                                         norm_stats=norm_stats))
+            test_data.X = test_data.X[:500]
+            test_data.y = test_data.y[:500]
+        except:
+            test_data = None
         return train_data, test_data
 
     def get_model_and_distr(self, hyps, model_hyps, train_data):
@@ -85,8 +88,10 @@ class Trainer:
         model = model.to(hyps['device'])
         num_val = 10000
         seq_len = 1 if not model.recurrent else hyps['recur_seq_len']
+        shift_labels = False if 'shift_labels' not in hyps else hyps['shift_labels']
         data_distr = DataDistributor(train_data, num_val, batch_size=hyps['batch_size'], shuffle=hyps['shuffle'], 
-                                                            recurrent=model.recurrent, seq_len=seq_len)
+                                                                    recurrent=model.recurrent, seq_len=seq_len, 
+                                                                    shift_labels=shift_labels)
         data_distr.torch()
         return model, data_distr
 
@@ -320,6 +325,8 @@ class Trainer:
         train_data, test_data = self.get_data(hyps)
         model_hyps["n_units"] = train_data.y.shape[-1]
         model, data_distr = self.get_model_and_distr(hyps, model_hyps, train_data)
+        print("train shape:", data_distr.train_shape)
+        print("val shape:", data_distr.val_shape)
         self.record_session(hyps, model)
         teacher = None
         if 'teacher' in hyps and hyps['teacher'] is not None:
@@ -427,7 +434,7 @@ class Trainer:
 
                 # Validation on Test Subset (Static Only)
                 avg_pearson = 0
-                if not model.recurrent:
+                if not model.recurrent and test_data is not None:
                     test_x = torch.from_numpy(test_data.X)
                     test_obs = model(test_x.to(device)).cpu().detach().numpy()
                     rng = range(test_obs.shape[-1])
