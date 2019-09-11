@@ -12,7 +12,7 @@ def try_kwarg(kwargs, key, default):
 class TDRModel(nn.Module):
     def __init__(self, n_units=5, noise=.05, bias=True, linear_bias=None, chans=[8,8], bn_moment=.01, 
                                  softplus=True, inference_exp=False, img_shape=(40,50,50), ksizes=(15,11), 
-                                 recurrent=False, kinetic=False, **kwargs):
+                                 recurrent=False, kinetic=False, convgc=False, centers=None, **kwargs):
         super().__init__()
         self.n_units = n_units
         self.chans = chans 
@@ -26,6 +26,8 @@ class TDRModel(nn.Module):
         self.bn_moment = bn_moment 
         self.recurrent = recurrent
         self.kinetic = kinetic
+        self.convgc = convgc
+        self.centers = centers
     
     def forward(self, x):
         return x
@@ -373,8 +375,17 @@ class LinearStackedBNCNN(TDRModel):
         modules.append(AbsBatchNorm1d(self.chans[1]*shape[0]*shape[1], eps=1e-3, momentum=self.bn_moment))
         modules.append(GaussianNoise(std=self.noise))
         modules.append(nn.ReLU())
-        modules.append(nn.Linear(self.chans[1]*shape[0]*shape[1], self.n_units, bias=self.linear_bias))
-        modules.append(AbsBatchNorm1d(self.n_units, eps=1e-3, momentum=self.bn_moment))
+        if self.convgc:
+            modules.append(Reshape((-1, self.chans[1], shape[0], shape[1])))
+            modules.append(LinearStackedConv2d(self.chans[1],self.n_units,kernel_size=self.ksizes[2], abs_bnorm=False, 
+                                                                                bias=self.linear_bias, drop_p=self.drop_p))
+            shape = update_shape(shape, self.ksizes[2])
+            self.shapes.append(tuple(shape))
+            modules.append(GrabUnits(self.centers, self.ksizes, self.img_shape, self.n_units))
+            modules.append(AbsBatchNorm1d(self.n_units, momentum=self.bn_moment))
+        else:
+            modules.append(nn.Linear(self.chans[1]*shape[0]*shape[1], self.n_units, bias=self.linear_bias))
+            modules.append(AbsBatchNorm1d(self.n_units, eps=1e-3, momentum=self.bn_moment))
         if self.softplus:
             modules.append(nn.Softplus())
         else:
@@ -385,6 +396,21 @@ class LinearStackedBNCNN(TDRModel):
         if not self.training and self.infr_exp:
             return torch.exp(self.sequential(x))
         return self.sequential(x)
+    
+    def tiled_forward(self,x):
+        if not self.convgc:
+            return self.forward(x)
+        fx = self.sequential[:-3](x) # Remove GrabUnits layer
+        bnorm = self.sequential[-2]
+        # Perform 2d batchnorm using 1d parameters
+        fx = torch.nn.functional.batch_norm(fx, bnorm.running_mean.data, bnorm.running_var.data,
+                                            weight=bnorm.scale.abs(), bias=bnorm.shift, 
+                                            eps=bnorm.eps, momentum=bnorm.momentum, 
+                                            training=self.training)
+        fx = self.sequential[-1](fx)
+        if not self.training and self.infr_exp:
+            return torch.exp(fx)
+        return fx
 
 class KineticsModel(TDRModel):
     def __init__(self, bnorm=True, drop_p=0, scale_kinet=False, recur_seq_len=5, **kwargs):
