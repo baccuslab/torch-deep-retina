@@ -25,14 +25,24 @@ CELLS = {
     '16-01-08': [0, 3, 7, 9, 11],
     '16-05-31': [2, 3, 4, 14, 16, 18, 20, 25, 27]
 }
+CENTERS = {
+    '15-10-07': [[21,18], [24,20], [22,18], [27,18], [31,20]],
+    '15-11-21a': [[37,3], [39,6], [20,15], [41,2]],
+    '15-11-21b': [[16,13], [20,12], [19,7],[19,3], [21,7], [22,6], [21,7],
+            [25,3],[23,6],[26,4],[24,6],[26,7], [27,9], [26,9],
+            [27,11], [26,13], [24,10]],
+    '16-01-07': None,
+    '16-01-08': None,
+}
 
-Exptdata = namedtuple('Exptdata', ['X', 'y', 'spkhist', 'stats', "cells"])
-__all__ = ['loadexpt', 'stimcut', 'CELLS', "DataContainer","DataObj", "DataDistributor"]
+Exptdata = namedtuple('Exptdata', ['X', 'y', 'spkhist', 'stats', "cells", "centers"])
+__all__ = ['loadexpt', 'stimcut', 'CELLS', "CENTERS", "DataContainer","DataObj", "DataDistributor"]
 
 class DataContainer():
     def __init__(self, data):
         self.X = data.X
         self.y = data.y
+        self.centers = data.centers
         self.stats = data.stats
 
 def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=None, norm_stats=None, data_path="~/experiments/data"):
@@ -115,7 +125,10 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=
         binned = np.array(f[train_or_test]['response/binned'][cells]).T[valid_indices]
         spk_hist = rolling_window(binned, history, time_axis=0)
 
-    return Exptdata(stim_reshaped, resp, spk_hist, stats, cells)
+        # get the ganglion cell receptive field centers
+        centers = np.asarray(CENTERS[expt])
+
+    return Exptdata(stim_reshaped, resp, spk_hist, stats, cells, centers)
 
 
 def _loadexpt_h5(expt, filename, root="~/experiments/data"):
