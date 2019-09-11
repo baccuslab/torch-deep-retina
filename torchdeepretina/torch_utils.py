@@ -41,6 +41,32 @@ def diminish_weight_magnitude(params):
         if param.data is not None and divisor >= 0:
             param.data = param.data/divisor
 
+class GrabUnits(nn.Module):
+    def __init__(self, centers, ksizes, img_shape, n_units):
+        super().__init__()
+        assert len(ksizes) > 2 and centers is not None
+        self.ksizes = ksizes
+        self.img_shape = img_shape
+        self.coords = self.centers2coords(centers,ksizes,img_shape)
+        self.chans = torch.arange(n_units).long()
+
+    def centers2coords(self, centers, ksizes, img_shape):
+        """
+        Assumes a stride of 1 with 0 padding in each layer.
+        """
+        # Each quantity is even, thus the final half_effective_ksize is odd
+        half_effective_ksize = (ksizes[0]-1) + (ksizes[1]-1) + (ksizes[2]//2-1) + 1
+        coords = []
+        for center in centers:
+            row = min(max(0,center[0]-half_effective_ksize), img_shape[1]-2*(half_effective_ksize-1))
+            col = min(max(0,center[1]-half_effective_ksize), img_shape[2]-2*(half_effective_ksize-1))
+            coords.append([row,col])
+        return torch.LongTensor(coords)
+
+    def forward(self, x):
+        units = x[...,:,self.chans,self.coords[:,0],self.coords[:,1]]
+        return units
+
 class ScaledSoftplus(nn.Module):
     def __init__(self):
         super(ScaledSoftplus, self).__init__()
@@ -317,8 +343,9 @@ class AbsBatchNorm2d(nn.Module):
                                             weight=self.scale.abs(), bias=self.shift.abs(), eps=self.eps, 
                                             momentum=self.momentum, training=self.training)
         return torch.nn.functional.batch_norm(x, self.running_mean.data, self.running_var.data,
-                                            weight=self.scale.abs(), bias=self.shift, eps=self.eps, 
-                                            momentum=self.momentum, training=self.training)
+                                            weight=self.scale.abs(), bias=self.shift, 
+                                            eps=self.eps, momentum=self.momentum, 
+                                            training=self.training)
 
     def extra_repr(self):
         return 'bias={}, abs_bias={}, momentum={}, eps={}'.format(self.bias, self.abs_bias, self.momentum, self.eps)
