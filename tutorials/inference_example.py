@@ -46,6 +46,7 @@ if __name__=="__main__":
     # Compute model responses and determine pearson correlation with ganglion cell output
     batch_size = 500
     model_response = batch_compute_model_response(test_data.X, model, batch_size, recurrent=model.recurrent)
+    print(model_response['output'])
     pearsons = [scipy.stats.pearsonr(model_response['output'][:, i], test_data.y[:, i])[0] 
                                                     for i in range(test_data.y.shape[-1])]
     avg_pearson = np.mean(pearsons)
