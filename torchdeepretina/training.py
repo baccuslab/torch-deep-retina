@@ -113,12 +113,15 @@ class Trainer:
             del temp_hyps['model_class']
             json.dump(temp_hyps, f)
 
-    def get_optim_objs(self, hyps, model):
+    def get_optim_objs(self, hyps, model, centers=None):
         """
         hyps: dict
             dict of relevant hyperparameters
         model: torch nn.Module
             the model to be trained
+        centers: list of tuples or lists, shape: (n_cells, 2)
+            the centers of each ganglion cell in terms of image coordinates
+            if None centers is ignored
         """
         if 'lossfxn' not in hyps:
             hyps['lossfxn'] = "PoissonNLLLoss"
@@ -324,6 +327,7 @@ class Trainer:
         # Get Data, Make Model, Record Initial Hyps and Model
         train_data, test_data = self.get_data(hyps)
         model_hyps["n_units"] = train_data.y.shape[-1]
+        model_hyps['centers'] = train_data.centers
         model, data_distr = self.get_model_and_distr(hyps, model_hyps, train_data)
         print("train shape:", data_distr.train_shape)
         print("val shape:", data_distr.val_shape)
@@ -336,7 +340,7 @@ class Trainer:
             #if hyps['teacher_layers'] is not None:
 
         # Make optimization objects (lossfxn, optimizer, scheduler)
-        optimizer, scheduler, loss_fn = self.get_optim_objs(hyps, model)
+        optimizer, scheduler, loss_fn = self.get_optim_objs(hyps, model, train_data.centers)
 
         # Training
         for epoch in range(hyps['n_epochs']):
@@ -675,4 +679,31 @@ class ModulePackage:
 
     def __call__(self, x):
         return self.model(x)
+
+class LossFxnWrapper:
+    def __init__(self, loss_fn, hyps, centers):
+        self.centers = centers
+        self.loss_fn = loss_fn
+        self.coords = self.convert_coords(hyps, centers)
+
+    def convert_coords(self, hyps, centers):
+        """
+        Assumes a stride of 1 with 0 padding in each layer.
+        """
+        # Each quantity is even, thus the final half_effective_ksize is odd
+        half_effective_ksize = (hyps['ksizes'][0]-1) + (hyps['ksizes'][1]-1) + (hyps['ksizes'][2]//2-1) + 1
+        coords = []
+        for center in centers:
+            row = min(max(0,center[0]-half_effective_ksize), hyps['img_shape'][1]-2*(half_effective_ksize-1))
+            col = min(max(0,center[1]-half_effective_ksize), hyps['img_shape'][2]-2*(half_effective_ksize-1))
+            coords.append([row,col])
+        return torch.LongTensor(coords)
+
+    def __call__(self, x, y):
+        idxs = torch.arange(x.shape[-4]).long()
+        chans = torch.arange(x.shape[-3]).long()
+        units = x[...,:,chans,self.coords[:,0],self.coords[:,1]]
+        return self.loss_fn(units, y)
+
+
 
