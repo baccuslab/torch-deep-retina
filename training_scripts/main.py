@@ -56,6 +56,9 @@ if __name__ == "__main__":
     np.random.seed(seed)
     torch.manual_seed(seed)
 
+    if "shift_labels" in hyps and hyps['shift_labels']:
+        print("{} WARNING: YOU ARE USING SHIFTED LABELS {}".format("!"*5))
+
     sleep_time = 8
     if os.path.exists(hyps['exp_name']):
         _, subds, _ = next(os.walk(hyps['exp_name']))
@@ -71,7 +74,7 @@ if __name__ == "__main__":
         elif hyps['starting_exp_num'] is None:
             hyps['starting_exp_num'] = nums[-1] + 1
         if int(hyps['starting_exp_num']) in nums:
-            print("!!!!! WAIT !!!!!!! MAKE SURE YOU WANT TO HAVE DUPLICATE EXP NUMS !!!!!")
+            print("{} WARNING: YOU ARE CURRENTLY DUPLICATING EXP NUMS {}".format("!"*5))
             print("Would you like to use", nums[-1]+1, "instead? (Y/n)")
             i,_,_ = select.select([sys.stdin], [],[],sleep_time)
             if not (i and sys.stdin.readline().strip().lower() == "n"):
