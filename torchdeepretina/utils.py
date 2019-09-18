@@ -1,6 +1,7 @@
 import numpy as np
 import copy
 import torch
+import torch.nn as nn
 import subprocess
 import json
 import os
@@ -192,7 +193,68 @@ def load_checkpoint(checkpt_path):
         print("Failed to load state_dict. This checkpoint does not contain a model state_dict!")
     return model
 
-def stack_filters(base_filt, stack_filt):
+def stackedconv2d_to_conv2d(stackedconv2d):
+    """
+    Takes the whole LinearStackedConv2d module and converts it to a single Conv2d
+
+    stackedconv2d - torch LinearStacked2d module
+    """
+    convs = stackedconv2d.convs
+    filters = []
+    for conv in convs:
+        if "weight" in dir(conv):
+            filters.append(conv.weight)
+    stacked_filt = stack_filters(filters)
+    out_chan, in_chan, k_size, _ = stacked_filt.shape
+    conv2d = nn.Conv2d(in_chan, out_chan, k_size)
+    conv2d.weight.data = stacked_filt
+    try:
+        conv2d.bias.data = convs[-1].bias
+    except Exception as e:
+        print("Bias transfer failed..")
+    return conv2d
+
+def get_grad(model, X, layer_idx=None, cell_idxs=None):
+    """
+    Gets the gradient of the model output with respect to the stimulus X
+
+    model - torch module
+    X - numpy array or torch float tensor (B,C,H,W)
+    layer_idx - None or int
+        model layer to use for grads with respec
+    cell_idxs - None or list-like (N)
+    """
+    tensor = torch.FloatTensor(X)
+    tensor.requires_grad = True
+    back_to_train = model.training
+    if back_to_train:
+        model.eval()
+    back_to_cpu = next(model.parameters()).is_cuda
+    model.cuda()
+    outs = model(tensor.cuda())
+    if cell_idxs is not None:
+        outs = outs[:,cell_idxs]
+    outs.sum().backward()
+    grad = tensor.grad.data.detach().cpu().numpy()
+    if back_to_train:
+        model.train()
+    if back_to_cpu:
+        model.detach().cpu()
+    return grad
+
+def stack_filters(filt_list):
+    """
+    Combines the list of filters into a single stacked filter.
+
+    filt_list - list of torch FloatTensors with shape (Q, R, K, K)
+        the first filter in the conv sequence.
+    """
+    stacked_filt = filt_list[0]
+    for i in range(1,len(filt_list)):
+        stacked_filt = stack_filter(stacked_filt, filt_list[i])
+    return stacked_filt
+
+def stack_filter(base_filt, stack_filt):
     """
     Combines two convolutional filters in a mathematically equal way to performing
     the convolutions one after the other. Forgive the quadruple for-loop... There's
@@ -203,10 +265,11 @@ def stack_filters(base_filt, stack_filt):
     stack_filt - torch FloatTensor (S, Q, K2, K2)
         the filter following base_filt in the conv sequence.
     """
+    device = torch.device("cuda:0") if base_filt.is_cuda else torch.device("cpu")
     kb = base_filt.shape[-1]
     ks = stack_filt.shape[-1]
     new_filt = torch.zeros(stack_filt.shape[0], base_filt.shape[1], base_filt.shape[2]+(ks-1), base_filt.shape[3]+(ks-1))
-    new_filt = new_filt.to(base_filt.get_device())
+    new_filt = new_filt.to(device)
     for out_chan in range(stack_filt.shape[0]):
         for in_chan in range(stack_filt.shape[1]): # same as out_chan in base_filt/new_filt
             for row in range(stack_filt.shape[2]):

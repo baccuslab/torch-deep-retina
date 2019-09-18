@@ -44,7 +44,6 @@ class Physio:
         for name, module in self.net.named_modules():
             if name == layer:
                 module.register_forward_hook(self.injection(subtype, constant))
-
     def remove_hooks(self):
         for h in self.hooks:
             h.remove()

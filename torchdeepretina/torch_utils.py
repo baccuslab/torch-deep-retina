@@ -1075,34 +1075,23 @@ class Kinetics(nn.Module):
         new_pop[:,3] = pop[:,3] + dt*(-ksr + ksi)
         return new_pop[:,1], new_pop
 
-class RunningNorm(nn.Module):
+class RunningNorm1d(nn.Module):
     pass
-    #def __init__(self, n_units, bias=True, abs_bias=False, momentum=.1, eps=1e-5):
+    #def __init__(self, n_units, momentum=.1):
     #    super().__init__()
     #    self.n_units = n_units
     #    self.momentum = momentum
-    #    self.eps = eps
     #    self.running_mean = nn.Parameter(torch.zeros(n_units))
     #    self.running_var = nn.Parameter(torch.ones(n_units))
-    #    self.scale = nn.Parameter(torch.ones(n_units).float())
-    #    self.bias = bias
-    #    self.abs_bias = abs_bias
-    #    self.shift = nn.Parameter(torch.zeros(n_units).float())
+    #    #self.weight = nn.Parameter(torch.ones(n_units).float())
+    #    #self.bias = nn.Parameter(torch.zeros(n_units).float())
 
     #def forward(self, x):
-    #    assert len(x.shape) == 2
-    #    self.shift.requires_grad = self.bias
-    #    if self.abs_bias:
-    #        return torch.nn.functional.batch_norm(x, self.running_mean.data, self.running_var.data,
-    #                                        weight=self.scale.abs(), bias=self.shift.abs(), eps=self.eps, 
-    #                                        momentum=self.momentum, training=self.training)
-    #    return torch.nn.functional.batch_norm(x, self.running_mean.data, self.running_var.data,
-    #                                        weight=self.scale.abs(), bias=self.shift, eps=self.eps, 
-    #                                        momentum=self.momentum, training=self.training)
+    #    self.running_mean = self.running_mean
+    #    return x
 
     #def extra_repr(self):
-    #    return 'bias={}, abs_bias={}, momentum={}, eps={}'.format(self.bias, self.abs_bias, self.momentum, self.eps)
-    #                                        
+    #    return 'n_units={}, momentum={}'.format(self.n_units, self.momentum)
 
 
 

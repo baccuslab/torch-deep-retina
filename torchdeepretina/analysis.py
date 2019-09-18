@@ -256,12 +256,13 @@ def read_model_file(file_name, model_type=None):
     model.load_state_dict(data['model_state_dict'])
     return model
 
-def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None):
+def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, verbose=True):
     """
     Gets the gradient of the model output at the specified layer and cell idx with respect
     to the inputs (X). Returns a gradient array with the same shape as X.
     """
-    print("layer:", layer)
+    if verbose:
+        print("layer:", layer)
     requires_grad(model, False)
     device = next(model.parameters()).get_device()
 
@@ -276,7 +277,8 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None):
     module = None
     for name, modu in model.named_modules():
         if name == layer:
-            print("hook attached to " + name)
+            if verbose:
+                print("hook attached to " + name)
             module = modu
 
     # Get gradient with respect to activations
@@ -284,7 +286,10 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None):
     X.requires_grad = True
     n_loops = X.shape[0]//batch_size
     grads = []
-    for i in tqdm(range(n_loops)):
+    rng = range(n_loops)
+    if verbose:
+        rng = tqdm(rng)
+    for i in rng:
         hook_handle = module.register_forward_hook(forward_hook)
         idx = i*batch_size
         x = X[idx:idx+batch_size]
@@ -314,7 +319,57 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None):
     requires_grad(model, True)
     return np.concatenate(grads, axis=0)
 
-def compute_sta(model, contrast, layer, cell_index, layer_shape=None):
+def get_hook(layer_dict, key):
+    def hook(module, inp, out):
+        layer_dict[key] = out.detach().cpu().numpy()
+    return hook
+
+def inspect(model, X, insp_keys={"all"}, batch_size=None):
+    """
+    Get the response from the argued layers in the model as np arrays
+
+    returns dict of np arrays
+    """
+    layer_outs = dict()
+    handles = []
+    if "all" in insp_keys:
+        for i in range(len(model.sequential)):
+            key = "sequential."+str(i)
+            hook = get_hook(layer_outs, key)
+            handle = model.sequential[i].register_forward_hook(hook)
+            handles.append(handle)
+    else:
+        for key, mod in model.named_modules():
+            if key in insp_keys:
+                hook = get_hook(layer_outs, key)
+                handle = mod.register_forward_hook(hook)
+                handles.append(handle)
+    X = torch.FloatTensor(X)
+    if batch_size is None:
+        if next(model.parameters()).is_cuda:
+            X = X.cuda()
+        preds = model(X)
+        layer_outs['outputs'] = preds.detach().cpu().numpy()
+    else:
+        use_cuda = next(model.parameters()).is_cuda
+        batched_outs = {key:[] for key in insp_keys}
+        outputs = []
+        for batch in range(0,len(X), batch_size):
+            x = X[batch:batch+batch_size]
+            if use_cuda:
+                x = x.cuda()
+            preds = model(x)
+            outputs.append(preds.data.cpu().numpy())
+            for k in layer_outs.keys():
+                batched_outs[k].append(layer_outs[k])
+        batched_outs['outputs'] = outputs
+        layer_outs = {k:np.concatenate(v,axis=0) for k,v in batched_outs.items()}
+    for i in range(len(handles)):
+        handles[i].remove()
+    del handles
+    return layer_outs
+
+def compute_sta(model, contrast, layer, cell_index, layer_shape=None, verbose=True):
     """helper function to compute the STA using the model gradient"""
     # generate some white noise
     #X = stim.concat(white(1040, contrast=contrast)).copy()
@@ -323,7 +378,7 @@ def compute_sta(model, contrast, layer, cell_index, layer_shape=None):
     X.requires_grad = True
 
     # compute the gradient of the model with respect to the stimulus
-    drdx = get_stim_grad(model, X, layer, cell_index, layer_shape=layer_shape)
+    drdx = get_stim_grad(model, X, layer, cell_index, layer_shape=layer_shape, verbose=verbose)
     sta = drdx.mean(0)
 
     del X

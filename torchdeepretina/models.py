@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torchdeepretina.torch_utils import *
 import numpy as np
+from scipy import signal
 
 def try_kwarg(kwargs, key, default):
     try:
@@ -53,9 +54,10 @@ class TDRModel(nn.Module):
                 pass
 
 class BNCNN(TDRModel):
-    def __init__(self, **kwargs):
+    def __init__(self, gauss_prior=0, **kwargs):
         super().__init__(**kwargs)
         self.name = 'McNiruNet'
+        self.gauss_prior = gauss_prior
         modules = []
         self.shapes = []
         shape = self.img_shape[1:]
@@ -81,6 +83,13 @@ class BNCNN(TDRModel):
         else:
             modules.append(Exponential(train_off=True))
         self.sequential = nn.Sequential(*modules)
+
+        if self.gauss_prior > 0:
+            for i,seq_idx in enumerate([0,6]):
+                prior_x = signal.gaussian(self.ksizes[i],std=self.gauss_prior)
+                prior_y = signal.gaussian(self.ksizes[i],std=self.gauss_prior)
+                prior = np.outer(prior_y, prior_x)
+                self.sequential[seq_idx].weight.data = torch.FloatTensor(prior)
         
     def forward(self, x):
         if not self.training and self.infr_exp:
@@ -377,8 +386,8 @@ class LinearStackedBNCNN(TDRModel):
         modules.append(nn.ReLU())
         if self.convgc:
             modules.append(Reshape((-1, self.chans[1], shape[0], shape[1])))
-            modules.append(LinearStackedConv2d(self.chans[1],self.n_units,kernel_size=self.ksizes[2], abs_bnorm=False, 
-                                                                                bias=self.linear_bias, drop_p=self.drop_p))
+            modules.append(nn.Conv2d(self.chans[1],self.n_units,kernel_size=self.ksizes[2], 
+                                                                    bias=self.linear_bias))
             shape = update_shape(shape, self.ksizes[2])
             self.shapes.append(tuple(shape))
             modules.append(GrabUnits(self.centers, self.ksizes, self.img_shape, self.n_units))
