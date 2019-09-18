@@ -164,7 +164,7 @@ def analyze_model(folder, interneuron_data=None, test_data=None, main_dir="../tr
         f_name = os.path.join(main_dir, folder,"test_epoch_{0}.pth".format(i))
         try:
             with open(f_name, "rb") as fd:
-                data = torch.load(fd)
+                data = torch.load(fd, map_location="cpu")
             for k,l in zip(metric_keys,metric_lists):
                 try:
                     l.append(data[k])
@@ -280,7 +280,7 @@ def analyze_model(folder, interneuron_data=None, test_data=None, main_dir="../tr
     #if avg_test_acc <= .45:
     #    print("Results too low, continuing...\n")
     #    return stats
-    
+
     if record_figs:
         # Plot firing rate sample
         fig = plt.figure()
