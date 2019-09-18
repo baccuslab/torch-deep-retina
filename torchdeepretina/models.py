@@ -86,9 +86,18 @@ class BNCNN(TDRModel):
 
         if self.gauss_prior > 0:
             for i,seq_idx in enumerate([0,6]):
-                prior_x = signal.gaussian(self.ksizes[i],std=self.gauss_prior)
-                prior_y = signal.gaussian(self.ksizes[i],std=self.gauss_prior)
-                prior = np.outer(prior_y, prior_x)
+                weight = self.sequential[seq_idx].weight
+                filters = []
+                for out_i in range(weight.shape[0]):
+                    kernels = []
+                    for in_i in range(weight.shape[1]):
+                        prior_x = signal.gaussian(weight.shape[-1],std=self.gauss_prior)
+                        prior_y = signal.gaussian(weight.shape[-2],std=self.gauss_prior)
+                        prior = np.outer(prior_y, prior_x)
+                        kernels.append(prior)
+                    filters.append(np.asarray(kernels))
+                prior = np.asarray(filters)
+                prior = prior/np.max(prior)/np.sqrt(weight.shape[0]+weight.shape[1])
                 self.sequential[seq_idx].weight.data = torch.FloatTensor(prior)
         
     def forward(self, x):
