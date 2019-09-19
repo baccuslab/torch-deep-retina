@@ -602,6 +602,44 @@ class LinearStackedConv2d(nn.Module):
         except:
             return "bias={}, abs_bnorm={}".format(self.bias, True)
 
+class OneToOneLinearStackedConv2d(nn.Module):
+    '''
+    Builds argued kernel out of multiple 3x3 kernels without added nonlinearities. No crosstalk between intermediate 
+    channels.
+    '''
+    def __init__(self, in_channels, out_channels, kernel_size, bias=True, conv_bias=False, padding=0):
+        super().__init__()
+        assert kernel_size % 2 == 1 # kernel must be odd
+        self.ksize = kernel_size
+        self.bias = bias
+        self.conv_bias = conv_bias
+        self.padding = padding
+        n_filters = int((kernel_size-1)/2)
+        assert n_filters > 1
+        self.first_conv = nn.Conv2d(in_channels, out_channels, 3, bias=conv_bias)
+        convs = []
+        self.seqs = nn.ModuleList([])
+        for c in range(out_channels):
+            convs.append([])
+            for i in range(n_filters-1):
+                if i == n_filters-2:
+                    convs[c].append(nn.Conv2d(1, 1, 3, bias=bias))
+                else:
+                    convs[c].append(nn.Conv2d(1, 1, 3, bias=conv_bias))
+            self.seqs.append(nn.Sequential(*convs[c]))
+
+    def forward(self, x):
+        x = F.pad(x, (self.padding, self.padding, self.padding, self.padding))
+        fx = self.first_conv(x)
+        outs = []
+        for chan,seq in enumerate(self.seqs):
+            outs.append(seq(fx[:,chan:chan+1]))
+        fx = torch.cat(outs,dim=1)
+        return fx
+
+    def extra_repr(self):
+        return 'bias={}, conv_bias={}, padding={}'.format(self.bias, self.conv_bias, self.padding)
+
 class StackedConv2d(nn.Module):
     '''
     Builds argued kernel out of multiple 3x3 kernels.

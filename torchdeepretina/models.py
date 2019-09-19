@@ -368,25 +368,41 @@ class RNNCNN(TDRModel):
         return fx, [h1, h2]
 
 class LinearStackedBNCNN(TDRModel):
-    def __init__(self, drop_p=0, **kwargs):
+    def __init__(self, drop_p=0, one2one=False, **kwargs):
         super().__init__(**kwargs)
         self.name = 'StackedNet'
         self.drop_p = drop_p
+        self.one2one = one2one
         shape = self.img_shape[1:] # (H, W)
         self.shapes = []
 
         modules = []
-        modules.append(LinearStackedConv2d(self.img_shape[0],self.chans[0],kernel_size=self.ksizes[0], abs_bnorm=False, 
-                                                                                    bias=self.bias, drop_p=self.drop_p))
+        if one2one:
+            modules.append(OneToOneLinearStackedConv2d(self.img_shape[0],self.chans[0],
+                                                            kernel_size=self.ksizes[0], 
+                                                                    bias=self.bias))
+        else:
+            modules.append(LinearStackedConv2d(self.img_shape[0],self.chans[0],
+                                                    kernel_size=self.ksizes[0], 
+                                               abs_bnorm=False, bias=self.bias, 
+                                                            drop_p=self.drop_p))
         shape = update_shape(shape, self.ksizes[0])
         self.shapes.append(tuple(shape))
         modules.append(Flatten())
-        modules.append(AbsBatchNorm1d(self.chans[0]*shape[0]*shape[1], eps=1e-3, momentum=self.bn_moment))
+        modules.append(AbsBatchNorm1d(self.chans[0]*shape[0]*shape[1], eps=1e-3, 
+                                                        momentum=self.bn_moment))
         modules.append(GaussianNoise(std=self.noise))
         modules.append(nn.ReLU())
         modules.append(Reshape((-1,self.chans[0],shape[0], shape[1])))
-        modules.append(LinearStackedConv2d(self.chans[0],self.chans[1],kernel_size=self.ksizes[1], abs_bnorm=False, 
-                                                                                bias=self.bias, drop_p=self.drop_p))
+        if one2one:
+            modules.append(OneToOneLinearStackedConv2d(self.chans[0],self.chans[1],
+                                                        kernel_size=self.ksizes[1], 
+                                                                    bias=self.bias))
+        else:
+            modules.append(LinearStackedConv2d(self.chans[0],self.chans[1],
+                                                    kernel_size=self.ksizes[1], 
+                                                    abs_bnorm=False, bias=self.bias, 
+                                                    drop_p=self.drop_p))
         shape = update_shape(shape, self.ksizes[1])
         self.shapes.append(tuple(shape))
         modules.append(Flatten())

@@ -146,7 +146,7 @@ def analyze_model(folder, interneuron_data=None, test_data=None, main_dir="../tr
     """
     starttime = time.time()
     
-    batch_compute_size = 500
+    batch_compute_size = 200
     stats = dict()
     print("folder:", folder)
     hyps = analysis.get_hyps(folder)
