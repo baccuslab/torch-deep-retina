@@ -21,10 +21,32 @@ from skimage.transform import downscale_local_mean
 import skimage.draw
 import cv2
 
-from torchdeepretina.datas import rolling_window
-
 __all__ = ['concat', 'white', 'contrast_steps', 'flash', 'spatialize', 'bar',
-           'driftingbar', 'cmask', 'paired_flashes']
+           'driftingbar', 'cmask', 'paired_flashes','rolling_window','get_cutout',"spatial_pad"]
+
+def get_cutout(stimulus, center, span=20, pad_to=50):
+    """ 
+    Cutout a spatial subset of the stimulus centered at the argued center.
+
+    stimulus: ndarray or torch tensor (T,H,W) or (T,D,H,W)
+        the superset of the stimulus of interest
+    center: int or list-like (chan,row,col)
+        the coordinate for the cutout to be centered on
+    span: int
+        the height and width of the cutout
+    pad: int
+        pads the cutout with zeros on every side by pad amount
+        if 0, no padding occurs
+    """
+    assert span%2 == 0 # Must be even span
+    assert pad_to%2==0 # Must be even pad
+    row = (max(0,center[0]-span//2),min(center[0]+span//2,stimulus.shape[-2]))
+    col = (max(0,center[1]-span//2),min(center[1]+span//2,stimulus.shape[-1]))
+    s = stimulus[...,row[0]:row[1],col[0]:col[1]]
+    if pad_to > 0:
+        pad = max(0,(pad_to-span)//2)
+        s = spatial_pad(s,pad_to)
+    return s
 
 def extend_to_edge(img_shape, pt1, pt2):
     """
@@ -707,6 +729,29 @@ def unroll(X):
     """Unrolls a toeplitz stimulus"""
     return np.vstack((X[0, :], X[:, -1]))
 
+def spatial_pad(stimulus, H, W=None):
+    """
+    Pads the stimulus with zeros up to H and W
+
+    stimulus - ndarray (..., H1, W1)
+    H - int
+    W - int
+    """
+    if W is None:
+        W = H
+    if stimulus.shape[-2] == H and stimulus.shape[-1] == W:
+        return stimulus
+
+    pad_h, pad_w = (H-stimulus.shape[-2]), (W-stimulus.shape[-1])
+    if pad_h % 2 == 1:
+        pad_h = (pad_h//2,pad_h//2+1)
+    else:
+        pad_h = (pad_h//2,pad_h//2)
+    if pad_w % 2 == 1:
+        pad_w = (pad_w//2,pad_w//2+1)
+    else:
+        pad_w = (pad_w//2,pad_w//2)
+    return np.pad(stimulus,((0,0),pad_h,pad_w),"constant")
 
 def prepad(y, n=40, v=0):
     """prepads with value"""
@@ -1050,6 +1095,61 @@ def get_grating_movie(grating_width=1, switch_every=10, movie_duration=100, mask
         return full_movies
     else:
         return grating_movie
+
+def rolling_window(array, window, time_axis=0):
+    """
+    Make an ndarray with a rolling window of the last dimension
+
+    Parameters
+    ----------
+    array : array_like
+        Array to add rolling window to
+
+    window : int
+        Size of rolling window
+
+    time_axis : int, optional
+        The axis of the temporal dimension, either 0 or -1 (Default: 0)
+
+    Returns
+    -------
+    Array that is a view of the original array with a added dimension
+    of size w.
+
+    Examples
+    --------
+    >>> x=np.arange(10).reshape((2,5))
+    >>> rolling_window(x, 3)
+    array([[[0, 1, 2], [1, 2, 3], [2, 3, 4]],
+           [[5, 6, 7], [6, 7, 8], [7, 8, 9]]])
+
+    Calculate rolling mean of last dimension:
+
+    >>> np.mean(rolling_window(x, 3), -1)
+    array([[ 1.,  2.,  3.],
+           [ 6.,  7.,  8.]])
+    """
+    if time_axis == 0:
+        array = array.T
+
+    elif time_axis == -1:
+        pass
+
+    else:
+        raise ValueError('Time axis must be 0 (first dimension) or -1 (last)')
+
+    assert window >= 1, "`window` must be at least 1."
+    assert window < array.shape[-1], "`window` is too long."
+
+    # with strides
+    shape = array.shape[:-1] + (array.shape[-1] - window, window)
+    strides = array.strides + (array.strides[-1],)
+    arr = np.lib.stride_tricks.as_strided(array, shape=shape, strides=strides)
+
+    if time_axis == 0:
+        return np.rollaxis(arr.T, 1, 0)
+    else:
+        return arr
 
 
 def tuplify(x, n):
