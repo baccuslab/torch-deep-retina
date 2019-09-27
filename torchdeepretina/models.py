@@ -113,19 +113,17 @@ class LN(TDRModel):
         shape = self.img_shape
         self.drop_p = drop_p
         modules.append(Flatten())
-        modules.append(GaussianNoise(std=self.noise))
+        #modules.append(GaussianNoise(std=self.noise))
         modules.append(nn.Dropout(self.drop_p))
-        modules.append(nn.Linear(shape[2]*shape[0]*shape[1], self.n_units, bias=self.linear_bias))
-        modules.append(nn.BatchNorm1d(self.n_units, eps=1e-3, momentum=self.bn_moment))
+        modules.append(nn.Linear(shape[2]*shape[0]*shape[1], self.n_units, bias=True))
+        #modules.append(nn.BatchNorm1d(self.n_units, eps=1e-3, momentum=self.bn_moment))
         if self.softplus:
             modules.append(nn.Softplus())
         else:
-            modules.append(Exponential(train_off=True))
+            modules.append(nn.ReLU())
         self.sequential = nn.Sequential(*modules)
         
     def forward(self, x):
-        if not self.training and self.infr_exp:
-            return torch.exp(self.sequential(x))
         return self.sequential(x)
 
 class ProtoAmacRNN(TDRModel):
