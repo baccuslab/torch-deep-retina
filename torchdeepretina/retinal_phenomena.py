@@ -845,19 +845,24 @@ def normalize_filter(sta, stimulus, target_sd):
     return (theta * sta, theta, res.fun)
 
 def filter_and_nonlinearity(model, contrast, layer_name='sequential.0',
-                                  unit_index=(0,15,15), nonlinearity_type='bin', filt_depth=40):
+                                  unit_index=(0,15,15), nonlinearity_type='bin', 
+                                  filt_depth=40, sta=None, verbose=False):
     # Computing STA
-    sta = compute_sta(model, contrast, layer_name, unit_index)
+    if sta is None:
+        sta = compute_sta(model, contrast, layer_name, unit_index,verbose=verbose)
     sta = np.flip(sta, axis=0)
 
-    print("Normalizing filter and collecting response")
+    if verbose:
+        print("Normalizing filter and collecting linear response")
     stimulus = white(4040, contrast=contrast)
     normed_sta, theta, error = normalize_filter(sta, stimulus, 0.35 * contrast)
     filtered_stim = ft.linear_response(normed_sta, stimulus)
 
     # Inspecting model response
+    if verbose:
+        print("Collecting full model response")
     stim_tensor = torch.FloatTensor(stim.concat(stimulus, nh=filt_depth))
-    model_response = batch_compute_model_response(stim_tensor, model, 500, insp_keys={layer_name})
+    model_response = batch_compute_model_response(stim_tensor, model, 500, insp_keys={layer_name},verbose=verbose)
     if type(unit_index) == type(int()):
         response = model_response[layer_name][:,unit_index]
     elif len(unit_index) == 1:
@@ -866,6 +871,8 @@ def filter_and_nonlinearity(model, contrast, layer_name='sequential.0',
         response = model_response[layer_name][:,unit_index[0], unit_index[1], unit_index[2]]
 
     # Fitting nonlinearity
+    if verbose:
+        print("Fitting Nonlinearity")
     if nonlinearity_type == 'bin':
         nonlinearity = Binterp(80)
     else:
