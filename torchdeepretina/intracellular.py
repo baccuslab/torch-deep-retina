@@ -10,6 +10,44 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 
+def load_interneuron_data(root_path, files=None, filter_length=40, stim_keys={"boxes"}):
+    """ 
+    Load data
+    num_pots (number of potentials) stores the number of cells per stimulus
+    mem_pots (membrane potentials) stores the membrane potential
+    psst, you can find the "data" folder in /home/grantsrb on deepretina server if you need
+
+    returns:
+    stims - dict
+        keys are the cell files, vals are a list of nd array stimuli for each cell within the file
+    mem_pots - dict
+        keys are the cell files, vals are a list of nd array membrane potential responses for each 
+        cell within the file
+    """
+    if files is None:
+        files = ['bipolars_late_2012.h5', 'bipolars_early_2012.h5', 'amacrines_early_2012.h5', 
+                'amacrines_late_2012.h5', 'horizontals_early_2012.h5', 'horizontals_late_2012.h5']
+    files = [os.path.expanduser(os.path.join(root_path, name)) for name in files]
+    file_ids = []
+    for f in files:
+        file_ids.append(re.split('_|\.', f)[0])
+    num_pots = []
+    stims = dict()
+    mem_pots = dict()
+    for fi in files:
+        stims[fi] = dict()
+        mem_pots[fi] = dict()
+        with h5py.File(fi, 'r') as f:
+            for k in f.keys():
+                if k in stim_keys:
+                    try:
+                        stims[fi][k] = tdr.analysis.prepare_stim(np.asarray(f[k+'/stimuli']), k)
+                        mem_pots[fi][k] = np.asarray(f[k]['detrended_membrane_potential'])[:, filter_length:]
+                    except Exception as e:
+                        print(e)
+                        print("stim error at", k)
+    return stims, mem_pots, files
+
 # Functions for correlation maps and loading David's stimuli in deep retina models.
 def pad_to_edge(stim):
     '''
@@ -46,8 +84,9 @@ def correlation_map(membrane_potential, model_layer):
     correlations = np.zeros((height, width))
     for y in range(height):
         for x in range(width):
-            adjusted_layer = model_layer[:,y,x]/(np.max(model_layer[:,y,x])+1e-40)
-            r,_ = pearsonr(membrane_potential, adjusted_layer)
+            #adjusted_layer = model_layer[:,y,x]/(np.max(model_layer[:,y,x])+1e-40)
+            #r,_ = pearsonr(membrane_potential, adjusted_layer)
+            r,_ = pearsonr(membrane_potential.squeeze(),model_layer[:,y,x].squeeze())
             correlations[y,x] = r if not np.isnan(r) and r < 1 and r > -1 else 0
     return correlations
 
@@ -65,8 +104,9 @@ def max_correlation(membrane_potential, model_layer, abs_val=False):
             cor_maps = [np.absolute(m) for m in cor_maps]
         return np.max([np.max(m) for m in cor_maps])
     else:
-        adjusted_layer = model_layer/(np.max(model_layer)+1e-40)
-        pearsons = [pearsonr(membrane_potential, adjusted_layer)[0] for c in range(model_layer.shape[1])]
+        #adjusted_layer = model_layer/(np.max(model_layer)+1e-40)
+        #pearsons = [pearsonr(membrane_potential, adjusted_layer)[0] for c in range(model_layer.shape[1])]
+        pearsons = [pearsonr(membrane_potential, model_layer[:,c])[0] for c in range(model_layer.shape[1])]
         pearsons = [r if not np.isnan(r) and r < 1 and r > -1 else 0 for r in pearsons]
         if abs_val:
             pearsons = [np.absolute(r) for r in pearsons]
@@ -85,8 +125,9 @@ def sorted_correlation(membrane_potential, model_layer):
         return sorted(
             [np.max(correlation_map(membrane_potential, model_layer[:,c])) for c in range(model_layer.shape[1])])
     else:
-        adjusted_layer = model_layer/(np.max(model_layer)+1e-40)
-        pearsons = [pearsonr(membrane_potential, adjusted_layer)[0] for c in range(model_layer.shape[1])]
+        #adjusted_layer = model_layer/(np.max(model_layer)+1e-40)
+        #pearsons = [pearsonr(membrane_potential, adjusted_layer)[0] for c in range(model_layer.shape[1])]
+        pearsons = [pearsonr(membrane_potential, model_layer[:,c])[0] for c in range(model_layer.shape[1])]
         pearsons = [r if not np.isnan(r) and r < 1  and r > -1 else 0 for r in pearsons]
         return sorted(pearsons)
 
@@ -112,7 +153,7 @@ def argmax_correlation_recurse_helper(membrane_potential, model_layer, shape, id
         # Otherwise sequentially widdles layer down to 1 dimension
         for i in idx[1:]: 
             layer = layer[:,i] # Sequentially selects dims of the model resulting in layer[:,idx[1],idx[2]...]
-        r, _ = pearsonr(membrane_potential, layer/np.max(layer))
+        r, _ = pearsonr(membrane_potential, layer)
         if abs_val:
             r = np.absolute(r)
         if np.isnan(r) or r >= 1 or r <= -1: r = 0
@@ -191,6 +232,8 @@ def argmax_correlation_all_layers(membrane_potential, model_response, layer_keys
         model_response: a dict of layer activities
         layer_keys: keys of model_response to be tested
         abs_val: use absolute value of correlations
+    returns:
+        best_idx: (layer, chan, row, col)
     '''
     max_r = -1
     best_idx = None
@@ -202,7 +245,7 @@ def argmax_correlation_all_layers(membrane_potential, model_response, layer_keys
             best_idx = (key, *idxs)
     if ret_max_cor_all_layers:
         return best_idx, max_r
-    return best_idx
+    return best_idx # (layer, chan, row, col)
 
 def classify(membrane_potential, model_response, time, layer_keys=['conv1', 'conv2'], abs_val=False):
     '''
