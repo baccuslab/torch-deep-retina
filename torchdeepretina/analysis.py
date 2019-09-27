@@ -158,19 +158,11 @@ def get_hyps(folder, main_dir="../training_scripts"):
         path = os.path.join(main_dir, folder, "hyperparams.json")
         return load_json(path)
     except Exception as e:
-        print(e)
-        print(path, "does not exist, attempting manual fix")
+        stream = tdr.analysis.stream_folder(path)
         hyps = dict()
-        with open(os.path.join(main_dir, folder, "hyperparams.txt")) as f:
-            for line in f:
-                if "(" not in line and ")" not in line:
-                    splt = line.strip().split(":")
-                    if len(splt) == 2:
-                        key = splt[0]
-                        val = splt[1].strip()
-                        if "true" == val.lower() or "false" == val.lower():
-                            val = val.lower() == "true"
-                        hyps[key] = val
+        for k in stream.keys():
+            if "state_dict" not in k and "model_hyps" not in k:
+                hyps[k] = stream[k]
     return hyps
 
 def load_model(folder, data=None, hyps=None, main_dir="../training_scripts/"):
@@ -270,27 +262,24 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, v
         batch_size = 1
         hs = [torch.zeros(batch_size, *h_shape).to(device) for h_shape in model.h_shapes]
 
-    outsize = (batch_size, model.n_units) if layer_shape is None else (batch_size, *layer_shape)
-    outs = torch.zeros(outsize).to(device)
-    def forward_hook(module, inps, outputs):
-        outs[:] = outputs
+    hook_outs = dict()
     module = None
     for name, modu in model.named_modules():
         if name == layer:
             if verbose:
                 print("hook attached to " + name)
             module = modu
+            hook = get_hook(hook_outs,key=layer,to_numpy=False)
+            hook_handle = module.register_forward_hook(hook)
 
     # Get gradient with respect to activations
     model.eval()
     X.requires_grad = True
     n_loops = X.shape[0]//batch_size
-    grads = []
     rng = range(n_loops)
     if verbose:
         rng = tqdm(rng)
     for i in rng:
-        hook_handle = module.register_forward_hook(forward_hook)
         idx = i*batch_size
         x = X[idx:idx+batch_size]
         x = x.to(device)
@@ -301,27 +290,24 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, v
             _ = model(x)
         # Outs are the activations at the argued layer and cell idx accross the batch
         if type(cell_idx) == type(int()):
-            fx = outs[:,cell_idx]
+            fx = hook_outs[layer][:,cell_idx]
         elif len(cell_idx) == 1:
-            fx = outs[:,cell_idx[0]]
+            fx = hook_outs[layer][:,cell_idx[0]]
         else:
-            fx = outs[:, cell_idx[0], cell_idx[1], cell_idx[2]]
+            fx = hook_outs[layer][:, cell_idx[0], cell_idx[1], cell_idx[2]]
         fx = fx.mean()
         fx.backward()
-        grads.append(X.grad[idx:idx+batch_size].data.cpu().detach().numpy())
-        hook_handle.remove()
-        outs = torch.zeros(outs.shape).to(device)
-        def forward_hook(module, inps, outputs):
-            outs[:] = outputs
-    del outs
-    del _
-
+    hook_handle.remove()
     requires_grad(model, True)
-    return np.concatenate(grads, axis=0)
+    return X.grad.data.cpu().numpy()
 
-def get_hook(layer_dict, key):
-    def hook(module, inp, out):
-        layer_dict[key] = out.detach().cpu().numpy()
+def get_hook(layer_dict, key,to_numpy=True):
+    if to_numpy:
+        def hook(module, inp, out):
+            layer_dict[key] = out.detach().cpu().numpy()
+    else:
+        def hook(module, inp, out):
+            layer_dict[key] = out
     return hook
 
 def inspect(model, X, insp_keys={"all"}, batch_size=None):
@@ -384,7 +370,7 @@ def compute_sta(model, contrast, layer, cell_index, layer_shape=None, verbose=Tr
     del X
     return sta
 
-def batch_compute_model_response(stimulus, model, batch_size, recurrent=False, insp_keys={'all'}, cust_h_init=False):
+def batch_compute_model_response(stimulus, model, batch_size=500, recurrent=False, insp_keys={'all'}, cust_h_init=False, verbose=False):
     '''
     Computes a model response in batches in pytorch. Returns a dict of lists 
     where each list is the sequence of batch responses.     
@@ -407,7 +393,10 @@ def batch_compute_model_response(stimulus, model, batch_size, recurrent=False, i
             hs[0][:,0] = 1
     with torch.no_grad():
         responses = []
-        for i in tqdm(range(n_loops)):
+        rng = range(n_loops)
+        if verbose:
+            rng = tqdm(rng)
+        for i in rng:
             stim = torch.FloatTensor(stimulus[i*batch_size:(i+1)*batch_size])
             outs = phys.inspect(stim.to(DEVICE), hs=hs, insp_keys=insp_keys)
             if type(outs) == type(tuple()):
@@ -435,3 +424,21 @@ def batch_compute_model_response(stimulus, model, batch_size, recurrent=False, i
     phys.remove_refs()
     del phys
     return model_response
+
+def stream_folder(folder,main_dir=""):
+    """
+    Gets the save dict from the save folder.
+    """
+    try:
+        _, _, fs = next(os.walk(folder.strip()))
+    except Exception as e:
+        print(e)
+        print("It is likely that folder", folder.strip(),"does not exist")
+        assert False
+    for i in range(len(fs)+200):
+        f = os.path.join(folder.strip(),"test_epoch_{0}.pth".format(i))
+        try:
+            data = torch.load(f, map_location=torch.device("cpu"))
+        except Exception as e:
+            pass
+    return data
