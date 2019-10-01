@@ -23,27 +23,6 @@ import pandas as pd
 
 DEVICE = torch.device("cuda:0")
 
-#If you want to use stimulus that isnt just boxes
-def prepare_stim(stim, stim_type):
-    if stim_type == 'boxes':
-        return 2*stim - 1
-    elif stim_type == 'flashes':
-        stim = stim.reshape(stim.shape[0], 1, 1)
-        return np.broadcast_to(stim, (stim.shape[0], 38, 38))
-    elif stim_type == 'movingbar':
-        stim = block_reduce(stim, (1,6), func=np.mean)
-        stim = pyret.stimulustools.upsample(stim.reshape(stim.shape[0], stim.shape[1], 1), 5)[0]
-        return np.broadcast_to(stim, (stim.shape[0], stim.shape[1], stim.shape[1]))
-    elif stim_type == 'lines':
-        stim_averaged = np.apply_along_axis(lambda m: np.convolve(m, 0.5*np.ones((2,)), mode='same'), 
-                                            axis=1, arr=stim)
-        stim = stim_averaged[:,::2]
-        # now stack stimulus to convert 1d to 2d spatial stimulus
-        return stim.reshape(-1,1,stim.shape[-1]).repeat(stim.shape[-1], axis=1)
-    else:
-        print("Invalid stim type")
-        assert False
-
 def make_correlation_frame(model_stats):
     """
     model_stats: dict
@@ -310,7 +289,7 @@ def get_hook(layer_dict, key,to_numpy=True):
             layer_dict[key] = out
     return hook
 
-def inspect(model, X, insp_keys={"all"}, batch_size=None):
+def inspect(model, X, insp_keys={}, batch_size=None):
     """
     Get the response from the argued layers in the model as np arrays
 
