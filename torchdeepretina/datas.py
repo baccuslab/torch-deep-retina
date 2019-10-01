@@ -166,6 +166,36 @@ class DataObj:
         self.idxs = idxs
         self.shape = [len(idxs), *data.shape[1:]]
 
+    def reshape(self, *args):
+        args = list(args)
+        if type(args[0]) == type(list()) or type(args[0]) == type(tuple()):
+            args = [*args[0]]
+        assert args[0] == -1 or args[0] == len(self.idxs) # Reshape must not change indexing axis
+        others = []
+        for i,arg in enumerate(args):
+            if arg != -1:
+                others.append(arg)
+        if len(others) < len(args):
+            num = int(np.prod(self.shape)/np.prod(others))
+            args = [arg if arg != -1 else num for arg in args]
+        self.shape = [len(self.idxs),*args[1:]]
+        self.data = self.data.reshape(-1,*args[1:])
+        return self.data[self.idxs]
+
+    def mean(self, dim=None, axis=None):
+        if dim is not None:
+            return self.data[self.idxs].mean(dim)
+        if axis is not None:
+            return self.data[self.idxs].mean(axis)
+        return self.data[self.idxs].mean()
+
+    def std(self, dim=None, axis=None):
+        if dim is not None:
+            return self.data[self.idxs].std(dim)
+        if axis is not None:
+            return self.data[self.idxs].std(axis)
+        return self.data[self.idxs].std()
+
     def __len__(self):
         return len(self.idxs)
 
