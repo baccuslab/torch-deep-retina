@@ -561,35 +561,49 @@ class SqrLinearStackedConv2d(nn.Module):
 
 class LinearStackedConv2d(nn.Module):
     '''
-    Builds argued kernel out of multiple 3x3 kernels without added nonlinearities.
+    Builds argued kernel out of multiple KxK kernels without added nonlinearities.
     '''
-    def __init__(self, in_channels, out_channels, kernel_size, bias=True, abs_bnorm=False, conv_bias=False, drop_p=0, padding=0):
+    def __init__(self, in_channels, out_channels, kernel_size, bias=True, stack_ksize=3, stack_chan=None, abs_bnorm=False, conv_bias=False, drop_p=0, padding=0):
         super(LinearStackedConv2d, self).__init__()
         assert kernel_size % 2 == 1 # kernel must be odd
+        assert kernel_size > 1 # kernel must be greater than 1
         self.ksize = kernel_size
+        self.stack_ksize = stack_ksize
+        assert self.stack_ksize <= self.ksize
         self.bias = bias
         self.conv_bias = conv_bias
         self.abs_bnorm = abs_bnorm
         self.padding = padding
         self.drop_p = drop_p
-        n_filters = int((kernel_size-1)/2)
+        self.stack_chan = out_channels if stack_chan is None else stack_chan
+
+        n_filters = (kernel_size-self.stack_ksize)/(self.stack_ksize-1)+1
+        if n_filters - int(n_filters) > 0:
+            effective = self.stack_ksize+int(n_filters-1)*(self.stack_ksize-1)
+            remaining = (kernel_size-effective)
+            self.last_ksize = remaining+1
+            n_filters += 1
+        else:
+            self.last_ksize = self.stack_ksize
+        n_filters = int(n_filters)
+
         if n_filters > 1:
-            convs = [nn.Conv2d(in_channels, out_channels, 3, bias=conv_bias)]
+            convs = [nn.Conv2d(in_channels, self.stack_chan, self.stack_ksize, bias=conv_bias)]
             if abs_bnorm:
-                convs.append(AbsBatchNorm2d(out_channels))
+                convs.append(AbsBatchNorm2d(self.stack_chan))
             if drop_p > 0:
                 convs.append(nn.Dropout(drop_p))
             for i in range(n_filters-1):
                 if i == n_filters-2:
-                    convs.append(nn.Conv2d(out_channels, out_channels, 3, bias=bias))
+                    convs.append(nn.Conv2d(self.stack_chan, out_channels, self.last_ksize, bias=bias))
                 else:
-                    convs.append(nn.Conv2d(out_channels, out_channels, 3, bias=conv_bias))
+                    convs.append(nn.Conv2d(self.stack_chan, self.stack_chan, self.stack_ksize, bias=conv_bias))
                     if abs_bnorm:
                         convs.append(AbsBatchNorm2d(out_channels))
                     if drop_p > 0:
                         convs.append(nn.Dropout(drop_p))
         else:
-            convs = [nn.Conv2d(in_channels, out_channels, 3, bias=bias)]
+            convs = [nn.Conv2d(in_channels, out_channels, self.stack_ksize, bias=bias)]
         self.convs = nn.Sequential(*convs)
 
     def forward(self, x):

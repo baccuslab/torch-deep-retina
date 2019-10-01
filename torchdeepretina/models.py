@@ -366,11 +366,13 @@ class RNNCNN(TDRModel):
         return fx, [h1, h2]
 
 class LinearStackedBNCNN(TDRModel):
-    def __init__(self, drop_p=0, one2one=False, **kwargs):
+    def __init__(self, drop_p=0, one2one=False, stack_ksizes=[3,3], stack_chans=[None,None], **kwargs):
         super().__init__(**kwargs)
         self.name = 'StackedNet'
         self.drop_p = drop_p
         self.one2one = one2one
+        self.stack_ksizes = stack_ksizes
+        self.stack_chans = stack_chans
         shape = self.img_shape[1:] # (H, W)
         self.shapes = []
 
@@ -383,7 +385,9 @@ class LinearStackedBNCNN(TDRModel):
             modules.append(LinearStackedConv2d(self.img_shape[0],self.chans[0],
                                                     kernel_size=self.ksizes[0], 
                                                abs_bnorm=False, bias=self.bias, 
-                                                            drop_p=self.drop_p))
+                                                       stack_chan=self.stack_chans[0], 
+                                                       stack_ksize=self.stack_ksizes[0],
+                                                       drop_p=self.drop_p))
         shape = update_shape(shape, self.ksizes[0])
         self.shapes.append(tuple(shape))
         modules.append(Flatten())
@@ -400,7 +404,9 @@ class LinearStackedBNCNN(TDRModel):
             modules.append(LinearStackedConv2d(self.chans[0],self.chans[1],
                                                     kernel_size=self.ksizes[1], 
                                                     abs_bnorm=False, bias=self.bias, 
-                                                    drop_p=self.drop_p))
+                                                        stack_chan=self.stack_chans[1], 
+                                                        stack_ksize=self.stack_ksizes[1],
+                                                        drop_p=self.drop_p))
         shape = update_shape(shape, self.ksizes[1])
         self.shapes.append(tuple(shape))
         modules.append(Flatten())
