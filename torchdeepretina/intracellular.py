@@ -10,6 +10,32 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 
+#If you want to use stimulus that isnt just boxes
+def prepare_stim(stim, stim_type):
+    """
+    stim: ndarray
+    stim_type: str
+        preparation method
+    """
+    if stim_type == 'boxes':
+        return 2*stim - 1
+    elif stim_type == 'flashes':
+        stim = stim.reshape(stim.shape[0], 1, 1)
+        return np.broadcast_to(stim, (stim.shape[0], 38, 38))
+    elif stim_type == 'movingbar':
+        stim = block_reduce(stim, (1,6), func=np.mean)
+        stim = pyret.stimulustools.upsample(stim.reshape(stim.shape[0], stim.shape[1], 1), 5)[0]
+        return np.broadcast_to(stim, (stim.shape[0], stim.shape[1], stim.shape[1]))
+    elif stim_type == 'lines':
+        stim_averaged = np.apply_along_axis(lambda m: np.convolve(m, 0.5*np.ones((2,)), mode='same'), 
+                                            axis=1, arr=stim)
+        stim = stim_averaged[:,::2]
+        # now stack stimulus to convert 1d to 2d spatial stimulus
+        return stim.reshape(-1,1,stim.shape[-1]).repeat(stim.shape[-1], axis=1)
+    else:
+        print("Invalid stim type")
+        assert False
+
 def load_interneuron_data(root_path, files=None, filter_length=40, stim_keys={"boxes"}):
     """ 
     Load data
@@ -41,7 +67,7 @@ def load_interneuron_data(root_path, files=None, filter_length=40, stim_keys={"b
             for k in f.keys():
                 if k in stim_keys:
                     try:
-                        stims[fi][k] = tdr.analysis.prepare_stim(np.asarray(f[k+'/stimuli']), k)
+                        stims[fi][k] = prepare_stim(np.asarray(f[k+'/stimuli']), k)
                         mem_pots[fi][k] = np.asarray(f[k]['detrended_membrane_potential'])[:, filter_length:]
                     except Exception as e:
                         print(e)
@@ -146,6 +172,10 @@ def max_correlation_all_layers(membrane_potential, model_response, layer_keys=['
 def argmax_correlation_recurse_helper(membrane_potential, model_layer, shape, idx, abs_val=False):
     """
     Recursively searches model_layer units to find the unit with the best pearsonr.
+
+    Returns:
+        best_idx: tuple (chan, row, col)
+            most correlated idx
     """
     if len(shape) == 0: # base case
         layer = model_layer[:,idx[0]]
@@ -174,9 +204,13 @@ def argmax_correlation(membrane_potential, model_layer, ret_max_cor=False, abs_v
     Takes a 1d membrane potential and computes the correlation with every tiled unit in model_layer.
     
     Args:
-        membrane_potential: 1-d numpy array
-        model_layer: (time, celltype, space, space) or (time, celltype) layer of activities
+        membrane_potential: nd array (T,)
+        model_layer: (T, C, H, W) or (T, D) layer of activities
+        ret_max_cor: returns value of max correlation in addition to idx
         abs_val: use absolute value of correlations
+    Returns:
+        best_idx: tuple (chan, row, col) or (unit,)
+        max_r: float
     '''
     assert len(model_layer.shape) >= 2
     max_r = -1
