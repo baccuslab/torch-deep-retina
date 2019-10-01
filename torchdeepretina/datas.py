@@ -10,6 +10,7 @@ from scipy.stats import zscore
 import pyret.filtertools as ft
 import torch
 import torchdeepretina.stimuli as tdrstimuli
+import os
 
 NUM_BLOCKS = {
     '15-10-07': 6,
