@@ -319,7 +319,7 @@ class Trainer:
         torch.cuda.empty_cache()
         hyps['device'] = device
         batch_size = hyps['batch_size']
-        if 'skip_nums' in hyps and len(hyps['skip_nums']) > 0 and hyps['exp_num'] in hyps['skip_nums']:
+        if 'skip_nums' in hyps and hyps['skip_nums'] is not None and len(hyps['skip_nums']) > 0 and hyps['exp_num'] in hyps['skip_nums']:
             print("Skipping", hyps['save_folder'])
             results = {"save_folder":hyps['save_folder'], "Loss":None, "ValAcc":None, "ValLoss":None, "TestPearson":None}
             return results
