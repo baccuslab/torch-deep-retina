@@ -37,7 +37,7 @@ def prep_dataGang(dataGang, batch_size):
 	train_data = dataGang[0]
 	test_data = dataGang[1]
 	num_val = 20000
-	data = ShuffledDataSplit(train_data, num_val)
+	data = ShuffledDataSplit(train_data, num_val, batch_size)
 
 	data.torch()
 	epoch_length = data.train_shape[0]
@@ -47,12 +47,12 @@ def prep_dataGang(dataGang, batch_size):
 	print("N Batches:", num_batches, "  Leftover:", leftover)
 	return train_data, test_data, data, num_batches
 
-def prep_dataIntra(dataIntra, num_batches):
-	intraData = DataContainer(concat(pad_to_edge(zscore(dataIntra[0]))), dataIntra[1], mode=False)
-	intra_batchsize, leftover = divmod(intraData.X.shape[0], num_batches)
-	intraData = ShuffledDataSplit(intraData, 150, intra_batchsize)
+def prep_dataIntra(dataIntra, batch_size, shape):
+	num = int(shape/dataIntra[0].shape[0]) + 1
+	intraData = DataContainer(concat(pad_to_edge(np.tile(zscore(dataIntra[0]), (num, 1, 1)))), np.tile(dataIntra[1], num), mode=False)
+	intraData = ShuffledDataSplit(intraData, 150, batch_size)
 	intraData.torch()
-	return intraData, intra_batchsize
+	return intraData
 
 def load_pretrained(model, pretrained_path):
 	pretrained_dict = torch.load(pretrained_path)['model_state_dict']
@@ -67,15 +67,13 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 		def prepare_x_and_label(data, idxs):
 			x = data.train_X[idxs]
 			x = x.to(DEVICE)
-
 			label = data.train_y[idxs]
 			label = label.float()
 			label = label.to(DEVICE)
 			return x, label
-		alpha = hyps['alpha']
 		optimizer.zero_grad()
 		idxs = indices[batch_size*batch:batch_size*(batch+1)]
-		intraidxs = intraindices[intra_batchsize*batch:intra_batchsize*(batch+1)]
+		intraidxs = intraindices[batch_size*batch:batch_size*(batch+1)]
 
 		x, label = prepare_x_and_label(data, idxs)
 		y = model(x.to(DEVICE))
@@ -88,48 +86,53 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 
 		intra_x, intra_label = prepare_x_and_label(intraData, intraidxs)
 		intra_y = physio.inspect(intra_x, insp_keys={layer})[layer][:, celltype, sidx[0], sidx[1]]
-		error_intra = loss_fn(intra_y, intra_label)
+		error_intra = intraloss_fn(intra_y, intra_label)
 
 		if gradnorm:
-			nonlocal loss_intra0
-			nonlocal loss_gang0
+			nonlocal loss0
 			nonlocal loss_weights
-			if loss_intra0 is None:
-				loss_intra0 = error_intra
-				loss_gang0 = error_gang
+	
 
 		weighted_loss_gang = loss_weights[0]*error_gang
 		weighted_loss_intra = loss_weights[1]*error_intra
+		loss = weighted_loss_gang + weighted_loss_intra
+		if batch == 0 or batch == 1:
+				loss0 = loss.data.detach()
+		
+		loss.backward(retain_graph=True)
 
-		weighted_loss_gang.backward(retain_graph=True)
-		weighted_loss_intra.backward(retain_graph=True)
+
 
 		if gradnorm:
-			loss_gradients = []
-			loss_gradients.append(torch.norm(model.sequential[11].weight.grad, 2).to(DEVICE))
-			loss_gradients.append(torch.norm(model.sequential[6].weight.grad, 2).to(DEVICE))
-			total_loss_gradient = ((loss_weights[0]*loss_gradients[0] + loss_weights[1]*loss_gradients[1])/T).to(DEVICE)
-			loss_ratios = []
-			loss_ratios.append(error_gang.detach()/loss_gang0.detach())
-			loss_ratios.append(error_intra.detach()/loss_intra0.detach())
-			total_loss_ratio = ((loss_weights[0]*loss_ratios[0] + loss_weights[1]*loss_ratios[1])/T).to(DEVICE)
-			inverse_rates = []
-			inverse_rates.append((loss_ratios[0]/total_loss_ratio).to(DEVICE))
-			inverse_rates.append((loss_ratios[1]/total_loss_ratio).to(DEVICE))
+			g0r = torch.autograd.grad(weighted_loss_gang, model.sequential[0].weight, retain_graph=True, create_graph=True)
+			g0r = torch.norm(g0r[0].cpu(), 2)
+			g1r = torch.autograd.grad(weighted_loss_intra, model.sequential[6].weight, retain_graph=True, create_graph=True)
+			g1r = torch.norm(g1r[0].cpu(), 2)
+			total_loss_gradient = torch.div(torch.add(g0r,g1r), T)
+			loss_ratios0 = torch.div(error_gang,loss0).cpu()
+			loss_ratios1 = torch.div(error_intra,loss0).cpu()
+			total_loss_ratio = torch.div(torch.add(loss_ratios0,loss_ratios1),T)
+			inverse_rates0  = torch.div(loss_ratios0,total_loss_ratio)
+			inverse_rates1 = torch.div(loss_ratios1,total_loss_ratio)
+			constant0 = (total_loss_gradient*inverse_rates0**hyps['alpha']).detach()
+			constant1 = (total_loss_gradient*inverse_rates1**hyps['alpha']).detach()
 
-			L_grad = torch.zeros(1, requires_grad = True)
-			L_grad = L_grad.to(DEVICE)
-			for i in range(T):
-				constant = total_loss_gradient*torch.pow(inverse_rates[i], alpha).cpu().detach()
-				L_grad = L_grad +  torch.norm(loss_gradients[i] - constant, 1)
+			opt2.zero_grad()
+
+
+			L_grad = torch.add(gradloss_fn(g0r, constant0), gradloss_fn(g1r, constant1))
 			L_grad.backward(retain_graph=True)
 
-		loss = error_intra + error_gang
+
+			opt2.step()
+
+
 		optimizer.step()
 		if gradnorm:
-			normalize_coeff = T/ torch.sum(loss_weights)
-			loss_weights = loss_weights * normalize_coeff
-		print("Loss:", loss.item()," - error_gang:", error_gang.item(), "- error_intra:", error_intra.item(), " - l1:", activity_l1.item(), " | ", int(round(batch/num_batches, 2)*100), "% done", end='               \r')
+			normalize_coeff = T/(loss_weights[0].item()+ loss_weights[1].item())
+			Weightloss1.data = Weightloss1.data* normalize_coeff
+			Weightloss2.data = Weightloss2.data*normalize_coeff
+		print("error_gang:", error_gang.item(), "- error_intra:", error_intra.item(), "weight_gang:", loss_weights[0].item(), "weight_intra", loss_weights[1].item(), " - l1:", activity_l1.item(), " | ", int(round(batch/num_batches, 2)*100), "% done", end='               \r')
 		if math.isnan(epoch_loss) or math.isinf(epoch_loss):
 			return None
 
@@ -211,7 +214,7 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 			f.write(str(k) + ": " + str(hyps[k]) + "\n")
 
 	train_data, test_data, data, num_batches = prep_dataGang(dataGang, batch_size)
-	intraData, intra_batchsize = prep_dataIntra(dataIntra, num_batches)
+	intraData = prep_dataIntra(dataIntra, batch_size, data.train_shape[0])
 
 	print(model)
 	model = model.to(DEVICE)
@@ -226,15 +229,18 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 		del model_response
 	else:
 		_, sidx, tidx = filterpeak(intraRF)
-		layer = "sequential.6"
+		layer = "sequential.0"
 		celltype = 0
 
 	physio.numpy = False
 	torch.cuda.empty_cache()
 
-	loss_fn = torch.nn.PoissonNLLLoss()
+	loss_fn = torch.nn.PoissonNLLLoss(log_input=False)
+	intraloss_fn = torch.nn.MSELoss()
+	gradloss_fn = torch.nn.L1Loss()
 	optimizer = torch.optim.Adam(model.parameters(), lr = LR, weight_decay = LAMBDA2)
-	scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.2*LR)
+
+	scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.2)
 
 	# train/val split
 
@@ -242,15 +248,19 @@ def train(hyps, model, dataGang, dataIntra, intraRF):
 	test_x = torch.from_numpy(test_data.X)
 
 	T = 2
-	loss_weights = torch.ones(T, requires_grad=True)
-	loss_weights = loss_weights.to(DEVICE)
-	loss_intra0 = None
-	loss_gang0 = None
+	Weightloss1 = torch.tensor(torch.FloatTensor([1]), requires_grad=True, device=DEVICE)
+	Weightloss2 = torch.tensor(torch.FloatTensor([1]), requires_grad=True, device=DEVICE)
+	loss_weights = [Weightloss1, Weightloss2]
+	loss0 = None
+	if gradnorm:
+		opt2 = torch.optim.Adam(loss_weights, lr=hyps['lr'])
 
 	for epoch in range(EPOCHS):
 		model.train(mode=True)
 		indices = torch.randperm(data.train_shape[0]).long()
+		print(intraData.train_shape[0])
 		intraindices = torch.randperm(intraData.train_shape[0]).long()
+
 
 		losses = []
 		epoch_loss_gang = 0
@@ -324,7 +334,7 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
 
 		file = '/home/julia/julia/data/amacrines_late_2012.h5'
 		with h5.File(file, 'r') as f:
-			intraData = (np.array(f['boxes/stimuli']), np.array(f['boxes/detrended_membrane_potential'][0, 40:]))
+			intraData = (np.array(f['boxes/stimuli']), np.array(f['boxes/detrended_membrane_potential'][0, :]))
 			intraRF = np.array(f['boxes/rfs/040412_c1'])
 		data = [train_data, test_data]
 		if "chans" in hyps:

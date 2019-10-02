@@ -52,6 +52,14 @@ def correlation_map(membrane_potential, model_layer):
             correlations[y,x] = r if not np.isnan(r) and r < 1 and r > -1 else 0
     return correlations
 
+def contribution_map(model_activations, model_gradients):
+    height = model_gradients.shape[-2]
+    width = model_gradients.shape[-1]
+    contributions = np.zeros(model_gradients.shape)
+    contributions = model_gradients * model_activations.reshape(-1, height, width)
+    return contributions
+
+
 def max_correlation(membrane_potential, model_layer, abs_val=False):
     '''
     Takes a 1d membrane potential and computes the correlation with every tiled unit in model_layer.

@@ -16,3 +16,4 @@ from models.DalesSkip_BN_CNN import DalesSkipBNCNN
 from models.SkipBN_BN_CNN import SkipBNBNCNN
 from models.Parallel_Data_BN_CNN import ParallelDataBNCNN
 from models.BN_CNN_1or2D import BNCNN1or2D
+from models.SS_CNN_1or2D import SSCNN1or2D

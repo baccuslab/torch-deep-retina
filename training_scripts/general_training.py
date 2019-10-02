@@ -14,7 +14,7 @@ import resource
 sys.path.append('../')
 sys.path.append('../utils/')
 from utils.miscellaneous import ShuffledDataSplit
-from models import BNCNN, BNCNN2D, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN, DalesSkipBNCNN, SkipBNBNCNN, Gauss1dBNCNN, AbsBNBNCNN, BNCNN1or2D
+from models import BNCNN, BNCNN2D, CNN, SSCNN, DalesBNCNN, DalesSSCNN, DalesHybrid, PracticalBNCNN, StackedBNCNN, NormedBNCNN, SkipBNCNN, DalesSkipBNCNN, SkipBNBNCNN, Gauss1dBNCNN, AbsBNBNCNN, BNCNN1or2D, SSCNN1or2D
 import retio as io
 import argparse
 import time
@@ -66,7 +66,7 @@ def train(hyps, model, data):
 
     loss_fn = torch.nn.PoissonNLLLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr = LR, weight_decay = LAMBDA2)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.2*LR)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.2)
 
     # train/val split
     num_val = 20000
@@ -83,7 +83,7 @@ def train(hyps, model, data):
 
     # Train Loop
     for epoch in range(EPOCHS):
-        if model.name == 'BNCNN1or2D' and epoch == 80:
+        if model.name == 'BNCNN1or2D' and epoch == 1:
             model.sequential[1].twod = False
             model.sequential[5].twod = False
         model.train(mode=True)
@@ -260,7 +260,7 @@ def hyper_search(hyps, hyp_ranges, keys, train, idx=0):
 def set_model_type(model_str):
     if model_str not in ["BNCNN", "BNCNN2D", "CNN", "SSCNN", "DalesBNCNN", "DalesSSCNN", "DalesHybrid", "PracticalBNCNN", 
                             "StackedBNCNN", "NormedBNCNN", "SkipBNCNN", "DalesSkipBNCNN", "SkipBNBNCNN", "Gauss1dBNCNN", 
-                            "AbsBNBNCNN", "BNCNN1or2D"]:
+                            "AbsBNBNCNN", "BNCNN1or2D", "SSCNN1or2D"]:
         print("Invalid model type!")
         return None
     return eval(model_str)

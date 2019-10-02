@@ -157,6 +157,32 @@ class ScaleShift(nn.Module):
     def extra_repr(self):
         return 'shape={}, scale={}, shift={}'.format(self.shape, self.scale, self.shift)
 
+
+class ScaleShift1or2d(nn.Module):
+    def __init__(self, n_units, scale=True, shift=True):
+        super(ScaleShift1or2d, self).__init__()
+        self.n_units = n_units
+        self.scale1d = nn.Parameter(torch.ones(n_units).float(), requires_grad=True)
+        self.shift1d = nn.Parameter(torch.zeros(n_units).float(), requires_grad=True)
+        self.scale2d = nn.Parameter(torch.ones(n_units[0]).float(), requires_grad=True)
+        self.shift2d = nn.Parameter(torch.zeros(n_units[0]).float(), requires_grad=True)
+        self.twod = True
+
+    def forward(self, x):
+        if self.twod:
+            return (x.view(-1, self.n_units[0])*self.scale2d+ self.shift2d).transpose(0, 1).view(self.n_units[0], -1, self.n_units[1], self.n_units[2]).transpose(0, 1)
+        else:
+            shape = x.shape
+            if torch.equal(self.scale1d.data.cpu(),torch.ones(self.n_units).float()):
+                self.scale1d = nn.Parameter(torch.unsqueeze(torch.unsqueeze(self.scale2d, 1), 1).repeat(1, self.n_units[1], self.n_units[2]))
+                self.shift1d = nn.Parameter(torch.unsqueeze(torch.unsqueeze(self.shift2d, 1), 1).repeat(1, self.n_units[1], self.n_units[2]))
+            x = x*self.scale1d + self.shift1d
+            return x
+
+    def extra_repr(self):
+        return 'n_units = {}'.format(self.n_units)
+
+
 class DaleActivations(nn.Module):
     """
     For the full Dale effect, will also need to use AbsConv2d and AbsLinear layers.
@@ -277,7 +303,7 @@ class Flatten(nn.Module):
         super(Flatten, self).__init__()
 
     def forward(self, x):
-        return x.view(x.shape[0], -1)
+        return x.contiguous().view(x.shape[0], -1)
 
 class Reshape(nn.Module):
     def __init__(self, shape):
@@ -319,17 +345,31 @@ class BatchNorm1or2D(nn.Module):
                                             weight=self.scale2d, bias=self.shift2d, eps=self.eps, momentum=self.momentum, 
                                             training=self.training)
         else:
-            if torch.eq(self.scale1d.data,torch.ones(n_units1d).float()):
-                n_repeat = self.n_units1d/self.n_units2d
-                self.scale1d.data = torch.repeat_interleave(self.scale2d.data, n_repeat)
-                self.shift1d.data = torch.repeat_interleave(self.shift2d.data, n_repeat)
-                self.running_mean1d = torch.repeat_interleave(self.running_mean2d, n_repeat)
-                self.running_var1d = torch.repeat_interleave(self.running_var2d, n_repeat)
+            self.scale2d.requires_grad = False
+            self.shift2d.requires_grad = False
+            n_repeat = self.n_units1d/self.n_units2d
+            if torch.equal(self.scale1d.data.cpu(),torch.ones(self.n_units1d).float()):
+                self.scale1d.data = torch.from_numpy(np.repeat(self.scale2d.data.cpu().detach().numpy(), n_repeat)).to(DEVICE)
+                self.shift1d.data = torch.from_numpy(np.repeat(self.shift2d.data.cpu().detach().numpy(), n_repeat)).to(DEVICE)
+                self.running_mean1d.data = torch.from_numpy(np.repeat(self.running_mean2d.data.cpu().detach().numpy(), n_repeat)).to(DEVICE)
+                self.running_var1d.data = torch.from_numpy(np.repeat(self.running_var2d.data.cpu().detach().numpy(), n_repeat)).to(DEVICE)
             shape = x.shape
+            mean = torch.mean(x, (0, 2, 3))
+            mean = torch.from_numpy(np.repeat(mean.cpu().detach().numpy(), n_repeat)).to(DEVICE)
+            var = torch.var(x.view(shape[1], -1), 1)
+            var = torch.from_numpy(np.repeat(var.cpu().detach().numpy(), n_repeat)).to(DEVICE)
+            self.running_mean1d.data = self.running_mean1d.data*(1-self.momentum) + self.momentum*mean
+            self.running_var1d.data = self.running_var1d.data*(1-self.momentum) + self.momentum*var
+
             x = x.view(shape[0], -1)
-            x = nn.functional.batch_norm(x, self.running_mean1d, self.running_var1d, 
+            if self.training:
+                x = nn.functional.batch_norm(x, mean, var, 
                                             weight=self.scale1d, bias=self.shift1d, eps=self.eps, momentum=self.momentum, 
-                                            training=self.training)
+                                            training=False)
+            else:
+                x = nn.functional.batch_norm(x, self.running_mean1d, self.running_var1d, 
+                                            weight=self.scale1d, bias=self.shift1d, eps=self.eps, momentum=self.momentum, 
+                                            training=False)
             return x.view(shape)
 
 
