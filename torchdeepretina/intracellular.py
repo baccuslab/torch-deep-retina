@@ -9,6 +9,7 @@ import pyret.filtertools as ft
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator, FormatStrFormatter
+import torchdeepretina.datas as tdrdatas
 
 #If you want to use stimulus that isnt just boxes
 def prepare_stim(stim, stim_type):
@@ -50,29 +51,7 @@ def load_interneuron_data(root_path, files=None, filter_length=40, stim_keys={"b
         keys are the cell files, vals are a list of nd array membrane potential responses for each 
         cell within the file
     """
-    if files is None:
-        files = ['bipolars_late_2012.h5', 'bipolars_early_2012.h5', 'amacrines_early_2012.h5', 
-                'amacrines_late_2012.h5', 'horizontals_early_2012.h5', 'horizontals_late_2012.h5']
-    files = [os.path.expanduser(os.path.join(root_path, name)) for name in files]
-    file_ids = []
-    for f in files:
-        file_ids.append(re.split('_|\.', f)[0])
-    num_pots = []
-    stims = dict()
-    mem_pots = dict()
-    for fi in files:
-        stims[fi] = dict()
-        mem_pots[fi] = dict()
-        with h5py.File(fi, 'r') as f:
-            for k in f.keys():
-                if k in stim_keys:
-                    try:
-                        stims[fi][k] = prepare_stim(np.asarray(f[k+'/stimuli']), k)
-                        mem_pots[fi][k] = np.asarray(f[k]['detrended_membrane_potential'])[:, filter_length:]
-                    except Exception as e:
-                        print(e)
-                        print("stim error at", k)
-    return stims, mem_pots, files
+    return tdrdatas.load_interneuron_data(root_path=root_path, files=files, filter_length=filter_length, stim_keys=stim_keys)
 
 # Functions for correlation maps and loading David's stimuli in deep retina models.
 def pad_to_edge(stim):
