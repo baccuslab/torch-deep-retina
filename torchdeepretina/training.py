@@ -57,24 +57,6 @@ class Trainer:
                 print("Caught error",e,"on", train_args[0]['exp_num'], "will retry in 100 seconds...")
                 sleep(100)
 
-    def get_data(self, hyps):
-        """
-        hyps: dict
-            dict of relevant hyperparameters
-        """
-        img_depth, img_height, img_width = hyps['img_shape']
-        train_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'], hyps['stim_type'],'train',img_depth,0))
-        norm_stats = [train_data.stats['mean'], train_data.stats['std']] 
-
-        try:
-            test_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],hyps['stim_type'],'test',img_depth,0, 
-                                                                                         norm_stats=norm_stats))
-            test_data.X = test_data.X[:500]
-            test_data.y = test_data.y[:500]
-        except:
-            test_data = None
-        return train_data, test_data
-
     def get_model_and_distr(self, hyps, model_hyps, train_data):
         """
         hyps: dict
@@ -82,7 +64,7 @@ class Trainer:
         model_hyps: dict
             dict of relevant hyperparameters
         train_data: DataContainer
-            a DataContainer of the training data as returned by self.get_data
+            a DataContainer of the training data as returned by get_data
         """
         model = hyps['model_class'](**model_hyps)
         model = model.to(hyps['device'])
@@ -113,26 +95,6 @@ class Trainer:
             del temp_hyps['model_class']
             json.dump(temp_hyps, f)
 
-    def get_optim_objs(self, hyps, model, centers=None):
-        """
-        hyps: dict
-            dict of relevant hyperparameters
-        model: torch nn.Module
-            the model to be trained
-        centers: list of tuples or lists, shape: (n_cells, 2)
-            the centers of each ganglion cell in terms of image coordinates
-            if None centers is ignored
-        """
-        if 'lossfxn' not in hyps:
-            hyps['lossfxn'] = "PoissonNLLLoss"
-        if hyps['lossfxn'] == "PoissonNLLLoss" and 'log_poisson' in hyps:
-            loss_fn = globals()[hyps['lossfxn']](log_input=hyps['log_poisson'])
-        else:
-            loss_fn = globals()[hyps['lossfxn']]()
-        optimizer = torch.optim.Adam(model.parameters(), lr = hyps['lr'], weight_decay = hyps['l2'])
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.1)
-        return optimizer, scheduler, loss_fn
-
     def get_hs(self, hyps, model, batch_size=None):
         """
         hyps: dict
@@ -153,82 +115,6 @@ class Trainer:
                 for i in range(hyps['recur_seq_len']):
                     hs[1].append(torch.zeros(batch_size, *model.h_shapes[1]).to(device))
         return hs
-
-    def recurrent_eval(self, hyps, x, label, model, hs, loss_fn, teacher=None):
-        """
-        hyps: dict
-            dict of relevant hyperparameters
-        x: torch FloatTensor
-            a batch of the training data
-        label: torch FloatTensor
-            a batch of the training labels
-        model: torch nn.Module
-            the model to be trained
-        hs: list
-            the hidden states of the recurrent model as obtained through self.get_hs
-        """
-        hs_out = hs
-        batch_size = hyps['batch_size']
-        ys = []
-        answers = []
-        device = hyps['device']
-        teacher_device = device
-        if teacher is None:
-            teacher = lambda x: None
-            teacher_device = torch.device("cpu")
-        for ri in range(hyps['recur_seq_len']):
-            ins = x[:,ri]
-            y, hs_out = model(ins.to(device), hs_out)
-            ys.append(y.view(batch_size, 1, label.shape[-1]))
-            with torch.no_grad():
-                ans = teacher(x.to(teacher_device))
-            answers.append(ans)
-            if ri == 0 and not hyps['reset_hs']:
-                if model.kinetic:
-                    hs[0] = hs_out[0].data.clone()
-                    hs[1] = deque([h.data.clone() for h in hs[1]], maxlen=hyps['recur_seq_len'])
-                else:
-                    hs = [h.data.clone() for h in hs_out]
-        y = torch.cat(ys, dim=1)
-        error = loss_fn(y,label)/hyps['recur_seq_len']
-
-        # Teacher
-        if answers[0] is not None:
-            answers = torch.cat(answers, dim=1)
-            grade = hyps['teacher_coef']*F.mse_loss(y,answers.data)/hyps['recur_seq_len']
-            hyps['teacher_coef'] *= hyps['teacher_decay']
-        else:
-            grade = torch.zeros(1).to(device)
-
-        # Kinetics
-        if hyps['model_type'] == "KineticsModel" and model.kinetics.kfr + model.kinetics.ksi > 1:
-            error += ((1-(model.kinetics.kfr+model.kinetics.ksi))**2).mean()
-
-        return y, error, grade, hs
-
-    def static_eval(self, hyps, x, label, model, loss_fn, teacher=None):
-        """
-        hyps: dict
-            dict of relevant hyperparameters
-        x: torch FloatTensor
-            a batch of the training data
-        label: torch FloatTensor
-            a batch of the training labels
-        model: torch nn.Module
-            the model to be trained
-        teacher: torch nn.Module
-            optional teacher network
-        """
-        device = hyps['device']
-        y = model(x.to(device))
-        error = loss_fn(y,label)
-        if teacher is not None:
-            with torch.no_grad():
-                ans = teacher(x.to(device))
-            grade = F.mse_loss(y,ans.data)
-        else:
-            grade = torch.zeros(1).to(device)
-        return y,error,grade
 
     def print_train_update(self, error, grade, l1, model, n_loops, i):
         loss = error + grade + l1
@@ -313,7 +199,7 @@ class Trainer:
         model: torch nn.Module
             the model to be trained
         train_data: DataContainer
-            a DataContainer of the training data as returned by self.get_data
+            a DataContainer of the training data as returned by get_data
         """
         # Initialize miscellaneous parameters 
         torch.cuda.empty_cache()
@@ -325,7 +211,7 @@ class Trainer:
             return results
 
         # Get Data, Make Model, Record Initial Hyps and Model
-        train_data, test_data = self.get_data(hyps)
+        train_data, test_data = get_data(hyps)
         model_hyps["n_units"] = train_data.y.shape[-1]
         model_hyps['centers'] = train_data.centers
         model, data_distr = self.get_model_and_distr(hyps, model_hyps, train_data)
@@ -340,7 +226,7 @@ class Trainer:
             #if hyps['teacher_layers'] is not None:
 
         # Make optimization objects (lossfxn, optimizer, scheduler)
-        optimizer, scheduler, loss_fn = self.get_optim_objs(hyps, model, train_data.centers)
+        optimizer, scheduler, loss_fn = get_optim_objs(hyps, model, train_data.centers)
 
         # Training
         for epoch in range(hyps['n_epochs']):
@@ -360,9 +246,9 @@ class Trainer:
 
                 # Error Evaluation
                 if model.recurrent:
-                    y,error,grade,hs = self.recurrent_eval(hyps, x, label, model, hs, loss_fn, teacher=teacher)
+                    y,error,grade,hs = recurrent_eval(hyps, x, label, model, hs, loss_fn, teacher=teacher)
                 else:
-                    y,error,grade = self.static_eval(hyps, x, label, model, loss_fn, teacher=teacher)
+                    y,error,grade = static_eval(hyps, x, label, model, loss_fn, teacher=teacher)
                 activity_l1 = torch.zeros(1).to(device) if hyps['l1']<=0 else hyps['l1'] * torch.norm(y, 1).float().mean()
 
                 # Backwards Pass
@@ -489,6 +375,120 @@ class Trainer:
             f.write("\n" + " ".join([str(k)+":"+str(results[k]) for k in sorted(results.keys())]) + '\n')
         return results
 
+def recurrent_eval(hyps, x, label, model, hs, loss_fn, teacher=None):
+    """
+    hyps: dict
+        dict of relevant hyperparameters
+    x: torch FloatTensor
+        a batch of the training data
+    label: torch FloatTensor
+        a batch of the training labels
+    model: torch nn.Module
+        the model to be trained
+    hs: list
+        the hidden states of the recurrent model as obtained through self.get_hs
+    """
+    hs_out = hs
+    batch_size = hyps['batch_size']
+    ys = []
+    answers = []
+    device = hyps['device']
+    teacher_device = device
+    if teacher is None:
+        teacher = lambda x: None
+        teacher_device = torch.device("cpu")
+    for ri in range(hyps['recur_seq_len']):
+        ins = x[:,ri]
+        y, hs_out = model(ins.to(device), hs_out)
+        ys.append(y.view(batch_size, 1, label.shape[-1]))
+        with torch.no_grad():
+            ans = teacher(x.to(teacher_device))
+        answers.append(ans)
+        if ri == 0 and not hyps['reset_hs']:
+            if model.kinetic:
+                hs[0] = hs_out[0].data.clone()
+                hs[1] = deque([h.data.clone() for h in hs[1]], maxlen=hyps['recur_seq_len'])
+            else:
+                hs = [h.data.clone() for h in hs_out]
+    y = torch.cat(ys, dim=1)
+    error = loss_fn(y,label)/hyps['recur_seq_len']
+
+    # Teacher
+    if answers[0] is not None:
+        answers = torch.cat(answers, dim=1)
+        grade = hyps['teacher_coef']*F.mse_loss(y,answers.data)/hyps['recur_seq_len']
+        hyps['teacher_coef'] *= hyps['teacher_decay']
+    else:
+        grade = torch.zeros(1).to(device)
+
+    # Kinetics
+    if hyps['model_type'] == "KineticsModel" and model.kinetics.kfr + model.kinetics.ksi > 1:
+        error += ((1-(model.kinetics.kfr+model.kinetics.ksi))**2).mean()
+
+    return y, error, grade, hs
+
+def static_eval(hyps, x, label, model, loss_fn, teacher=None):
+    """
+    hyps: dict
+        dict of relevant hyperparameters
+    x: torch FloatTensor
+        a batch of the training data
+    label: torch FloatTensor
+        a batch of the training labels
+    model: torch nn.Module
+        the model to be trained
+    teacher: torch nn.Module
+        optional teacher network
+    """
+    device = hyps['device']
+    y = model(x.to(device))
+    error = loss_fn(y,label)
+    if teacher is not None:
+        with torch.no_grad():
+            ans = teacher(x.to(device))
+        grade = F.mse_loss(y,ans.data)
+    else:
+        grade = torch.zeros(1).to(device)
+    return y,error,grade
+
+def get_data(hyps):
+    """
+    hyps: dict
+        dict of relevant hyperparameters
+    """
+    img_depth, img_height, img_width = hyps['img_shape']
+    train_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'], hyps['stim_type'],'train',img_depth,0))
+    norm_stats = [train_data.stats['mean'], train_data.stats['std']] 
+
+    try:
+        test_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],hyps['stim_type'],'test',img_depth,0, 
+                                                                                     norm_stats=norm_stats))
+        test_data.X = test_data.X[:500]
+        test_data.y = test_data.y[:500]
+    except:
+        test_data = None
+    return train_data, test_data
+
+def get_optim_objs(hyps, model, centers=None):
+    """
+    hyps: dict
+        dict of relevant hyperparameters
+    model: torch nn.Module
+        the model to be trained
+    centers: list of tuples or lists, shape: (n_cells, 2)
+        the centers of each ganglion cell in terms of image coordinates
+        if None centers is ignored
+    """
+    if 'lossfxn' not in hyps:
+        hyps['lossfxn'] = "PoissonNLLLoss"
+    if hyps['lossfxn'] == "PoissonNLLLoss" and 'log_poisson' in hyps:
+        loss_fn = globals()[hyps['lossfxn']](log_input=hyps['log_poisson'])
+    else:
+        loss_fn = globals()[hyps['lossfxn']]()
+    optimizer = torch.optim.Adam(model.parameters(), lr = hyps['lr'], weight_decay = hyps['l2'])
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor = 0.1)
+    return optimizer, scheduler, loss_fn
+
 def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
     """
     Recursive function to load each of the hyperparameter combinations 
@@ -517,6 +517,9 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
         for k in keys:
             hyps['save_folder'] += "_" + str(k)+str(hyps[k])
 
+
+        test_hyps = get_model_hyps(hyps)
+
         # Make model hyps
         hyps['model_class'] = globals()[hyps['model_type']]
         model_hyps = {k:v for k,v in hyps.items()}
@@ -527,6 +530,9 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
         for k in keys:
             if k not in fn_args:
                 del model_hyps[k]
+
+        for k in test_hyps.keys():
+            assert test_hyps[k] == model_hyps[k]
         
         # Load q
         hyper_q.put([{k:v for k,v in hyps.items()}, {k:v for k,v in model_hyps.items()}])
@@ -647,6 +653,21 @@ def hyper_search(hyps, hyp_ranges, keys, device, early_stopping=10, stop_toleran
         with open(results_file,'a') as f:
             results = " -- ".join([str(k)+":"+str(results[k]) for k in sorted(results.keys())])
             f.write("\n"+results+"\n")
+
+def get_model_hyps(hyps):
+    hyps = {k:v for k,v in hyps.items()}
+    hyps['model_class'] = globals()[hyps['model_type']]
+    model_hyps = {k:v for k,v in hyps.items()}
+
+    fn_args = set(hyps['model_class'].__init__.__code__.co_varnames) 
+    if "kwargs" in fn_args:
+        fn_args = fn_args | set(TDRModel.__init__.__code__.co_varnames)
+    keys = list(model_hyps.keys())
+    for k in keys:
+        if k not in fn_args:
+            del model_hyps[k]
+    return model_hyps
+
 
 class ModulePackage:
     def __init__(self, model, layer_keys):
