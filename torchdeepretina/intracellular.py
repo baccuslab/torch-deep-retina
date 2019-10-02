@@ -224,6 +224,29 @@ def argmax_correlation(membrane_potential, model_layer, ret_max_cor=False, abs_v
         return best_idx, max_r
     return best_idx
 
+def get_intr_cors(model, intr_stim, intr_pot):
+    """
+    model - torch Module
+    intr_stim - dict
+        keys: str (interneuron data file name)
+            vals: dict
+                keys: stim_types
+                    vals: ndarray (T, H, W)
+    intr_pot - dict
+        keys: str (interneuron data file name)
+            vals: dict
+                keys: stim_types
+                    vals: ndarray (CI, T)
+                        CI is cell idx and T is time
+    returns:
+        intr_cors - dict
+            keys: str (interneuron data file name)
+                vals: dict
+                    keys: stim_types
+                        vals: list (C,)
+                            C is channel
+    """
+
 def get_correlation_stats(membrane_potential, model_response, layer_keys=['sequential.2', 'sequential.8'], abs_val=False):
     """
     Finds the unit of maximum correlation for each channel in each of the argued layers.
