@@ -558,7 +558,6 @@ class SqrLinearStackedConv2d(nn.Module):
         except:
             return "bias={}, abs_bnorm={}".format(self.bias, True)
 
-
 class LinearStackedConv2d(nn.Module):
     '''
     Builds argued kernel out of multiple KxK kernels without added nonlinearities.

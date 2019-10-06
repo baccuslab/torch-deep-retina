@@ -8,7 +8,7 @@ import pickle
 from torchdeepretina.models import *
 import matplotlib.pyplot as plt
 import torchdeepretina.stimuli as stimuli
-from torchdeepretina.utils import load_json
+import torchdeepretina.utils as tdrutils
 from torchdeepretina.physiology import Physio
 import pyret.filtertools as ft
 import scipy
@@ -135,7 +135,7 @@ def get_architecture(folder, data, hyps=None, main_dir="../training_scripts/"):
 def get_hyps(folder, main_dir="../training_scripts"):
     try:
         path = os.path.join(main_dir, folder, "hyperparams.json")
-        return load_json(path)
+        return tdrutils.load_json(path)
     except Exception as e:
         stream = tdr.analysis.stream_folder(path)
         hyps = dict()
@@ -248,7 +248,7 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, v
             if verbose:
                 print("hook attached to " + name)
             module = modu
-            hook = get_hook(hook_outs,key=layer,to_numpy=False)
+            hook = tdrutils.get_hook(hook_outs,key=layer,to_numpy=False)
             hook_handle = module.register_forward_hook(hook)
 
     # Get gradient with respect to activations
@@ -280,62 +280,18 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, v
     requires_grad(model, True)
     return X.grad.data.cpu().numpy()
 
-def get_hook(layer_dict, key,to_numpy=True):
-    if to_numpy:
-        def hook(module, inp, out):
-            layer_dict[key] = out.detach().cpu().numpy()
-    else:
-        def hook(module, inp, out):
-            layer_dict[key] = out
-    return hook
-
-def inspect(model, X, insp_keys={}, batch_size=None):
+def inspect(*args, **kwargs):
     """
     Get the response from the argued layers in the model as np arrays
 
     returns dict of np arrays
     """
-    layer_outs = dict()
-    handles = []
-    if "all" in insp_keys:
-        for i in range(len(model.sequential)):
-            key = "sequential."+str(i)
-            hook = get_hook(layer_outs, key)
-            handle = model.sequential[i].register_forward_hook(hook)
-            handles.append(handle)
-    else:
-        for key, mod in model.named_modules():
-            if key in insp_keys:
-                hook = get_hook(layer_outs, key)
-                handle = mod.register_forward_hook(hook)
-                handles.append(handle)
-    X = torch.FloatTensor(X)
-    if batch_size is None:
-        if next(model.parameters()).is_cuda:
-            X = X.cuda()
-        preds = model(X)
-        layer_outs['outputs'] = preds.detach().cpu().numpy()
-    else:
-        use_cuda = next(model.parameters()).is_cuda
-        batched_outs = {key:[] for key in insp_keys}
-        outputs = []
-        for batch in range(0,len(X), batch_size):
-            x = X[batch:batch+batch_size]
-            if use_cuda:
-                x = x.cuda()
-            preds = model(x)
-            outputs.append(preds.data.cpu().numpy())
-            for k in layer_outs.keys():
-                batched_outs[k].append(layer_outs[k])
-        batched_outs['outputs'] = outputs
-        layer_outs = {k:np.concatenate(v,axis=0) for k,v in batched_outs.items()}
-    for i in range(len(handles)):
-        handles[i].remove()
-    del handles
-    return layer_outs
+    return tdrutils.inspect(*args,**kwargs)
 
 def compute_sta(model, contrast, layer, cell_index, layer_shape=None, verbose=True):
-    """helper function to compute the STA using the model gradient"""
+    """
+    Computes the STA using the model gradient
+    """
     # generate some white noise
     #X = stim.concat(white(1040, contrast=contrast)).copy()
     X = stimuli.concat(contrast*np.random.randn(10000,50,50))
@@ -347,6 +303,20 @@ def compute_sta(model, contrast, layer, cell_index, layer_shape=None, verbose=Tr
     sta = drdx.mean(0)
 
     del X
+    return sta
+
+def rev_cor(response, X):
+    """
+    Computes the STA using reverse correlation
+
+    response - ndarray (T,)
+    X - ndarray (T,N)
+    """
+    X = X.reshape(len(X), -1)
+    X = (X-X.mean(0))/(X.std(0)+1e-5)
+    resp = scipy.stats.zscore(response)
+    matmul = np.einsum("ij,i->j",X, resp.squeeze())
+    sta = matmul/len(X)
     return sta
 
 def batch_compute_model_response(stimulus, model, batch_size=500, recurrent=False, insp_keys={'all'}, cust_h_init=False, verbose=False):
@@ -421,3 +391,29 @@ def stream_folder(folder,main_dir=""):
         except Exception as e:
             pass
     return data
+
+def get_model_folders(main_folder):
+    """
+    Returns a list of paths to the model folders contained within the argued main_folder
+
+    main_folder - str
+        path to main folder
+    """
+    for d, sub_ds, files in os.walk(main_folder):
+        folders = []
+        for sub_d in sub_ds:
+            contents = os.listdir(os.path.join(d,sub_d))
+            for content in contents:
+                if ".pt" in content:
+                    folders.append(sub_d)
+                    break
+    return folders
+
+#def analysis_pipeline(main_folder):
+#    """
+#    Evaluates model on test set, calculates interneuron correlations, and creates retinal phenomena figures.
+#    """
+#    model_folders = get_model_folders(main_folder)
+#    main_frame = 
+#    for folder in model_folders:
+#        frame = analyze_model(folder)

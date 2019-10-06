@@ -8,7 +8,7 @@ import torch.nn as nn
 from torch.nn import PoissonNLLLoss, MSELoss
 import torch.nn.functional as F
 import os.path as path
-from torchdeepretina.utils import get_cuda_info, save_checkpoint
+from torchdeepretina.utils import get_cuda_info, save_checkpoint, GaussRegularizer
 from torchdeepretina.datas import loadexpt, DataContainer, DataDistributor
 from torchdeepretina.models import *
 import torchdeepretina.analysis as analysis
@@ -227,6 +227,8 @@ class Trainer:
 
         # Make optimization objects (lossfxn, optimizer, scheduler)
         optimizer, scheduler, loss_fn = get_optim_objs(hyps, model, train_data.centers)
+        if 'gauss_reg' in hyps and hyps['gauss_reg'] > 0:
+            gauss_reg = GaussRegularizer(model, [0,6], std=hyps['gauss_reg'])
 
         # Training
         for epoch in range(hyps['n_epochs']):
@@ -250,6 +252,8 @@ class Trainer:
                 else:
                     y,error,grade = static_eval(hyps, x, label, model, loss_fn, teacher=teacher)
                 activity_l1 = torch.zeros(1).to(device) if hyps['l1']<=0 else hyps['l1'] * torch.norm(y, 1).float().mean()
+                if 'gauss_reg' in hyps and hyps['gauss_reg'] > 0:
+                    activity_l1 += hyps['gauss_loss_coef']*gauss_reg.get_loss()
 
                 # Backwards Pass
                 loss = error + activity_l1 + grade

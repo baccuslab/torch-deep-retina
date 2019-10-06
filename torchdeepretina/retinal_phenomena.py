@@ -605,7 +605,7 @@ def osr(model=None, duration=2, interval=10, nflashes=5, intensity=-2.0, filt_de
 
     return (fig, (ax0,ax1)), X, resp, resp_ratio
 
-def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_duration=2, filt_depth=40):
+def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_duration=2, filt_depth=40, make_fig=True):
     """Generates the Berry motion anticipation stimulus
     Stimulus from the paper:
     Anticipation of moving stimuli by the retina,
@@ -624,7 +624,9 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
     """
     # moving bar stimulus and responses
     # c_right and c_left are the center positions of the bar
+    print("vel:", velocity)
     c_right, speed_right, stim_right = stim.driftingbar(velocity, width, x=(-30, 30))
+    print("npts right:", c_right.shape)
     x = torch.from_numpy(stim_right).to(DEVICE)
     with torch.no_grad():
         if model.recurrent:
@@ -639,6 +641,7 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
     resp_right = resp.cpu().detach().numpy()
 
     c_left, speed_left, stim_left = stim.driftingbar(-velocity, width, x=(30, -30))
+    print("npts left:", c_right.shape)
     x = torch.from_numpy(stim_left).to(DEVICE)
     with torch.no_grad():
         if model.recurrent:
@@ -689,41 +692,20 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
     avg_resp_left /= avg_resp_left.max()
     avg_resp_flash /= avg_resp_flash.max()
 
-    # generate the figure
-    fig = plt.figure(figsize=(6, 4))
-    ax = fig.add_subplot(111)
-    ax.plot(scale_factor * c_left[40:], avg_resp_left, 'g-', label='Left motion')
-    ax.plot(scale_factor * c_right[40:], avg_resp_right, 'b-', label='Right motion')
-    ax.plot(scale_factor * flash_centers, avg_resp_flash, 'r-', label='Flash')
-    ax.legend(frameon=True, fancybox=True, fontsize=18)
-    ax.set_xlabel('Position ($\mu m$)')
-    ax.set_ylabel('Scaled firing rate')
-    ax.set_xlim(-735, 135)
+    if make_fig:
+        # generate the figure
+        fig = plt.figure(figsize=(6, 4))
+        ax = fig.add_subplot(111)
+        ax.plot(scale_factor * c_left[40:], avg_resp_left, 'g-', label='Left motion')
+        ax.plot(scale_factor * c_right[40:], avg_resp_right, 'b-', label='Right motion')
+        ax.plot(scale_factor * flash_centers, avg_resp_flash, 'r-', label='Flash')
+        ax.legend(frameon=True, fancybox=True, fontsize=18)
+        ax.set_xlabel('Position ($\mu m$)')
+        ax.set_ylabel('Scaled firing rate')
+        ax.set_xlim(-735, 135)
 
-    """
-    Table metrics
-    symmetry: measure of the symmetry of the flash response (vals range from 0 to 1, 1 is better)
-    continuity: measure of flash response curve direction continuity (vals range from 0 to 1, 1 is better)
-    peak_height: measure of height of flash response peak (vals range from 0 to 1, 1 is better)
-    right_anticipation: measure of anticipation response on rightward moving bar (larger values are better
-    left_anticipation: measure of anticipation response on leftward moving bar (larger values are better
-    """
-    #flash_left_idxs = (flash_centers<0)
-    #flash_right_idxs = (flash_centers>0)
-    #symmetry = 1-(avg_resp_flash[flash_left_idxs] - avg_resp_flash[flash_right_idxs]).mean()
-    #cont_left = avg_resp_flash[flash_left_idxs][1:]-avg_resp_flash[flash_left_idxs][:-1]
-    #cont_right = avg_resp_flash[flash_right_idxs][:-1]-avg_resp_flash[flash_right_idxs][1:]
-    #continuity = ((cont_left>0).mean()+(cont_right>0).mean())/2                 # Continuity
-    #peak_height = avg_resp_flash.max()-avg_resp_flash.min()                          # Spread
-    #print("flash",avg_resp_flash.shape)
-    #print("right", avg_resp_right.shape)
-    #print("left", avg_resp_left.shape)
-    #left_idxs = (c_right[40:]<0)
-    #right_idxs = (c_right[40:]>0)
-    #right_anticipation = (avg_resp_flash[flash_left_idxs] - avg_resp_right[left_idxs]) + (avg_resp_right[right_idxs]-avg_resp_flash[right_idxs])
-    #left_anticipation = (avg_resp_left[left_idxs] - avg_resp_flash[left_idxs]) + (avg_resp_flash[right_idxs]-avg_resp_left[right_idxs])
-
-    return (fig, ax), (speed_left, speed_right), (c_right, stim_right, resp_right),(c_left, stim_left, resp_left), (flash_centers, flash_responses)#, (symmetry, continuity, peak_height, right_anticipation, left_anticipation)
+        return (fig, ax), (speed_left, speed_right), (c_right, stim_right, resp_right),(c_left, stim_left, resp_left), (flash_centers, flash_responses)#, (symmetry, continuity, peak_height, right_anticipation, left_anticipation)
+    return (speed_left, speed_right), (c_right, stim_right, resp_right),(c_left, stim_left, resp_left), (flash_centers, flash_responses)#, (symmetry, continuity, peak_height, right_anticipation, left_anticipation)
 
 def motion_reversal(model, scale_factor=55, velocity=0.08, width=2, filt_depth=40):
     """

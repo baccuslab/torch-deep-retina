@@ -96,6 +96,60 @@ def get_cuda_info():
         cuda_info.append(info)
     return cuda_info
 
+def get_hook(layer_dict, key, to_numpy=True):
+    if to_numpy:
+        def hook(module, inp, out):
+            layer_dict[key] = out.detach().cpu().numpy()
+    else:
+        def hook(module, inp, out):
+            layer_dict[key] = out
+    return hook
+
+def inspect(model, X, insp_keys={}, batch_size=None, to_numpy=True):
+    """
+    Get the response from the argued layers in the model as np arrays
+
+    returns dict of np arrays
+    """
+    layer_outs = dict()
+    handles = []
+    if "all" in insp_keys:
+        for i in range(len(model.sequential)):
+            key = "sequential."+str(i)
+            hook = get_hook(layer_outs, key, to_numpy=to_numpy)
+            handle = model.sequential[i].register_forward_hook(hook)
+            handles.append(handle)
+    else:
+        for key, mod in model.named_modules():
+            if key in insp_keys:
+                hook = get_hook(layer_outs, key, to_numpy=to_numpy)
+                handle = mod.register_forward_hook(hook)
+                handles.append(handle)
+    X = torch.FloatTensor(X)
+    if batch_size is None:
+        if next(model.parameters()).is_cuda:
+            X = X.cuda()
+        preds = model(X)
+        layer_outs['outputs'] = preds.detach().cpu().numpy()
+    else:
+        use_cuda = next(model.parameters()).is_cuda
+        batched_outs = {key:[] for key in insp_keys}
+        outputs = []
+        for batch in range(0,len(X), batch_size):
+            x = X[batch:batch+batch_size]
+            if use_cuda:
+                x = x.cuda()
+            preds = model(x)
+            outputs.append(preds.data.cpu().numpy())
+            for k in layer_outs.keys():
+                batched_outs[k].append(layer_outs[k])
+        batched_outs['outputs'] = outputs
+        layer_outs = {k:np.concatenate(v,axis=0) for k,v in batched_outs.items()}
+    for i in range(len(handles)):
+        handles[i].remove()
+    del handles
+    return layer_outs
+
 def freeze_weights(model, unfreeze=False):
     for p in model.parameters():
         try:
@@ -303,4 +357,34 @@ def conv_backwards(z, filt, xshape):
                 matmul = matmul.permute(1,0).view(dx.shape[0], dx.shape[1], filt.shape[-2], filt.shape[-1])
                 dx[:,:,row:row+filt.shape[-2], col:col+filt.shape[-1]] += matmul    
     return dx
+
+class GaussRegularizer:
+    def __init__(self, model, conv_idxs, std=1):
+        """
+        model - torch nn Module
+        conv_idxs - list of indices of convolutional layers
+        std - int
+            standard deviation of gaussian in terms of pixels
+        """
+        assert "sequential" in dir(model) and type(model.sequential[conv_idxs[0]]) == type(nn.Conv2d(1,1,1)) # Needs to be Conv2d module
+        self.weights = [model.sequential[i].weight for i in conv_idxs]
+        self.std = std
+        self.gaussians = []
+        for i,weight in enumerate(self.weights):
+            shape = weight.shape[1:]
+            half_width = shape[1]//2
+            pdf = 1/np.sqrt(2*np.pi*self.std**2) * np.exp(-(np.arange(-half_width,half_width+1)**2/(2*self.std**2)))
+            gauss = np.outer(pdf, pdf)
+            inverted = 1/(gauss+1e-5)
+            inverted = (inverted-np.min(inverted))/np.max(inverted)
+            full_gauss = np.asarray([gauss for i in range(shape[0])])
+            self.gaussians.append(torch.FloatTensor(full_gauss))
+    
+    def get_loss(self):
+        if self.weights[0].data.is_cuda and not self.gaussians[0].is_cuda:
+            self.gaussians = [g.cuda() for g in self.gaussians]
+        loss = 0
+        for weight,gauss in zip(self.weights,self.gaussians):
+            loss += (weight*gauss).mean()
+        return loss
 

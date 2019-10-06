@@ -861,7 +861,7 @@ def flash(duration, delay, nsamples, intensity=-1.):
     else:
         img = intensity.reshape(1, *intensity.shape)
 
-    assert nsamples > (delay + duration), \
+    assert nsamples >= (delay + duration), \
         "The total number samples must be greater than the delay + duration"
     sequence = np.zeros((nsamples,))
     sequence[delay:(delay + duration)] = 1.0

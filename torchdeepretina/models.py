@@ -526,4 +526,3 @@ class KineticsModel(TDRModel):
             fx = torch.exp(fx)
         return fx, [h0, h1]
 
-

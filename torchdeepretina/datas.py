@@ -138,7 +138,7 @@ def _loadexpt_h5(expt, filename, root="~/experiments/data"):
     filepath = join(expanduser(root), expt, filename + '.h5')
     return h5py.File(filepath, mode='r')
 
-def load_interneuron_data(root_path, files=None, filter_length=40, stim_keys={"boxes"}):
+def load_interneuron_data(*args, **kwargs):
     """ 
     Load data
     num_pots (number of potentials) stores the number of cells per stimulus
@@ -152,7 +152,7 @@ def load_interneuron_data(root_path, files=None, filter_length=40, stim_keys={"b
         keys are the cell files, vals are a list of nd array membrane potential responses for each 
         cell within the file
     """
-    return tdrintra.load_interneuron_data(root_path=root_path, files=files, filter_length=filter_length, stim_keys=stim_keys)
+    return tdrintra.load_interneuron_data(*args,**kwargs)
 
 def stimcut(data, expt, ci, width=11):
     """Cuts out a stimulus around the whitenoise receptive field"""

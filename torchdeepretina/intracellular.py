@@ -9,6 +9,20 @@ import pyret.filtertools as ft
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator, FormatStrFormatter
+import torchdeepretina.utils as tdrutils
+import torchdeepretina.stimuli as tdrstim
+
+centers = {
+        "bipolars_late_2012":[  (19, 22), (18, 20), (20, 21), (18, 19)],
+        "bipolars_early_2012":[ (17, 23), (17, 23), (18, 23)],
+        "amacrines_early_2012":[(18, 23), (19, 24), (19, 23), (19, 23), (18, 23)],
+        "amacrines_late_2012":[ (20, 20), (22, 19), (20, 20), (19, 22), (22, 25),
+                                (19, 21), (19, 17), (20, 19), (17, 20), (19, 23),
+                                (17, 20), (17, 20), (20, 19), (18, 18), (19, 17),
+                                (17, 17), (18, 20), (20, 19), (17, 19), (19, 18),
+                                (17, 17), (25, 15)
+                              ]
+}
 
 #If you want to use stimulus that isnt just boxes
 def prepare_stim(stim, stim_type):
@@ -224,15 +238,15 @@ def argmax_correlation(membrane_potential, model_layer, ret_max_cor=False, abs_v
         return best_idx, max_r
     return best_idx
 
-def get_intr_cors(model, intr_stim, intr_pot):
+def get_intr_cors(model, stim_dict, mem_pot_dict, layers={"sequential.2", "sequential.8"}, batch_size=500, verbose=False):
     """
     model - torch Module
-    intr_stim - dict
+    stim_dict - dict of interneuron stimuli
         keys: str (interneuron data file name)
             vals: dict
                 keys: stim_types
                     vals: ndarray (T, H, W)
-    intr_pot - dict
+    mem_pot_dict - dict of interneuron membrane potentials
         keys: str (interneuron data file name)
             vals: dict
                 keys: stim_types
@@ -240,12 +254,128 @@ def get_intr_cors(model, intr_stim, intr_pot):
                         CI is cell idx and T is time
     returns:
         intr_cors - dict
-            keys: str (interneuron data file name)
-                vals: dict
-                    keys: stim_types
-                        vals: list (C,)
-                            C is channel
+                - cell_file: list
+                - cell_idx: list
+                - stim_type: list
+                - cor: list
+                - layer: list
+                - chan: list
+                - row: list
+                - col: list
     """
+    table = {"cell_file":[], "cell_idx":[], "stim_type":[], "cor":[], 
+                            "layer":[], "chan":[], "row":[], "col":[]}
+    layers = sorted(list(layers))
+    for cell_file in stim_dict.keys():
+        for stim_type in stim_dict[cell_file].keys():
+            stim = tdrstim.spatial_pad(stim_dict[cell_file][stim_type],model.img_shape[1])
+            stim = tdrstim.rolling_window(stim, model.img_shape[0])
+            response = tdrutils.inspect(model, stim, insp_keys=layers, batch_size=batch_size)
+            pots = mem_pot_dict[cell_file][stim_type]
+            for cell_idx in range(len(pots)):
+                for l,layer in enumerate(layers):
+                    if verbose:
+                        print("Evaluating file:{}, stim:{}, idx:{}, layer:{}".format(cell_file.split("/")[-1], 
+                                                                                                    stim_type, 
+                                                                                                    cell_idx,
+                                                                                                    layer))
+                    resp = response[layer]
+                    if len(resp.shape) == 2:
+                        resp = resp.reshape(-1, model.chans[l], *model.shapes[l])
+                    for chan in range(resp.shape[1]):
+                        print("resp:", resp.shape)
+                        r, idx = argmax_correlation_recurse_helper(pots[cell_idx], resp,
+                                                       shape=resp.shape[2:], idx=(chan,))
+                        _, row, col = idx
+                        table['cell_file'].append(cell_file)
+                        table['cell_idx'].append(cell_idx)
+                        table['stim_type'].append(stim_type)
+                        table['cor'].append(r)
+                        table['layer'].append(layer)
+                        table['chan'].append(chan)
+                        table['row'].append(row)
+                        table['col'].append(col)
+    return table
+
+def get_cor_generalization(model, stim_dict, mem_pot_dict, layers={"sequential.2", "sequential.8"}, batch_size=500, verbose=False):
+    """
+    model - torch Module
+    stim_dict - dict of interneuron stimuli
+        keys: str (interneuron data file name)
+            vals: dict
+                keys: stim_types (must be more than one!!)
+                    vals: ndarray (T, H, W)
+    mem_pot_dict - dict of interneuron membrane potentials
+        keys: str (interneuron data file name)
+            vals: dict
+                keys: stim_types (must be more than one!!)
+                    vals: ndarray (CI, T)
+                        CI is cell idx and T is time
+    returns:
+        intr_cors - dict
+                - cell_file: list
+                - cell_idx: list
+                - stim_type: list
+                - cor: list
+                - layer: list
+                - chan: list
+                - row: list
+                - col: list
+    """
+    table = {"cell_file":[], "cell_idx":[], "stim_type":[], "cor":[], 
+                            "layer":[], "chan":[], "row":[], "col":[]}
+    layers = sorted(list(layers))
+    for cell_file in stim_dict.keys():
+        responses = dict()
+        # Get all responses
+        for stim_type in stim_dict[cell_file].keys():
+            stim = tdrstim.spatial_pad(stim_dict[cell_file][stim_type],model.img_shape[1])
+            stim = tdrstim.rolling_window(stim, model.img_shape[0])
+            response = tdrutils.inspect(model, stim, insp_keys=layers, batch_size=batch_size)
+            # Fix response shapes
+            for l,layer in enumerate(layers):
+                resp = response[layer]
+                if len(resp.shape) <= 2:
+                    resp = resp.reshape(-1, model.chans[l], *model.shapes[l])
+                response[layer] = resp
+            responses[stim_type] = response
+        for stim_type in stim_dict[cell_file].keys():
+            pots = mem_pot_dict[cell_file][stim_type]
+            for cell_idx in range(len(pots)):
+                for l,layer in enumerate(layers):
+                    if verbose:
+                        print("Evaluating file:{}, stim:{}, idx:{}, layer:{}".format(cell_file.split("/")[-1], 
+                                                                                                    stim_type, 
+                                                                                                    cell_idx,
+                                                                                                    layer))
+                    resp = responses[stim_type][layer]
+                    for chan in range(resp.shape[1]):
+                        r, idx = argmax_correlation_recurse_helper(pots[cell_idx], resp,
+                                                       shape=resp.shape[2:], idx=(chan,))
+                        _, row, col = idx
+                        table['cell_file'].append(cell_file)
+                        table['cell_idx'].append(cell_idx)
+                        table['stim_type'].append(stim_type)
+                        table['cor'].append(r)
+                        table['layer'].append(layer)
+                        table['chan'].append(chan)
+                        table['row'].append(row)
+                        table['col'].append(col)
+
+                        for stim_t in stim_dict[cell_file].keys():
+                            if stim_t != stim_type:
+                                pot = mem_pot_dict[cell_file][stim_t][cell_idx]
+                                temp_resp = responses[stim_t][layer][:,chan,row,col]
+                                r,_ = pearsonr(temp_resp, pot)
+                                table['cell_file'].append(cell_file)
+                                table['cell_idx'].append(cell_idx)
+                                table['stim_type'].append(stim_t)
+                                table['cor'].append(r)
+                                table['layer'].append(layer)
+                                table['chan'].append(chan)
+                                table['row'].append(row)
+                                table['col'].append(col)
+    return table
 
 def get_correlation_stats(membrane_potential, model_response, layer_keys=['sequential.2', 'sequential.8'], abs_val=False):
     """
