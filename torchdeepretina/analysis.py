@@ -7,7 +7,7 @@ import sys
 import pickle
 from torchdeepretina.models import *
 import matplotlib.pyplot as plt
-import torchdeepretina.stimuli as stimuli
+import torchdeepretina.stimuli as tdrstim
 import torchdeepretina.utils as tdrutils
 from torchdeepretina.physiology import Physio
 import pyret.filtertools as ft
@@ -294,7 +294,7 @@ def compute_sta(model, contrast, layer, cell_index, layer_shape=None, verbose=Tr
     """
     # generate some white noise
     #X = stim.concat(white(1040, contrast=contrast)).copy()
-    X = stimuli.concat(contrast*np.random.randn(10000,50,50))
+    X = tdrstim.concat(contrast*np.random.randn(10000,50,50),nh=model.img_shape[0])
     X = torch.FloatTensor(X)
     X.requires_grad = True
 
@@ -305,12 +305,41 @@ def compute_sta(model, contrast, layer, cell_index, layer_shape=None, verbose=Tr
     del X
     return sta
 
+def get_sta(model, layers=['sequential.0','sequential.6'], chans=None, verbose=True):
+    """
+    model - torch Module
+
+    returns:
+        dict of sta lists for each channel in each layer
+        keys: layer names
+            vals: lists of stas for each channel in the layer
+    """
+    if chans is None:
+        chans = [list(range(chan)) for chan in model.chans]
+    noise = np.random.randn(10000,50,50)
+    filter_size = model.img_shape[0]
+    X = tdrstim.concat(noise, nh=filter_size)
+    response = inspect(model, X, insp_keys=set(layers), batch_size=500, to_numpy=True)
+    stas = {layer:[] for layer in layers}
+    for layer,chan in zip(layers,chans):
+        resp = response[layer]
+        center = resp.shape[-1]//2
+        chan = tqdm(chan) if verbose else chan
+        for c in chan:
+            sta, _ = ft.revcorr(noise[filter_size:], scipy.stats.zscore(resp[:,c,center,center]),0,model.img_shape[0])
+            stas[layer].append(sta)
+    return stas
+
+
 def rev_cor(response, X):
     """
     Computes the STA using reverse correlation
 
     response - ndarray (T,)
     X - ndarray (T,N)
+
+    returns:
+        sta - ndarray (N,)
     """
     X = X.reshape(len(X), -1)
     X = (X-X.mean(0))/(X.std(0)+1e-5)

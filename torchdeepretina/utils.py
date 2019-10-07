@@ -109,6 +109,9 @@ def inspect(model, X, insp_keys={}, batch_size=None, to_numpy=True):
     """
     Get the response from the argued layers in the model as np arrays
 
+    model - torch Module
+    X - ndarray (T,C,H,W)
+
     returns dict of np arrays
     """
     layer_outs = dict()

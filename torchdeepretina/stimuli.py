@@ -38,13 +38,10 @@ def get_cutout(stimulus, center, span=20, pad_to=50):
         pads the cutout with zeros on every side by pad amount
         if 0, no padding occurs
     """
-    assert span%2 == 0 # Must be even span
-    assert pad_to%2==0 # Must be even pad
-    row = (max(0,center[0]-span//2),min(center[0]+span//2,stimulus.shape[-2]))
-    col = (max(0,center[1]-span//2),min(center[1]+span//2,stimulus.shape[-1]))
+    row = (max(0,center[0]-span//2), min(center[0]+span//2+(span%2), stimulus.shape[-2]))
+    col = (max(0,center[1]-span//2), min(center[1]+span//2+(span%2), stimulus.shape[-1]))
     s = stimulus[...,row[0]:row[1],col[0]:col[1]]
     if pad_to > 0:
-        pad = max(0,(pad_to-span)//2)
         s = spatial_pad(s,pad_to)
     return s
 
@@ -743,14 +740,8 @@ def spatial_pad(stimulus, H, W=None):
         return stimulus
 
     pad_h, pad_w = (H-stimulus.shape[-2]), (W-stimulus.shape[-1])
-    if pad_h % 2 == 1:
-        pad_h = (pad_h//2,pad_h//2+1)
-    else:
-        pad_h = (pad_h//2,pad_h//2)
-    if pad_w % 2 == 1:
-        pad_w = (pad_w//2,pad_w//2+1)
-    else:
-        pad_w = (pad_w//2,pad_w//2)
+    pad_h = (pad_h//2,pad_h//2+(pad_h%2))
+    pad_w = (pad_w//2,pad_w//2+(pad_w%2))
     return np.pad(stimulus,((0,0),pad_h,pad_w),"constant")
 
 def prepad(y, n=40, v=0):
