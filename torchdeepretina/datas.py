@@ -213,6 +213,18 @@ class DataObj:
             return self.data[self.idxs].std(axis)
         return self.data[self.idxs].std()
 
+    def roll(self, amt, idxs):
+        """
+        rolls the data before indexing. Used for creating null models.
+
+        amt - int
+            the amount to roll the dataset
+        idxs - list of ints
+            the indexes to return from the rolled data
+        """
+        rolled_idxs = (self.idxs[idxs]+amt)%len(self.data)
+        return self.data[rolled_idxs]
+
     def __len__(self):
         return len(self.idxs)
 
@@ -249,6 +261,7 @@ class DataDistributor:
         self.shuffle = shuffle
         self.rand_sample = rand_sample
         self.recurrent = recurrent
+        self.shift_labels = shift_labels
         self.X = data.X
         self.y = data.y
         rand_sample = shuffle if rand_sample is None else rand_sample
@@ -270,8 +283,6 @@ class DataDistributor:
             else:
                 self.perm = torch.arange(self.X.shape[0]).long()
 
-        if shift_labels:
-            self.y = np.roll(self.y, len(self.y)//2, axis=0)
         if val_size > len(self.perm):
             val_size = int(len(self.perm)*0.05)
         self.train_idxs = self.perm[:-val_size]
@@ -352,7 +363,13 @@ class DataDistributor:
                 idxs = batch_perm[i]
             else:
                 idxs = batch_perm[i*batch_size:(i+1)*batch_size]
-            yield self.train_X[idxs], self.train_y[idxs]
+
+            ## TODO: SHIFTING NEEDS TESTING
+            if self.shift_labels:
+                roll_amt = int(np.random.randint(0,len(self.train_y)))
+                yield self.train_X[idxs], self.train_y.roll(roll_amt, idxs)
+            else:
+                yield self.train_X[idxs], self.train_y[idxs]
     
     def torch(self):
         self.is_torch = True
