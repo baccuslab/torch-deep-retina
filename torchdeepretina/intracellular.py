@@ -79,11 +79,13 @@ def load_interneuron_data(root_path, files=None, filter_length=40, stim_keys={"b
         mem_pots[fi] = None if join_stims else dict()
         if join_stims:
             shapes = []
+            mem_shapes = []
         with h5py.File(fi,'r') as f:
             for k in f.keys():
                 if k in stim_keys:
                     if join_stims:
                         shapes.append(prepare_stim(np.asarray(f[k+'/stimuli']), k).shape)
+                        mem_shapes.append(np.asarray(f[k+'/detrended_membrane_potential'][:,filter_length:]).shape)
                     else:
                         try:
                             stims[fi][k] = prepare_stim(np.asarray(f[k+'/stimuli']), k)
@@ -92,17 +94,30 @@ def load_interneuron_data(root_path, files=None, filter_length=40, stim_keys={"b
                             print(e)
                             print("stim error at", k)
             if join_stims:
-                shape = [np.sum([s[0] for s in shapes]), np.max([s[1] for s in shapes]), np.max([s[2] for s in shapes])]
-                stims[fi] = np.empty(shape)
-                mem_pots[fi] = np.empty(shape[0])
+                shape = [np.sum([s[0]-filter_length if i > 0 else s[0] for i,s in enumerate(shapes)]), 
+                                np.max([s[1] for s in shapes]),np.max([s[2] for s in shapes])]
+                stims[fi] = np.empty(shape).astype(np.float)
+                print("shapes:", shapes)
+                print("shape:", shape)
+                mem_shape = [np.max([s[0] for s in mem_shapes]), np.sum([s[1] for s in mem_shapes])]
+                print("mem_shapes:", mem_shapes)
+                print("mem_shape:", mem_shape)
+                mem_pots[fi] = np.empty(mem_shape).astype(np.float)
                 startx = 0
-                for k in stim_keys:
+                mstartx = 0
+                for i,k in enumerate(stim_keys):
                     prepped = prepare_stim(np.asarray(f[k+'/stimuli']), k)
-                    if not (prepped.shape[1] == stims[fi].shape[1] and prepped.shape[2] == stims[fi].shape[2]):
-                        prepped = tdr.stimuli.pad_to(prepped, stims[fi].shape[1], stims[fi].shape)
+                    if i > 0:
+                        prepped = prepped[filter_length:]
+                    if not (prepped.shape[-2] == stims[fi].shape[-2] and prepped.shape[-1] == stims[fi].shape[-1]):
+                        prepped = tdrstim.spatial_pad(prepped, stims[fi].shape[-2], stims[fi].shape[-1])
                     endx = startx+len(prepped)
                     stims[fi][startx:endx] = prepped
-                    mem_pots[fi][startx:endx] = np.asarray(f[k]['detrended_membrane_potential'])[:, filter_length:]
+                    mem_pot = np.asarray(f[k]['detrended_membrane_potential'])[:,filter_length:]
+                    mendx = mstartx+mem_pot.shape[1]
+                    mem_pots[fi][:,mstartx:mendx] = mem_pot
+                    startx = endx
+                    mstartx = mendx
     return stims, mem_pots, files
 
 # Functions for correlation maps and loading David's stimuli in deep retina models.
