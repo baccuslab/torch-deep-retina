@@ -736,13 +736,14 @@ def spatial_pad(stimulus, H, W=None):
     """
     if W is None:
         W = H
-    if stimulus.shape[-2] == H and stimulus.shape[-1] == W:
+    if stimulus.shape[-2] >= H and stimulus.shape[-1] >= W:
         return stimulus
 
-    pad_h, pad_w = (H-stimulus.shape[-2]), (W-stimulus.shape[-1])
+    pad_h, pad_w = max(0,(H-stimulus.shape[-2])), max(0,(W-stimulus.shape[-1]))
     pad_h = (pad_h//2,pad_h//2+(pad_h%2))
     pad_w = (pad_w//2,pad_w//2+(pad_w%2))
-    return np.pad(stimulus,((0,0),pad_h,pad_w),"constant")
+    leading_zeros = [(0,0) for i in range(len(stimulus.shape)-2)]
+    return np.pad(stimulus,(*leading_zeros,pad_h,pad_w),"constant")
 
 def prepad(y, n=40, v=0):
     """prepads with value"""
