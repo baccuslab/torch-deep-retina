@@ -37,8 +37,8 @@ CENTERS = {
     '16-01-08': None,
 }
 
-Exptdata = namedtuple('Exptdata', ['X', 'y', 'spkhist', 'stats', "cells", "centers"])
-__all__ = ['loadexpt', 'stimcut', 'CELLS', "CENTERS", "DataContainer","DataObj", "DataDistributor"]
+Exptdata = namedtuple('Exptdata', ['X','y','spkhist','stats',"cells","centers"])
+__all__ = ['loadexpt','stimcut','CELLS',"CENTERS","DataContainer","DataObj","DataDistributor"]
 
 class DataContainer():
     def __init__(self, data):
@@ -47,7 +47,8 @@ class DataContainer():
         self.centers = data.centers
         self.stats = data.stats
 
-def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=None, norm_stats=None, data_path="~/experiments/data"):
+def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, cutout_width=None, 
+                                        norm_stats=None, data_path="~/experiments/data"):
     """Loads an experiment from an h5 file on disk
 
     Parameters
@@ -102,7 +103,8 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip, cutout_width=
         if cutout_width is None:
             stim = np.asarray(f[train_or_test]['stimulus']).astype('float32')
         else:
-            stim = ft.cutout(np.asarray(f[train_or_test]['stimulus']), idx=(px, py), width=cutout_width).astype('float32')
+            arr = np.asarray(f[train_or_test]['stimulus'])
+            stim = ft.cutout(arr, idx=(px, py), width=cutout_width).astype('float32')
         stats = {}
         if norm_stats is not None:
             stats['mean'] = norm_stats[0]
@@ -264,6 +266,8 @@ class DataDistributor:
         self.shift_labels = shift_labels
         self.X = data.X
         self.y = data.y
+        if shift_labels:
+            self.y = self.shift_in_groups(self.y, group_size=200)
         rand_sample = shuffle if rand_sample is None else rand_sample
 
         if seq_len > 1:
@@ -303,6 +307,14 @@ class DataDistributor:
 
     def __getitem__(self, idx):
         return self.X[self.perm[idx]]
+
+    def shift_in_groups(self, arr, group_size=200):
+        shifted = np.empty(arr.shape, dtype=np.float32)
+        for i in range(0,len(arr),group_size):
+            shift = int(np.random.randint(len(arr)))
+            idxs = (np.arange(i,min(i+group_size,len(arr)))+shift)%len(arr)
+            shifted[i:i+group_size] = arr[idxs]
+        return shifted
 
     def order_into_batches(self, data, batch_size):
         switch_back = False
@@ -364,12 +376,12 @@ class DataDistributor:
             else:
                 idxs = batch_perm[i*batch_size:(i+1)*batch_size]
 
-            ## TODO: SHIFTING NEEDS TESTING
-            if self.shift_labels:
-                roll_amt = int(np.random.randint(0,len(self.train_y)))
-                yield self.train_X[idxs], self.train_y.roll(roll_amt, idxs)
-            else:
-                yield self.train_X[idxs], self.train_y[idxs]
+            ### TODO: SHIFTING NEEDS TESTING
+            #if self.shift_labels:
+            #    roll_amt = int(np.random.randint(0,len(self.train_y)))
+            #    yield self.train_X[idxs], self.train_y.roll(roll_amt, idxs)
+            #else:
+            yield self.train_X[idxs], self.train_y[idxs]
     
     def torch(self):
         self.is_torch = True
