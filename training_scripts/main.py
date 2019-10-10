@@ -14,7 +14,7 @@ import torch
 import select
 from torchdeepretina.training import hyper_search
 from torchdeepretina.utils import load_json
-
+from torchdeepretina.analysis import analysis_pipeline
 
 if __name__ == "__main__":
     hyperparams_file = "hyps/hyperparams.json"
@@ -112,4 +112,6 @@ if __name__ == "__main__":
     start_time = time.time()
     hyper_search(hyps, hyp_ranges, keys, device)
     print("Total Execution Time:", time.time() - start_time)
+    print("\n\nBeginning Analysis..")
+    analysis_pipeline(hyps['exp_name'], make_figs=True)
 
