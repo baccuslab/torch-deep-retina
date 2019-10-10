@@ -1,15 +1,19 @@
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.nn import MSELoss, PoissonNLLLoss
 import h5py as h5
 import os
 import sys
 import pickle
 from torchdeepretina.models import *
+import torchdeepretina.datas as tdrdatas
 import matplotlib.pyplot as plt
 import torchdeepretina.stimuli as tdrstim
 import torchdeepretina.utils as tdrutils
 from torchdeepretina.physiology import Physio
+import torchdeepretina.intracellular as tdrintr
+from torchdeepretina.retinal_phenomena import retinal_phenomena_figs
 import pyret.filtertools as ft
 import scipy
 import re
@@ -59,7 +63,8 @@ def make_intrnrn_frame(model_stats, headers, main_dir="../training_scripts"):
         data[header] = []
     for folder in model_stats.keys():
         if "intrnrn_info" in model_stats[folder]:
-            intrnrn_info = model_stats[folder]['intrnrn_info'] # list of data dicts for each interneuron cell
+            # list of data dicts for each interneuron cell
+            intrnrn_info = model_stats[folder]['intrnrn_info'] 
             for info in intrnrn_info:
                 untouched_keys = set(data.keys())
                 for key in info.keys():
@@ -114,8 +119,10 @@ def get_architecture(folder, data, hyps=None, main_dir="../training_scripts/"):
             if "bias" in hyps:
                 model_hyps['bias'] = hyps['bias'] == "True"
             if "chans" in hyps:
-                model_hyps['chans'] = [int(x) for x in
-                                       hyps['chans'].replace("[", "").replace("]", "").strip().split(",")]
+                model_hyps['chans'] = [
+                            int(x) for x in hyps['chans'].replace("[", "")\
+                            .replace("]", "").strip().split(",")
+                          ]
             if "adapt_gauss" in hyps:
                 model_hyps['adapt_gauss'] = hyps['adapt_gauss'] == "True"
             if "linear_bias" in hyps:
@@ -168,7 +175,7 @@ def load_model(folder, data=None, hyps=None, main_dir="../training_scripts/"):
     try:
         model.load_state_dict(data['model_state_dict'])
     except KeyError as e:
-        print("Failed to load state_dict. This checkpoint does not contain a model state_dict!")
+        print("Failed to load state_dict. This chkpt does not contain a model state_dict!")
     return model
 
 def requires_grad(model, state):
@@ -178,10 +185,16 @@ def requires_grad(model, state):
         except:
             pass
 
-def read_model(folder):
+def read_model(folder, ret_metrics=False):
     """
     Recreates model architecture and loads the saved statedict from a model folder
+
+    folder - str
+        path to folder that contains model checkpoints
+    ret_metrics - bool
+        if true, returns the recorded training metric history (i.e. val loss, val acc, etc)
     """
+    metrics = dict()
     try:
         _, _, fs = next(os.walk(folder.strip()))
     except Exception as e:
@@ -193,6 +206,14 @@ def read_model(folder):
         try:
             with open(f, "rb") as fd:
                 data = torch.load(fd, map_location=torch.device("cpu"))
+            if ret_metrics:
+                for k,v in data.items():
+                    if k == "loss" or k == "epoch" or k == "val_loss" or k == "val_acc" or\
+                       k == "exp_val_acc" or k == "test_pearson":
+                        if k not in metrics:
+                            metrics[k] = [v]
+                        else:
+                            metrics[k].append(v)
         except Exception as e:
             pass
     try:
@@ -210,6 +231,8 @@ def read_model(folder):
                 del data['model_state_dict'][key]
         model.load_state_dict(data['model_state_dict'])
     model = model.to(DEVICE)
+    if ret_metrics:
+        return model, metrics
     return model
 
 def read_model_file(file_name, model_type=None):
@@ -282,31 +305,23 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, v
 
 def inspect(*args, **kwargs):
     """
-    Get the response from the argued layers in the model as np arrays
+    Get the response from the argued layers in the model as np arrays. See utils for details.
 
-    returns dict of np arrays
+    returns dict of np arrays or torch tensors depending on arguments
     """
     return tdrutils.inspect(*args,**kwargs)
 
-def compute_sta(model, contrast, layer, cell_index, layer_shape=None, verbose=True):
+def compute_sta(*args, **kwargs):
     """
-    Computes the STA using the model gradient
+    Computes the STA using the average of instantaneous receptive 
+    fields (gradient of output with respect to input)
     """
-    # generate some white noise
-    #X = stim.concat(white(1040, contrast=contrast)).copy()
-    X = tdrstim.concat(contrast*np.random.randn(10000,50,50),nh=model.img_shape[0])
-    X = torch.FloatTensor(X)
-    X.requires_grad = True
+    return tdrutils.compute_sta(*args, **kwargs)
 
-    # compute the gradient of the model with respect to the stimulus
-    drdx = get_stim_grad(model, X, layer, cell_index, layer_shape=layer_shape, verbose=verbose)
-    sta = drdx.mean(0)
-
-    del X
-    return sta
-
-def get_sta(model, layers=['sequential.0','sequential.6'], chans=None, verbose=True):
+def get_sta(*args, **kwargs):
     """
+    Computes the sta using reverse correlation. Uses the central unit for computation
+
     model - torch Module
 
     returns:
@@ -314,22 +329,7 @@ def get_sta(model, layers=['sequential.0','sequential.6'], chans=None, verbose=T
         keys: layer names
             vals: lists of stas for each channel in the layer
     """
-    if chans is None:
-        chans = [list(range(chan)) for chan in model.chans]
-    noise = np.random.randn(10000,50,50)
-    filter_size = model.img_shape[0]
-    X = tdrstim.concat(noise, nh=filter_size)
-    response = inspect(model, X, insp_keys=set(layers), batch_size=500, to_numpy=True)
-    stas = {layer:[] for layer in layers}
-    for layer,chan in zip(layers,chans):
-        resp = response[layer]
-        center = resp.shape[-1]//2
-        chan = tqdm(chan) if verbose else chan
-        for c in chan:
-            sta, _ = ft.revcorr(noise[filter_size:], scipy.stats.zscore(resp[:,c,center,center]),0,model.img_shape[0])
-            stas[layer].append(sta)
-    return stas
-
+    return tdrutils.revcor_sta(*args, **kwargs)
 
 def rev_cor(response, X):
     """
@@ -348,7 +348,7 @@ def rev_cor(response, X):
     sta = matmul/len(X)
     return sta
 
-def batch_compute_model_response(stimulus, model, batch_size=500, recurrent=False, insp_keys={'all'}, cust_h_init=False, verbose=False):
+def batch_compute_model_response(*args, **kwargs):
     '''
     Computes a model response in batches in pytorch. Returns a dict of lists 
     where each list is the sequence of batch responses.     
@@ -360,48 +360,7 @@ def batch_compute_model_response(stimulus, model, batch_size=500, recurrent=Fals
             use recurrent approach to calculating model response
         insp_keys: set (or dict) with keys of layers to be inspected in Physio
     '''
-    phys = Physio(model)
-    model_response = None
-    batch_size = 1 if recurrent else batch_size
-    n_loops, leftover = divmod(stimulus.shape[0], batch_size)
-    hs = None
-    if recurrent:
-        hs = [torch.zeros(1, *h_shape).to(DEVICE) for h_shape in model.h_shapes]
-        if cust_h_init:
-            hs[0][:,0] = 1
-    with torch.no_grad():
-        responses = []
-        rng = range(n_loops)
-        if verbose:
-            rng = tqdm(rng)
-        for i in rng:
-            stim = torch.FloatTensor(stimulus[i*batch_size:(i+1)*batch_size])
-            outs = phys.inspect(stim.to(DEVICE), hs=hs, insp_keys=insp_keys)
-            if type(outs) == type(tuple()):
-                outs, hs = outs[0].copy(), outs[1]
-            else:
-                outs = outs.copy()
-            for k in outs.keys():
-                if type(outs[k]) != type(np.array([])):
-                    outs[k] = outs[k].detach().cpu().numpy()
-            responses.append(outs)
-        if leftover > 0 and hs is None:
-            stim = torch.FloatTensor(stimulus[-leftover:])
-            outs = phys.inspect(stim.to(DEVICE), hs=hs, insp_keys=insp_keys).copy()
-            for k in outs.keys():
-                if type(outs[k]) != type(np.array([])):
-                    outs[k] = outs[k].detach().cpu().numpy()
-            responses.append(outs)
-        model_response = {}
-        for key in responses[0].keys():
-             model_response[key] = np.concatenate([x[key] for x in responses], axis=0)
-        del outs
-
-    # Get the last few samples
-    phys.remove_hooks()
-    phys.remove_refs()
-    del phys
-    return model_response
+    return tdrutils.batch_compute_model_response(*args, **kwargs)
 
 def stream_folder(folder,main_dir=""):
     """
@@ -438,11 +397,130 @@ def get_model_folders(main_folder):
                     break
     return folders
 
-#def analysis_pipeline(main_folder):
-#    """
-#    Evaluates model on test set, calculates interneuron correlations, and creates retinal phenomena figures.
-#    """
-#    model_folders = get_model_folders(main_folder)
-#    main_frame = 
-#    for folder in model_folders:
-#        frame = analyze_model(folder)
+def get_analysis_table(folder, hyps=None):
+    """
+    Returns a dict that can easily be converted into a dataframe
+    """
+    table = dict()
+    if hyps is None:
+        hyps = get_hyps(folder)
+    for k,v in hyps.items():
+        if "state_dict" not in k and "model_hyps" not in k:
+            table[k] = [v]
+    return table
+
+def test_model(model, hyps):
+    data = tdrdatas.loadexpt(expt=hyps['dataset'], cells=hyps['cells'], 
+                                            filename=hyps['stim_type'],
+                                            train_or_test="test",
+                                            history=model.img_shape[0])
+    response = tdrutils.inspect(model, data.X, to_numpy=False)['output']
+    lossfxn = globals()[hyps['lossfxn']]()
+    loss = lossfxn(response, torch.FloatTensor(data.y)).item()
+    cor = scipy.stats.pearsonr(response.data.numpy(), data.y)
+    return loss, cor
+
+def get_intr_cors(model, layers=['sequential.0', 'sequential.6']):
+    """
+    Gets and returns a DataFrame of the interneuron correlations with the model.
+
+    model - torch Module
+    layers - list of str
+        names of layers to be correlated with interneurons
+    """
+    filt_len = model.img_shape[0]
+    interneuron_data = tdrdatas.load_interneuron_data(root_path="~/interneuron_data",
+                                                            filter_length=filt_len)
+    stim_dict, mem_pot_dict, _ = interneuron_data
+
+    table = tdrintr.get_intr_cors(model, stim_dict, mem_pot_dict, layers=set(layers),
+                                                       batch_size=500, verbose=False)
+    return pd.DataFrame(table)
+
+def make_figs(folder, model, metrics=None):
+    if k == "loss" or k == "epoch" or k == "val_loss" or k == "val_acc" or\
+       k == "exp_val_acc" or k == "test_pearson":
+    if metrics is not None:
+        # Plot Loss Curves
+        fig = plt.figure()
+        plt.plot(metrics['epoch'], metrics['loss'],color='k')
+        plt.plot(metrics['epoch'], metrics['val_loss'],color='b')
+        plt.legend(["train", "validation"])
+        plt.title("Loss Curves")
+        plt.savefig(os.path.join(folder,'loss_curves.png'))
+
+        # Plot Acc Curves
+        fig = plt.figure()
+        plt.plot(metrics['epoch'], metrics['test_pearson'],color='k')
+        plt.plot(metrics['epoch'], metrics['val_acc'],color='b')
+        plt.legend(["test", "validation"])
+        plt.title("Correlation Accuracies")
+        plt.savefig(os.path.join(folder,'acc_curves.png'))
+
+    ## Get retinal phenomena plots
+    figs, fig_names, metrics = tdrretphen.retinal_phenomena_figs(model)
+
+    for fig, name in zip(figs, fig_names):
+        save_name = name + ".png"
+        fig.savefig(os.path.join(folder, save_name))
+
+def analyze_model(folder, make_figs=True):
+    """
+    Calculates model performance on the testset and calculates interneuron correlations.
+
+    folder: str
+        the folder full of checkpoints
+    """
+    hyps = get_hyps(folder)
+    table = get_analysis_table(folder, hyps=hyps)
+
+    model,metrics = read_model(folder,ret_metrics=True)
+    model.eval()
+    model.cuda()
+    if make_figs:
+        make_figs(folder, model, metrics)
+
+    gc_loss, gc_cor = test_model(model, hyps)
+    table['test_acc'] = [gc_cor]
+    table['test_loss'] = [gc_loss]
+    df = pd.DataFrame(table)
+
+    intr_df = tdrintr.get_intr_cors(model, layers=["sequential.2", 'sequential.8'])
+    intr_df['save_folder'] = folder
+
+    # Drop duplicates and average over celll type
+    bests = intr_df.sort_values(by='cor',ascending=False)
+    bests = bests.drop_duplicates(['cell_file', 'cell_idx'])
+    bip_intr_cor = bests.loc[bests['cell_type']=="bipolar",'cor'].mean()
+    df['bipolar_intr_cor'] = bip_intr_cor
+    amc_intr_cor = bests.loc[bests['cell_type']=="amacrine",'cor'].mean()
+    df['amacrine_intr_cor'] = amc_intr_cor
+
+    return df, intr_df
+
+def analysis_pipeline(main_folder, make_figs=True):
+    """
+    Evaluates model on test set, calculates interneuron correlations, 
+    and creates figures.
+
+    main_folder: str
+        the folder full of model folders that contain checkpoints
+    """
+    model_folders = get_model_folders(main_folder)
+    main_df = pd.DataFrame()
+    main_intr_df = pd.DataFrame()
+    for folder in model_folders:
+        df, intr_df = analyze_model(folder, make_figs=make_figs)
+        main_df = main_df.append(df)
+        main_intr_df = main_intr_df.append(intr_df,sort=True)
+    return main_df, main_intr_df
+
+
+
+
+
+
+
+
+
+

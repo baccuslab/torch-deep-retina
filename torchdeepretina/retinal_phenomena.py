@@ -9,7 +9,7 @@ from tqdm import tqdm
 from itertools import repeat
 import torchdeepretina.stimuli as stim
 import torchdeepretina.visualizations as viz
-from torchdeepretina.analysis import compute_sta, batch_compute_model_response
+from torchdeepretina.utils import compute_sta, batch_compute_model_response
 from tqdm import tqdm, trange
 import torch
 
@@ -935,3 +935,56 @@ def contrast_fig(model, contrasts, layer_name=None, unit_index=(0,15,15), nonlin
     return fig
 
 #########################################################################################################
+
+def retinal_phenomena_figs(model):
+    figs = []
+    fig_names = []
+    metrics = dict()
+    filt_depth = model.img_shape[0]
+
+    (fig, (ax0,ax1)), X, resp = step_response(model, filt_depth=filt_depth)
+    figs.append(fig)
+    fig_names.append("step_response")
+    metrics['step_response'] = None
+
+    (fig,_),_,_,osr_resp_ratio = osr(model,duration=1,filt_depth=filt_depth)
+    figs.append(fig)
+    fig_names.append("osr")
+    metrics['osr'] = osr_resp_ratio 
+
+    (fig, (ax0,ax1)), X, resp = reversing_grating(model, filt_depth=filt_depth)
+    figs.append(fig)
+    fig_names.append("reversing_grating")
+    metrics['reversing_grating'] = None
+
+    (fig, (_)), _, _ = contrast_adaptation(model, .35, .05, filt_depth=filt_depth)
+    figs.append(fig)
+    fig_names.append("contrast_adaptation")
+    metrics['contrast_adaptation'] = None
+
+    contrasts = [0.05, 0.35]
+    fig = contrast_fig(model, contrasts, unit_index=0, nonlinearity_type="bin")
+    figs.append(fig)
+    fig_names.append("fast_contr_adaptation")
+    metrics['contrast_fig'] = None
+
+    (fig, ax), _, _, _, _ = motion_reversal(model, filt_depth=filt_depth)
+    figs.append(fig)
+    fig_names.append("motion_reversal")
+    metrics['motion_reversal'] = None
+
+    tup = motion_anticipation(model, filt_depth=filt_depth)
+    (fig, ax) = tup[0]
+    figs.append(fig)
+    fig_names.append("motion_anticipation")
+    metrics['motion_anticipation'] = None
+
+    tup = oms_random_differential(model, filt_depth=filt_depth)
+    fig, _, _, diff_response, global_response = tup
+    figs.append(fig)
+    fig_names.append("oms")
+    oms_ratios = global_response.mean(0)/diff_response.mean(0)
+    metrics['oms'] = oms_ratios
+
+    return figs, fig_names, metrics
+
