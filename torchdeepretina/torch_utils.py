@@ -1035,7 +1035,7 @@ class SkipConnection(nn.Module):
         fx = self.conv(x)
         fx = self.relu(fx)
         return torch.cat([x,fx], dim=1)
-        
+
 class SkipConnectionBN(nn.Module):
     """
     Performs a conv2d and returns the output stacked with  
