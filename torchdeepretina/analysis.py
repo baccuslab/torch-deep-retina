@@ -495,6 +495,9 @@ def analyze_model(folder, make_figs=True):
     df['bipolar_intr_cor'] = bip_intr_cor
     amc_intr_cor = bests.loc[bests['cell_type']=="amacrine",'cor'].mean()
     df['amacrine_intr_cor'] = amc_intr_cor
+    hor_intr_cor = bests.loc[bests['cell_type']=="horizontal",'cor'].mean()
+    df['horizontal_intr_cor'] = hor_intr_cor
+    df['intr_cor'] = bests['cor'].mean()
 
     return df, intr_df
 
@@ -507,9 +510,19 @@ def analysis_pipeline(main_folder, make_figs=True):
         the folder full of model folders that contain checkpoints
     """
     model_folders = get_model_folders(main_folder)
-    main_df = pd.DataFrame()
-    main_intr_df = pd.DataFrame()
+    csvs = ['model_data.csv', 'intr_data.csv']
+    dfs = dict()
+    for csv in csvs:
+        csv_path = os.path.join(main_folder,csv)
+        if os.path.exists(csv_path):
+            dfs[csv] = pd.read_csv(csv_path)
+        else:
+            dfs[csv] = pd.DataFrame()
     for folder in model_folders:
+        if "save_folder" in dfs[csv[0]] and folder in set(dfs[csv[0]]['save_folder']):
+            if "save_folder" in dfs[csv[1]] and folder in set(dfs[csv[1]]['save_folder']):
+                print("Skipping",folder," due to previous record")
+                continue
         df, intr_df = analyze_model(folder, make_figs=make_figs)
         main_df = main_df.append(df)
         main_intr_df = main_intr_df.append(intr_df,sort=True)
