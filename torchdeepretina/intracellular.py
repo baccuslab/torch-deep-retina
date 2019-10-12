@@ -130,7 +130,7 @@ def load_interneuron_data(root_path, files=None, filter_length=40, stim_keys={"b
                 for i,k in enumerate(stim_keys):
                     prepped = prepare_stim(np.asarray(f[k+'/stimuli']), k)
                     if trunc_join:
-                        prepped = prepped[:trunc_join]
+                        prepped = prepped[:trunc_len]
                     # In case stim have varying spatial dimensions
                     if not (prepped.shape[-2] == stims[fi].shape[-2] and 
                                         prepped.shape[-1] == stims[fi].shape[-1]):
@@ -140,7 +140,7 @@ def load_interneuron_data(root_path, files=None, filter_length=40, stim_keys={"b
                     stims[fi][startx:endx] = prepped
                     mem_pot = np.asarray(f[k]['detrended_membrane_potential'])
                     if trunc_join:
-                        mem_pot = mem_pot[:,:trunc_join]
+                        mem_pot = mem_pot[:,:trunc_len]
                     if i == 0:
                         mem_pot = mem_pot[:,filter_length:]
                     mendx = mstartx+mem_pot.shape[1]
@@ -363,11 +363,11 @@ def get_intr_cors(model, stim_dict, mem_pot_dict, layers={"sequential.2", "seque
                 print("Collecting model response for "+cellstim)
             response = tdrutils.inspect(model, stim, insp_keys=layers, batch_size=batch_size,
                                                                                to_numpy=True)
-            pots = mem_pot_dict[cell_file][stim_type]
             rnge = range(len(pots))
             if verbose:
                 print("Correlating with data...")
                 rnge = tqdm(rnge)
+            pots = mem_pot_dict[cell_file][stim_type]
             for cell_idx in rnge:
                 for l,layer in enumerate(layers):
                     resp = response[layer]
