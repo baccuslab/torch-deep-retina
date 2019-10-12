@@ -51,12 +51,18 @@ def prepare_stim(stim, stim_type):
         assert False
 
 def load_interneuron_data(root_path, files=None, filter_length=40, stim_keys={"boxes"}, 
-                                                                    join_stims=False):
+                                                                    join_stims=False,
+                                                                    trunc_join=True):
     """ 
     Load data
     num_pots (number of potentials) stores the number of cells per stimulus
     mem_pots (membrane potentials) stores the membrane potential
     psst, you can find the "data" folder in /home/grantsrb on deepretina server if you need
+
+    join_stims: bool
+       combines the stimuli listed in stim_keys
+    trunc_join: bool
+       truncates the joined stimuli to be of equal length. Only applies if join_stims is true.
 
     returns:
     if using join_stims then no
@@ -90,7 +96,7 @@ def load_interneuron_data(root_path, files=None, filter_length=40, stim_keys={"b
                     if join_stims:
                         shapes.append(prepare_stim(np.asarray(f[k+'/stimuli']), k).shape)
                         mem_pot = np.asarray(f[k+'/detrended_membrane_potential'])
-                        mem_shapes.append(mem_pot[:,filter_length:].shape)
+                        mem_shapes.append(mem_pot.shape)
                         del mem_pot
                     else:
                         try:
@@ -103,29 +109,40 @@ def load_interneuron_data(root_path, files=None, filter_length=40, stim_keys={"b
                             print(e)
                             print("stim error at", k)
             if join_stims:
+
                 # Summing up length of first dimension of all stimuli
-                zero_dim = [s[0]-filter_length if i > 0 else s[0] for i,s in enumerate(shapes)]
+                if trunc_join:
+                    trunc_len = np.min([s[0] for s in shapes])
+                    zero_dim = [trunc_len*len(shapes)]
+                else:
+                    zero_dim=[s[0] for i,s in enumerate(shapes)]
                 one_dim = [s[1] for s in shapes]
                 two_dim = [s[2] for s in shapes]
                 shape = [np.sum(zero_dim), np.max(one_dim), np.max(two_dim)]
                 stims[fi] = np.empty(shape, dtype=np.float32)
-                zero_dim = [s[0] for s in mem_shapes]
-                one_dim = [s[1] for s in mem_shapes]
-                mem_shape = [np.max(zero_dim), np.sum(one_dim)]
+
+                zero_dim = [s[0] for s in mem_shapes] # Number of cells
+                mem_shape = [np.max(zero_dim), shape[0]-filter_length]
                 mem_pots[fi] = np.empty(mem_shape, dtype=np.float32)
+
                 startx = 0
                 mstartx = 0
                 for i,k in enumerate(stim_keys):
                     prepped = prepare_stim(np.asarray(f[k+'/stimuli']), k)
-                    if i > 0:
-                        prepped = prepped[filter_length:]
+                    if trunc_join:
+                        prepped = prepped[:trunc_join]
+                    # In case stim have varying spatial dimensions
                     if not (prepped.shape[-2] == stims[fi].shape[-2] and 
                                         prepped.shape[-1] == stims[fi].shape[-1]):
                         prepped = tdrstim.spatial_pad(prepped,stims[fi].shape[-2],
                                                                 stims[fi].shape[-1])
                     endx = startx+len(prepped)
                     stims[fi][startx:endx] = prepped
-                    mem_pot = np.asarray(f[k]['detrended_membrane_potential'])[:,filter_length:]
+                    mem_pot = np.asarray(f[k]['detrended_membrane_potential'])
+                    if trunc_join:
+                        mem_pot = mem_pot[:,:trunc_join]
+                    if i == 0:
+                        mem_pot = mem_pot[:,filter_length:]
                     mendx = mstartx+mem_pot.shape[1]
                     mem_pots[fi][:,mstartx:mendx] = mem_pot
                     startx = endx
@@ -340,14 +357,19 @@ def get_intr_cors(model, stim_dict, mem_pot_dict, layers={"sequential.2", "seque
         for stim_type in stim_dict[cell_file].keys():
             stim = tdrstim.spatial_pad(stim_dict[cell_file][stim_type],model.img_shape[1])
             stim = tdrstim.rolling_window(stim, model.img_shape[0])
-            response = tdrutils.inspect(model, stim, insp_keys=layers, batch_size=batch_size)
+            if verbose:
+                temp = cell_file.split("/")[-1].split(".")[0]
+                cellstim = "cell_file:{}, stim_type:{}...".format(temp, stim_type)
+                print("Collecting model response for "+cellstim)
+            response = tdrutils.inspect(model, stim, insp_keys=layers, batch_size=batch_size,
+                                                                               to_numpy=True)
             pots = mem_pot_dict[cell_file][stim_type]
-            for cell_idx in range(len(pots)):
+            rnge = range(len(pots))
+            if verbose:
+                print("Correlating with data...")
+                rnge = tqdm(rnge)
+            for cell_idx in rnge:
                 for l,layer in enumerate(layers):
-                    if verbose:
-                        name = cell_file.split("/")[-1]
-                        print("Evaluating file:{}, stim:{}, idx:{}, layer:{}".format(name, 
-                                                               stim_type, cell_idx, layer))
                     resp = response[layer]
                     if len(resp.shape) == 2:
                         resp = resp.reshape(-1, model.chans[l], *model.shapes[l])
