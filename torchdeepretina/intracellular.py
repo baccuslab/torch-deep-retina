@@ -65,7 +65,7 @@ def load_interneuron_data(root_path, files=None, filter_length=40, stim_keys={"b
        truncates the joined stimuli to be of equal length. Only applies if join_stims is true.
 
     returns:
-    if using join_stims then no
+    if using join_stims then no stim_type key exists
     stims - dict
         keys are the cell files, vals are dicts
             keys of subdicts are stim type with vals of ndarray stimuli (T,H,W)
@@ -363,16 +363,21 @@ def get_intr_cors(model, stim_dict, mem_pot_dict, layers={"sequential.2", "seque
                 print("Collecting model response for "+cellstim)
             response = tdrutils.inspect(model, stim, insp_keys=layers, batch_size=batch_size,
                                                                                to_numpy=True)
+            pots = mem_pot_dict[cell_file][stim_type]
             rnge = range(len(pots))
             if verbose:
                 print("Correlating with data...")
                 rnge = tqdm(rnge)
-            pots = mem_pot_dict[cell_file][stim_type]
+            best_cors = []
             for cell_idx in rnge:
-                for l,layer in enumerate(layers):
+                best_cor = -1
+                for layer in layers:
                     resp = response[layer]
-                    if len(resp.shape) == 2:
-                        resp = resp.reshape(-1, model.chans[l], *model.shapes[l])
+                    if len(resp.shape) == 2 and layer == "sequential.2":
+                        resp = resp.reshape(-1, model.chans[0], *model.shapes[0])
+                    elif len(resp.shape) == 2 and layer == "sequential.8":
+                        resp = resp.reshape(-1, model.chans[1], *model.shapes[1])
+
                     for chan in range(resp.shape[1]):
                         r, idx = argmax_correlation_recurse_helper(pots[cell_idx], resp,
                                                        shape=resp.shape[2:], idx=(chan,))
@@ -387,11 +392,21 @@ def get_intr_cors(model, stim_dict, mem_pot_dict, layers={"sequential.2", "seque
                         intr_cors['chan'].append(chan)
                         intr_cors['row'].append(row)
                         intr_cors['col'].append(col)
+                        if r > best_cor:
+                            best_cor = r
+                best_cors.append(best_cor)
+            if verbose:
+                print("Avg:", np.mean(best_cors))
     return intr_cors
 
 def get_cor_generalization(model, stim_dict, mem_pot_dict,layers={"sequential.2","sequential.8"},
                                                                   batch_size=500, verbose=False):
     """
+    Collects the interneuron correlation of each channel of each layer with each membrane 
+    potential. Also collects the correlation of each of the best correlated units with the 
+    other stimuli. Acts as a measure of generalization to the cell response regardless of 
+    stimulus type.
+
     model - torch Module
     stim_dict - dict of interneuron stimuli
         keys: str (interneuron data file name)
@@ -405,6 +420,8 @@ def get_cor_generalization(model, stim_dict, mem_pot_dict,layers={"sequential.2"
                     vals: ndarray (CI, T)
                         CI is cell idx and T is time
     returns:
+        For each entry, there should be a corresponding entry matching in all fields except
+        for stim_type and cor.
         intr_cors - dict
                 - cell_file: list
                 - cell_idx: list
@@ -448,7 +465,7 @@ def get_cor_generalization(model, stim_dict, mem_pot_dict,layers={"sequential.2"
                         table['cell_file'].append(cell_file)
                         table['cell_idx'].append(cell_idx)
                         table['stim_type'].append(stim_type)
-                        table['cor'].append(r)
+                        table["cor"].append(r)
                         table['layer'].append(layer)
                         table['chan'].append(chan)
                         table['row'].append(row)
@@ -462,7 +479,7 @@ def get_cor_generalization(model, stim_dict, mem_pot_dict,layers={"sequential.2"
                                 table['cell_file'].append(cell_file)
                                 table['cell_idx'].append(cell_idx)
                                 table['stim_type'].append(stim_t)
-                                table['cor'].append(r)
+                                table["cor"].append(r)
                                 table['layer'].append(layer)
                                 table['chan'].append(chan)
                                 table['row'].append(row)
