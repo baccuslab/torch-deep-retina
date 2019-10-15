@@ -113,5 +113,7 @@ if __name__ == "__main__":
     hyper_search(hyps, hyp_ranges, keys, device)
     print("Total Execution Time:", time.time() - start_time)
     print("\n\nBeginning Analysis..")
-    analysis_pipeline(hyps['exp_name'], make_figs=True)
+    dfs = analysis.analysis_pipeline(exp_folder, make_figs=True, verbose=True)
+    for k in dfs.keys():
+        dfs[k].to_csv(os.path.join(exp_folder,k),sep="!",header=True,index=False)
 
