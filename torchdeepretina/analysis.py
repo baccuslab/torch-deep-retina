@@ -9,9 +9,7 @@ import pickle
 from torchdeepretina.models import *
 import torchdeepretina.datas as tdrdatas
 import matplotlib.pyplot as plt
-import torchdeepretina.stimuli as tdrstim
 import torchdeepretina.utils as tdrutils
-from torchdeepretina.physiology import Physio
 import torchdeepretina.intracellular as tdrintr
 from torchdeepretina.retinal_phenomena import retinal_phenomena_figs
 import pyret.filtertools as ft
@@ -139,17 +137,54 @@ def get_architecture(folder, data, hyps=None, main_dir="../training_scripts/"):
             model = hyps['model_type'](**model_hyps)
     return model
 
+def extract_hypstxt(path):
+    """
+    Gets the hyperparameters from the corresponding hyperparams.txt file
+
+    path: str
+        path to the txt file
+    """
+    hyps = dict()
+    with open(path, 'r') as hypfile:
+        for line in hypfile:
+            if ("(" in line and ")" in line) or ":" not in line:
+                continue
+            splt = line.strip().split(":")
+            splt[0] = splt[0].strip()
+            splt[1] = splt[1].strip()
+            hyps[splt[0]] = splt[1]
+            if hyps[splt[0]].lower() == "true" or hyps[splt[0]].lower() == "false":
+                hyps[splt[0]] = hyps[splt[0]] == "true"
+            elif hyps[splt[0]] == "None":
+                hyps[splt[0]] = None
+            elif splt[0] in {"lr", "l1", 'l2', 'noise', 'bnorm_momentum'}:
+                hyps[splt[0]] = float(splt[1])
+            elif splt[0] in {"n_epochs", "exp_num", 'batch_size'}:
+                hyps[splt[0]] = int(splt[1])
+            elif splt[0] in {"img_shape", "chans"} and "," in splt[1]:
+                temp = splt[1].replace('[','').replace(']','').split(",")
+                hyps[splt[0]] = [int(x.strip()) for x in temp]
+    return hyps
+                
+
+
 def get_hyps(folder, main_dir="../training_scripts"):
     try:
         path = os.path.join(main_dir, folder, "hyperparams.json")
         return tdrutils.load_json(path)
     except Exception as e:
-        stream = tdr.analysis.stream_folder(path)
-        hyps = dict()
-        for k in stream.keys():
-            if "state_dict" not in k and "model_hyps" not in k:
-                hyps[k] = stream[k]
-    return hyps
+        try:
+            path = os.path.join(main_dir, folder)
+            stream = stream_folder(path)
+            hyps = dict()
+            for k in stream.keys():
+                if "state_dict" not in k and "model_hyps" not in k:
+                    hyps[k] = stream[k]
+            assert 'lr' in hyps 
+            return hyps
+        except Exception as ee:
+            path = os.path.join(main_dir, folder, "hyperparams.txt")
+            return extract_hypstxt(path)
 
 def load_model(folder, data=None, hyps=None, main_dir="../training_scripts/"):
     """
@@ -177,13 +212,6 @@ def load_model(folder, data=None, hyps=None, main_dir="../training_scripts/"):
     except KeyError as e:
         print("Failed to load state_dict. This chkpt does not contain a model state_dict!")
     return model
-
-def requires_grad(model, state):
-    for p in model.parameters():
-        try:
-            p.requires_grad = state
-        except:
-            pass
 
 def read_model(folder, ret_metrics=False):
     """
@@ -231,6 +259,7 @@ def read_model(folder, ret_metrics=False):
                 del data['model_state_dict'][key]
         model.load_state_dict(data['model_state_dict'])
     model = model.to(DEVICE)
+    metrics['norm_stats'] = [data['norm_stats']['mean'], data['norm_stats']['std']]
     if ret_metrics:
         return model, metrics
     return model
@@ -249,59 +278,6 @@ def read_model_file(file_name, model_type=None):
     model = globals()[model_type](**data['model_hyps'])
     model.load_state_dict(data['model_state_dict'])
     return model
-
-def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, verbose=True):
-    """
-    Gets the gradient of the model output at the specified layer and cell idx with respect
-    to the inputs (X). Returns a gradient array with the same shape as X.
-    """
-    if verbose:
-        print("layer:", layer)
-    requires_grad(model, False)
-    device = next(model.parameters()).get_device()
-
-    if model.recurrent:
-        batch_size = 1
-        hs = [torch.zeros(batch_size, *h_shape).to(device) for h_shape in model.h_shapes]
-
-    hook_outs = dict()
-    module = None
-    for name, modu in model.named_modules():
-        if name == layer:
-            if verbose:
-                print("hook attached to " + name)
-            module = modu
-            hook = tdrutils.get_hook(hook_outs,key=layer,to_numpy=False)
-            hook_handle = module.register_forward_hook(hook)
-
-    # Get gradient with respect to activations
-    model.eval()
-    X.requires_grad = True
-    n_loops = X.shape[0]//batch_size
-    rng = range(n_loops)
-    if verbose:
-        rng = tqdm(rng)
-    for i in rng:
-        idx = i*batch_size
-        x = X[idx:idx+batch_size]
-        x = x.to(device)
-        if model.recurrent:
-            _, hs = model(x, hs)
-            hs = [h.data for h in hs]
-        else:
-            _ = model(x)
-        # Outs are the activations at the argued layer and cell idx accross the batch
-        if type(cell_idx) == type(int()):
-            fx = hook_outs[layer][:,cell_idx]
-        elif len(cell_idx) == 1:
-            fx = hook_outs[layer][:,cell_idx[0]]
-        else:
-            fx = hook_outs[layer][:, cell_idx[0], cell_idx[1], cell_idx[2]]
-        fx = fx.mean()
-        fx.backward()
-    hook_handle.remove()
-    requires_grad(model, True)
-    return X.grad.data.cpu().numpy()
 
 def inspect(*args, **kwargs):
     """
@@ -370,8 +346,7 @@ def stream_folder(folder,main_dir=""):
         _, _, fs = next(os.walk(folder.strip()))
     except Exception as e:
         print(e)
-        print("It is likely that folder", folder.strip(),"does not exist")
-        assert False
+        assert False, "It is likely that folder {} does not exist".format(folder.strip())
     for i in range(len(fs)+200):
         f = os.path.join(folder.strip(),"test_epoch_{0}.pth".format(i))
         try:
@@ -387,8 +362,8 @@ def get_model_folders(main_folder):
     main_folder - str
         path to main folder
     """
+    folders = []
     for d, sub_ds, files in os.walk(main_folder):
-        folders = []
         for sub_d in sub_ds:
             contents = os.listdir(os.path.join(d,sub_d))
             for content in contents:
@@ -413,14 +388,20 @@ def test_model(model, hyps):
     data = tdrdatas.loadexpt(expt=hyps['dataset'], cells=hyps['cells'], 
                                             filename=hyps['stim_type'],
                                             train_or_test="test",
-                                            history=model.img_shape[0])
-    response = tdrutils.inspect(model, data.X, to_numpy=False)['output']
-    lossfxn = globals()[hyps['lossfxn']]()
-    loss = lossfxn(response, torch.FloatTensor(data.y)).item()
-    cor = scipy.stats.pearsonr(response.data.numpy(), data.y)
+                                            history=model.img_shape[0],
+                                            norm_stats=hyps['norm_stats'])
+    with torch.no_grad():
+        response = tdrutils.inspect(model, data.X, batch_size=1000, to_numpy=False)['outputs']
+        lossfxn = globals()[hyps['lossfxn']](log_input=hyps['log_poisson'])
+        loss = lossfxn(response, torch.FloatTensor(data.y)).item()
+    resp = response.data.numpy()
+    pearson = scipy.stats.pearsonr
+    cors = [pearson(resp[:,i], data.y[:,i])[0] for i in range(resp.shape[1])]
+    cor = np.mean(cors)
     return loss, cor
 
-def get_intr_cors(model, layers=['sequential.0', 'sequential.6']):
+def get_intr_cors(model, layers=['sequential.0', 'sequential.6'], stim_keys={"boxes"}, 
+                                                                        verbose=True):
     """
     Gets and returns a DataFrame of the interneuron correlations with the model.
 
@@ -428,43 +409,46 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6']):
     layers - list of str
         names of layers to be correlated with interneurons
     """
+    if verbose:
+        print("Reading data for interneuron correlations...")
+        print("Using stim keys:", ", ".join(list(stim_keys)))
     filt_len = model.img_shape[0]
     interneuron_data = tdrdatas.load_interneuron_data(root_path="~/interneuron_data",
                                                             filter_length=filt_len)
     stim_dict, mem_pot_dict, _ = interneuron_data
 
     table = tdrintr.get_intr_cors(model, stim_dict, mem_pot_dict, layers=set(layers),
-                                                       batch_size=500, verbose=False)
+                                                       batch_size=500, verbose=verbose)
     return pd.DataFrame(table)
 
-def make_figs(folder, model, metrics=None):
-    if k == "loss" or k == "epoch" or k == "val_loss" or k == "val_acc" or\
-       k == "exp_val_acc" or k == "test_pearson":
+def get_analysis_figs(folder, model, metrics=None, verbose=True):
     if metrics is not None:
         # Plot Loss Curves
-        fig = plt.figure()
-        plt.plot(metrics['epoch'], metrics['loss'],color='k')
-        plt.plot(metrics['epoch'], metrics['val_loss'],color='b')
-        plt.legend(["train", "validation"])
-        plt.title("Loss Curves")
-        plt.savefig(os.path.join(folder,'loss_curves.png'))
+        if "epoch" in metrics and 'loss' in metrics and 'val_loss' in metrics:
+            fig = plt.figure()
+            plt.plot(metrics['epoch'], metrics['loss'],color='k')
+            plt.plot(metrics['epoch'], metrics['val_loss'],color='b')
+            plt.legend(["train", "validation"])
+            plt.title("Loss Curves")
+            plt.savefig(os.path.join(folder,'loss_curves.png'))
 
         # Plot Acc Curves
-        fig = plt.figure()
-        plt.plot(metrics['epoch'], metrics['test_pearson'],color='k')
-        plt.plot(metrics['epoch'], metrics['val_acc'],color='b')
-        plt.legend(["test", "validation"])
-        plt.title("Correlation Accuracies")
-        plt.savefig(os.path.join(folder,'acc_curves.png'))
+        if 'epoch' in metrics and 'test_pearson' in metrics and 'val_acc' in metrics:
+            fig = plt.figure()
+            plt.plot(metrics['epoch'], metrics['test_pearson'],color='k')
+            plt.plot(metrics['epoch'], metrics['val_acc'],color='b')
+            plt.legend(["test", "validation"])
+            plt.title("Correlation Accuracies")
+            plt.savefig(os.path.join(folder,'acc_curves.png'))
 
     ## Get retinal phenomena plots
-    figs, fig_names, metrics = tdrretphen.retinal_phenomena_figs(model)
+    figs, fig_names, metrics = retinal_phenomena_figs(model, verbose=verbose)
 
     for fig, name in zip(figs, fig_names):
         save_name = name + ".png"
         fig.savefig(os.path.join(folder, save_name))
 
-def analyze_model(folder, make_figs=True):
+def analyze_model(folder, make_figs=True, verbose=True):
     """
     Calculates model performance on the testset and calculates interneuron correlations.
 
@@ -475,17 +459,29 @@ def analyze_model(folder, make_figs=True):
     table = get_analysis_table(folder, hyps=hyps)
 
     model,metrics = read_model(folder,ret_metrics=True)
+    hyps['norm_stats'] = metrics['norm_stats']
     model.eval()
     model.cuda()
     if make_figs:
-        make_figs(folder, model, metrics)
+        if verbose:
+            print("Making figures")
+        get_analysis_figs(folder, model, metrics, verbose=verbose)
 
     gc_loss, gc_cor = test_model(model, hyps)
     table['test_acc'] = [gc_cor]
     table['test_loss'] = [gc_loss]
     df = pd.DataFrame(table)
+    if verbose:
+        print("GC Cor:", gc_cor,"  Loss:", gc_loss)
 
-    intr_df = tdrintr.get_intr_cors(model, layers=["sequential.2", 'sequential.8'])
+    layers = ["sequential.2", 'sequential.8']
+    # TODO: Make this if statement easy to turn on and off
+    if "convs" in dir(model.sequential[0]):
+        temp = ["sequential.0.convs." + str(i) for i in range(7)]
+        layers = layers + temp
+        temp = ["sequential.6.convs." + str(i) for i in range(5)]
+        layers = layers + temp
+    intr_df = get_intr_cors(model, layers=layers, verbose=verbose)
     intr_df['save_folder'] = folder
 
     # Drop duplicates and average over celll type
@@ -501,7 +497,7 @@ def analyze_model(folder, make_figs=True):
 
     return df, intr_df
 
-def analysis_pipeline(main_folder, make_figs=True):
+def analysis_pipeline(main_folder, make_figs=True, verbose=True):
     """
     Evaluates model on test set, calculates interneuron correlations, 
     and creates figures.
@@ -515,18 +511,26 @@ def analysis_pipeline(main_folder, make_figs=True):
     for csv in csvs:
         csv_path = os.path.join(main_folder,csv)
         if os.path.exists(csv_path):
-            dfs[csv] = pd.read_csv(csv_path)
+            dfs[csv] = pd.read_csv(csv_path, sep="!")
         else:
             dfs[csv] = pd.DataFrame()
     for folder in model_folders:
-        if "save_folder" in dfs[csv[0]] and folder in set(dfs[csv[0]]['save_folder']):
-            if "save_folder" in dfs[csv[1]] and folder in set(dfs[csv[1]]['save_folder']):
-                print("Skipping",folder," due to previous record")
+        save_folder = os.path.join(main_folder, folder)
+        if "save_folder" in dfs[csvs[0]] and save_folder in set(dfs[csvs[0]]['save_folder']):
+            intr_save_folders = set(dfs[csvs[1]]['save_folder'])
+            if "save_folder" in dfs[csvs[1]] and save_folder in intr_save_folders:
+                if verbose:
+                    print("Skipping",folder," due to previous record")
                 continue
-        df, intr_df = analyze_model(folder, make_figs=make_figs)
-        main_df = main_df.append(df)
-        main_intr_df = main_intr_df.append(intr_df,sort=True)
-    return main_df, main_intr_df
+        if verbose:
+            print("\n\nAnalyzing", folder)
+        
+        df, intr_df = analyze_model(save_folder, make_figs=make_figs, verbose=verbose)
+        if not("save_folder" in dfs[csvs[0]] and folder in set(dfs[csvs[0]]['save_folder'])):
+            dfs[csvs[0]] = dfs[csvs[0]].append(df, sort=True)
+        if not("save_folder" in dfs[csvs[1]] and folder in set(dfs[csvs[1]]['save_folder'])):
+            dfs[csvs[1]] = dfs[csvs[1]].append(intr_df,sort=True)
+    return dfs
 
 
 
