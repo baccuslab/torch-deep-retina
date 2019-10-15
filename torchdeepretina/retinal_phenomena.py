@@ -624,9 +624,7 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
     """
     # moving bar stimulus and responses
     # c_right and c_left are the center positions of the bar
-    print("vel:", velocity)
     c_right, speed_right, stim_right = stim.driftingbar(velocity, width, x=(-30, 30))
-    print("npts right:", c_right.shape)
     x = torch.from_numpy(stim_right).to(DEVICE)
     with torch.no_grad():
         if model.recurrent:
@@ -641,7 +639,6 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
     resp_right = resp.cpu().detach().numpy()
 
     c_left, speed_left, stim_left = stim.driftingbar(-velocity, width, x=(30, -30))
-    print("npts left:", c_right.shape)
     x = torch.from_numpy(stim_left).to(DEVICE)
     with torch.no_grad():
         if model.recurrent:
@@ -870,10 +867,11 @@ def filter_and_nonlinearity(model, contrast, layer_name='sequential.0',
 
     return time, temporal, x, nonlinear_prediction
 
-def contrast_fig(model, contrasts, layer_name=None, unit_index=(0,15,15), nonlinearity_type='bin'):
+def contrast_fig(model, contrasts, layer_name=None, unit_index=(0,15,15), verbose=False, 
+                                                                nonlinearity_type='bin'):
     """
-    Creates figure 3A from "Deeplearning Models Reveal..." paper. Much of this code has been repurposed
-    from Lane and Niru's notebooks. Significant chance of bugs...
+    Creates figure 3A from "Deeplearning Models Reveal..." paper. Much of this code has 
+    been repurposed from Lane and Niru's notebooks. Significant chance of bugs...
 
     model: torch module
     contrasts: sequence of ints len 2
@@ -885,12 +883,19 @@ def contrast_fig(model, contrasts, layer_name=None, unit_index=(0,15,15), nonlin
     nonlinearity_type: string
         fits the nonlinearity to the specified type. allowed args are "bin" and "sigmoid".
     """
+    if verbose:
+        print("Making Fast Contrast Adaptation Fig")
     if layer_name is None:
         layer_name = "sequential." + str(len(model.sequential)-1)
-    low_time, low_temporal, low_x, low_nl = filter_and_nonlinearity(model, contrasts[0], layer_name=layer_name, 
-                                                    unit_index=unit_index, nonlinearity_type=nonlinearity_type)
-    high_time, high_temporal, high_x, high_nl = filter_and_nonlinearity(model, contrasts[1], layer_name=layer_name,
-                                                    unit_index=unit_index, nonlinearity_type=nonlinearity_type)
+    tup = filter_and_nonlinearity(model, contrasts[0], layer_name=layer_name,
+                                      unit_index=unit_index, verbose=verbose,
+                                         nonlinearity_type=nonlinearity_type)
+    low_time, low_temporal, low_x, low_nl = tup
+    tup = filter_and_nonlinearity(model, contrasts[1], layer_name=layer_name,
+                                      unit_index=unit_index, verbose=verbose,
+                                         nonlinearity_type=nonlinearity_type)
+    high_time, high_temporal, high_x, high_nl = tup
+
     # Assure correct sign of decomp
     mean_diff = ((high_temporal-low_temporal)**2).mean()
     neg_mean_diff = ((high_temporal+low_temporal)**2).mean()
@@ -900,8 +905,10 @@ def contrast_fig(model, contrasts, layer_name=None, unit_index=(0,15,15), nonlin
     # Plot the decomp
     fig = plt.figure(figsize=(8, 2))
     plt.subplot(1, 2, 1)
-    plt.plot(low_time, low_temporal, label='Contrast = %02d%%' %(0.35 * contrasts[0] * 100), color='g')
-    plt.plot(high_time, high_temporal, label='Contrast = %02d%%' %(0.35 * contrasts[1] * 100), color='b')
+    plt.plot(low_time, low_temporal, label='Contrast = %02d%%' %(0.35 * contrasts[0] * 100), 
+                                                                                    color='g')
+    plt.plot(high_time, high_temporal, label='Contrast = %02d%%' %(0.35 * contrasts[1] * 100), 
+                                                                                    color='b')
     plt.xlabel('Delay (s)', fontsize=14)
     plt.ylabel('Filter ($s^{-1}$)', fontsize=14)
     plt.text(0.2, -30, 'Low', color='g', fontsize=18)
@@ -936,7 +943,7 @@ def contrast_fig(model, contrasts, layer_name=None, unit_index=(0,15,15), nonlin
 
 #########################################################################################################
 
-def retinal_phenomena_figs(model):
+def retinal_phenomena_figs(model, verbose=True):
     figs = []
     fig_names = []
     metrics = dict()
@@ -963,7 +970,7 @@ def retinal_phenomena_figs(model):
     metrics['contrast_adaptation'] = None
 
     contrasts = [0.05, 0.35]
-    fig = contrast_fig(model, contrasts, unit_index=0, nonlinearity_type="bin")
+    fig = contrast_fig(model, contrasts, unit_index=0, nonlinearity_type="bin", verbose=verbose)
     figs.append(fig)
     fig_names.append("fast_contr_adaptation")
     metrics['contrast_fig'] = None
