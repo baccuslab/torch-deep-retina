@@ -742,8 +742,13 @@ def spatial_pad(stimulus, H, W=None):
     pad_h, pad_w = max(0,(H-stimulus.shape[-2])), max(0,(W-stimulus.shape[-1]))
     pad_h = (pad_h//2,pad_h//2+(pad_h%2))
     pad_w = (pad_w//2,pad_w//2+(pad_w%2))
-    leading_zeros = [(0,0) for i in range(len(stimulus.shape)-2)]
-    return np.pad(stimulus,(*leading_zeros,pad_h,pad_w),"constant")
+    if type(stimulus) == type(torch.FloatTensor()):
+        leading_zeros = [0 for i in range((len(stimulus.shape)-2)*2)]
+        pads = (*pad_w, *pad_h, *leading_zeros)
+        return torch.pad(stimulus, pads, "constant", 0)
+    else:
+        leading_zeros = [(0,0) for i in range(len(stimulus.shape)-2)]
+        return np.pad(stimulus,(*leading_zeros,pad_h,pad_w),"constant")
 
 def prepad(y, n=40, v=0):
     """prepads with value"""
