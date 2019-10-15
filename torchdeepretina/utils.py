@@ -5,6 +5,11 @@ import torch.nn as nn
 import subprocess
 import json
 import os
+import torchdeepretina.stimuli as tdrstim
+from torchdeepretina.physiology import Physio
+from tqdm import tqdm
+
+DEVICE = torch.device("cuda:0")
 
 def load_json(file_name):
     with open(file_name) as f:
@@ -157,8 +162,10 @@ def inspect(model, X, insp_keys={}, batch_size=None, to_numpy=True):
             x = X[batch:batch+batch_size]
             if use_cuda:
                 x = x.cuda()
-            preds = model(x)
-            outputs.append(preds.cpu())
+            preds = model(x).cpu()
+            if to_numpy:
+                preds = preds.detach().numpy()
+            outputs.append(preds)
             for k in layer_outs.keys():
                 batched_outs[k].append(layer_outs[k])
         batched_outs['outputs'] = outputs
@@ -227,6 +234,59 @@ def batch_compute_model_response(stimulus, model, batch_size=500, recurrent=Fals
     del phys
     return model_response
 
+def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, verbose=True):
+    """
+    Gets the gradient of the model output at the specified layer and cell idx with respect
+    to the inputs (X). Returns a gradient array with the same shape as X.
+    """
+    if verbose:
+        print("layer:", layer)
+    requires_grad(model, False)
+    device = next(model.parameters()).get_device()
+
+    if model.recurrent:
+        batch_size = 1
+        hs = [torch.zeros(batch_size, *h_shape).to(device) for h_shape in model.h_shapes]
+
+    hook_outs = dict()
+    module = None
+    for name, modu in model.named_modules():
+        if name == layer:
+            if verbose:
+                print("hook attached to " + name)
+            module = modu
+            hook = get_hook(hook_outs,key=layer,to_numpy=False)
+            hook_handle = module.register_forward_hook(hook)
+
+    # Get gradient with respect to activations
+    model.eval()
+    X.requires_grad = True
+    n_loops = X.shape[0]//batch_size
+    rng = range(n_loops)
+    if verbose:
+        rng = tqdm(rng)
+    for i in rng:
+        idx = i*batch_size
+        x = X[idx:idx+batch_size]
+        x = x.to(device)
+        if model.recurrent:
+            _, hs = model(x, hs)
+            hs = [h.data for h in hs]
+        else:
+            _ = model(x)
+        # Outs are the activations at the argued layer and cell idx accross the batch
+        if type(cell_idx) == type(int()):
+            fx = hook_outs[layer][:,cell_idx]
+        elif len(cell_idx) == 1:
+            fx = hook_outs[layer][:,cell_idx[0]]
+        else:
+            fx = hook_outs[layer][:, cell_idx[0], cell_idx[1], cell_idx[2]]
+        fx = fx.mean()
+        fx.backward()
+    hook_handle.remove()
+    requires_grad(model, True)
+    return X.grad.data.cpu().numpy()
+
 def compute_sta(model, contrast, layer, cell_index, layer_shape=None, verbose=True):
     """
     Computes the STA using the average of instantaneous receptive 
@@ -281,6 +341,13 @@ def freeze_weights(model, unfreeze=False):
     for p in model.parameters():
         try:
             p.requires_grad = unfreeze
+        except:
+            pass
+
+def requires_grad(model, state):
+    for p in model.parameters():
+        try:
+            p.requires_grad = state
         except:
             pass
 
