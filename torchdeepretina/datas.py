@@ -16,6 +16,7 @@ NUM_BLOCKS = {
     '15-10-07': 6,
     '15-11-21a': 6,
     '15-11-21b': 6,
+    'arbfilt': 1,
     '16-01-07': 3,
     '16-01-08': 3,
 }
@@ -25,7 +26,8 @@ CELLS = {
     '15-11-21b': [0, 1, 3, 5, 8, 9, 13, 14, 16, 17, 18, 20, 21, 22, 23, 24, 25],
     '16-01-07': [0, 2, 7, 10, 11, 12, 31],
     '16-01-08': [0, 3, 7, 9, 11],
-    '16-05-31': [2, 3, 4, 14, 16, 18, 20, 25, 27]
+    '16-05-31': [2, 3, 4, 14, 16, 18, 20, 25, 27],
+    'arbfilt': [0,1,2,3,4,5,6,7,8,9]
 }
 CENTERS = {
     '15-10-07': [[21,18], [24,20], [22,18], [27,18], [31,20]],
@@ -35,6 +37,7 @@ CENTERS = {
             [27,11], [26,13], [24,10]],
     '16-01-07': None,
     '16-01-08': None,
+    'arbfilt': None,
 }
 
 Exptdata = namedtuple('Exptdata', ['X','y','spkhist','stats',"cells","centers"])
@@ -130,7 +133,10 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, cutout_widt
         spk_hist = rolling_window(binned, history, time_axis=0)
 
         # get the ganglion cell receptive field centers
-        centers = np.asarray(CENTERS[expt])
+        if expt in CENTERS:
+            centers = np.asarray(CENTERS[expt])
+        else:
+            centers = None
 
     return Exptdata(stim_reshaped, resp, spk_hist, stats, cells, centers)
 
