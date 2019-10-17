@@ -8,7 +8,7 @@ import torch.nn as nn
 from torch.nn import PoissonNLLLoss, MSELoss
 import torch.nn.functional as F
 import os.path as path
-from torchdeepretina.utils import get_cuda_info, save_checkpoint, GaussRegularizer
+import torchdeepretina.utils as tdrutils
 from torchdeepretina.datas import loadexpt, DataContainer, DataDistributor
 from torchdeepretina.models import *
 import torchdeepretina.analysis as analysis
@@ -205,9 +205,15 @@ class Trainer:
         torch.cuda.empty_cache()
         hyps['device'] = device
         batch_size = hyps['batch_size']
-        if 'skip_nums' in hyps and hyps['skip_nums'] is not None and len(hyps['skip_nums']) > 0 and hyps['exp_num'] in hyps['skip_nums']:
+
+        if 'skip_nums' in hyps and hyps['skip_nums'] is not None and\
+                                        len(hyps['skip_nums']) > 0 and\
+                                        hyps['exp_num'] in hyps['skip_nums']:
+
             print("Skipping", hyps['save_folder'])
-            results = {"save_folder":hyps['save_folder'], "Loss":None, "ValAcc":None, "ValLoss":None, "TestPearson":None}
+            results = {"save_folder":hyps['save_folder'], 
+                                "Loss":None, "ValAcc":None, 
+                                "ValLoss":None, "TestPearson":None}
             return results
 
         # Get Data, Make Model, Record Initial Hyps and Model
@@ -228,7 +234,7 @@ class Trainer:
         # Make optimization objects (lossfxn, optimizer, scheduler)
         optimizer, scheduler, loss_fn = get_optim_objs(hyps, model, train_data.centers)
         if 'gauss_reg' in hyps and hyps['gauss_reg'] > 0:
-            gauss_reg = GaussRegularizer(model, [0,6], std=hyps['gauss_reg'])
+            gauss_reg = tdrutils.GaussRegularizer(model, [0,6], std=hyps['gauss_reg'])
 
         # Training
         for epoch in range(hyps['n_epochs']):
@@ -362,7 +368,7 @@ class Trainer:
             for k in hyps.keys():
                 if k not in save_dict:
                     save_dict[k] = hyps[k]
-            save_checkpoint(save_dict, hyps['save_folder'], 'test', del_prev=True)
+            tdrutils.save_checkpoint(save_dict, hyps['save_folder'], 'test', del_prev=True)
 
             # Print Epoch Stats
             gc.collect()
@@ -461,7 +467,8 @@ def get_data(hyps):
         dict of relevant hyperparameters
     """
     img_depth, img_height, img_width = hyps['img_shape']
-    train_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'], hyps['stim_type'],'train',img_depth,0))
+    train_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'], 
+                                hyps['stim_type'],'train',img_depth,0))
     norm_stats = [train_data.stats['mean'], train_data.stats['std']] 
 
     try:
@@ -522,7 +529,7 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
             hyps['save_folder'] += "_" + str(k)+str(hyps[k])
 
 
-        test_hyps = get_model_hyps(hyps)
+        model_hyps = get_model_hyps(hyps)
 
         # Make model hyps
         hyps['model_class'] = globals()[hyps['model_type']]
@@ -537,6 +544,9 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
 
         for k in test_hyps.keys():
             assert test_hyps[k] == model_hyps[k]
+        for k in model_hyps.keys():
+            assert test_hyps[k] == model_hyps[k]
+        print("The get_model_hyps function works, please remove lines 535-549 from training.py")
         
         # Load q
         hyper_q.put([{k:v for k,v in hyps.items()}, {k:v for k,v in model_hyps.items()}])
@@ -551,7 +561,7 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
     return hyper_q
 
 def get_device(visible_devices, cuda_buffer=3000):
-    info = get_cuda_info()
+    info = tdrutils.get_cuda_info()
     for i,mem_dict in enumerate(info):
         if i in visible_devices and mem_dict['remaining_mem'] >= cuda_buffer:
             return i
@@ -730,5 +740,233 @@ class LossFxnWrapper:
         units = x[...,:,chans,self.coords[:,0],self.coords[:,1]]
         return self.loss_fn(units, y)
 
+
+def fit_sta(test_chunk, chunked_data, normalize=True):
+    """
+    Calculates the STA from the chunked data and returns a cpu torch tensor of the STA.
+    This function is mainly used for creating figures in deepretina paper.
+
+    test_chunk: int
+        the held out test data index
+    chunked_data: ChunkedData object (see datas.py)
+        An object to handle chunking the data for cross validation
+    """
+    if normalize:
+        norm_stats = chunked_data.get_norm_stats(test_chunk)
+        mean, std = norm_stats
+    n_samples = 0
+    cumu_sum = 0
+    batch_size = 500
+    for i in range(chunked_data.n_chunks):
+        if i != test_chunk:
+            x = chunked_data.X[chunked_data.chunks[i]]
+            y = chunked_data.y[chunked_data.chunks[i]]
+            for j in range(0,len(x),batch_size):
+                temp_x = x[j:j+batch_size]
+                if normalize:
+                    temp_x = (temp_x-mean)/(std+1e-5)
+                matmul = torch.einsum("ij,i->j",temp_x.cuda(),y[j:j+batch_size].cuda())
+                cumu_sum = cumu_sum + matmul.cpu()
+                n_samples += len(temp_x)
+    if normalize:
+        return cumu_sum/n_samples, norm_stats
+    return cumu_sum/n_samples
+
+def fit_nonlin(chunked_data, test_chunk, model, degree=5,n_repeats=10, ret_all=False):
+    """
+    Fits a polynomial nonlinearity to the model.
+
+    chunked_data - ChunkedData object (see datas.py)
+    test_chunk - int
+        the chunk of data that will be held for testing
+    model - RevCorLN object (see models.py)
+    degree - int
+        degree of polynomial to fit
+    n_repeats - int
+        number of repeated trials to fit the nonlinearity
+    ret_all - bool
+        will return multiple fields if true
+    """
+    if type(degree)==type(int()):
+        degree=[degree]
+    best_r = -1
+    try:
+        X,y = chunked_data.get_train_data(test_chunk)
+        X = model.normalize(X)
+        lin_outs = model.convolve(X)
+    except:
+        batch_size = 500
+        n_samples = np.sum([len(chunk) if i != test_chunk else 0 for i,chunk in\
+                                                enumerate(chunked_data.chunks)])
+        lin_outs = torch.empty(n_samples).float()
+        truth = torch.empty(n_samples).float()
+        outdx = 0
+        for i in range(chunked_data.n_chunks):
+            if i != test_chunk:
+                x = chunked_data.X[chunked_data.chunks[i]]
+                x = model.normalize(x)
+                y = chunked_data.y[chunked_data.chunks[i]]
+                for j in range(0,len(x),batch_size):
+                    temp_x = x[j:j+batch_size]
+                    outs = model.convolve(temp_x).cpu()
+                    lin_outs[outdx:outdx+len(outs)] = outs
+                    truth[outdx:outdx+len(outs)] = y[j:j+batch_size]
+                    outdx += len(outs)
+        y = truth
+
+    for d in degree:
+        lin_outs = lin_outs.numpy().astype(np.float32).squeeze()
+        y = y.numpy().astype(np.float32).squeeze()
+        fit = np.polyfit(lin_outs, y, d)
+        poly = tdrutils.poly1d(fit)
+        preds = poly(lin_outs)
+        r = tdrutils.pearsonr(preds, y)
+        if r > best_r:
+            best_poly = poly
+            best_degree=d
+            best_r = r
+            best_preds = preds
+
+    if ret_all:
+        return best_poly, best_degree, best_r, best_preds
+    return best_poly
+
+def fit_ln_nonlin(X, y, model, degree=5, ret_all=False):
+    """
+    Fits a polynomial nonlinearity to the model.
+
+    X: torch tensor (T, C) or (T, C, H, W)
+    y: torch tensor
+    model: RevCorLN object (see models.py)
+    degree: int
+        degree of polynomial to fit
+    ret_all: bool
+        will return multiple fields if true
+    """
+    if type(degree)==type(int()):
+        degree=[degree]
+    best_r = -1
+    try:
+        X = model.normalize(X)
+        lin_outs = model.convolve(X)
+    except:
+        batch_size = 500
+        lin_outs = torch.empty(len(X)).float()
+        for i in range(0, len(X), batch_size):
+            x = X[i:i+batch_size]
+            x = model.normalize(x)
+            outs = model.convolve(x).cpu().detach()
+            lin_outs[i:i+batch_size] = outs
+
+    for d in degree:
+        lin_outs = lin_outs.numpy().astype(np.float32).squeeze()
+        y = y.numpy().astype(np.float32).squeeze()
+        fit = np.polyfit(lin_outs, y, d)
+        poly = tdrutils.poly1d(fit)
+        preds = poly(lin_outs)
+        r = tdrutils.pearsonr(preds, y)
+        if r > best_r:
+            best_poly = poly
+            best_degree=d
+            best_r = r
+            best_preds = preds
+    if ret_all:
+        return best_poly, best_degree, best_r, best_preds
+    return best_poly
+
+def fit_filter(X, y, batch_size=500):
+    """
+    Fits a linear filter for the given X and y
+
+    X: torch tensor (T, C) or (T, C, H, W)
+    y: torch tensor
+    """
+    X = X.reshape(len(X), -1)
+    mean = tdrutils.get_mean(X)
+    std = tdrutils.get_std(X, mean=mean)
+    norm_stats = [mean, std]
+    n_samples = 0
+    cumu_sum = 0
+    for i in range(0,len(X),batch_size):
+        x = X[i:i+batch_size]
+        truth = y[i:i+batch_size]
+        x = (x-mean)/(std+1e-5)
+        matmul = torch.einsum("ij,i->j",x.cuda(),truth.cuda())
+        cumu_sum = cumu_sum + matmul.cpu()
+        n_samples += len(x)
+    return cumu_sum/n_samples, norm_stats
+
+def train_ln(X, y, rf_center, cutout_size):
+    """
+    Fits an LN model to the data
+
+    X: torch FloatTensor (T,C) or (T,C,H,W)
+        training stimulus
+    y: torch FloatTensor (T)
+    rf_center: list or tuple (row, col)
+        the receptive field center of the cell
+    cutout_size: int
+        stimulus is cutout centered at argued center
+    """
+    if type(X) == type(np.array([])):
+        X = torch.FloatTensor(X)
+    if type(y) == type(np.array([])):
+        y = torch.FloatTensor(y)
+
+    # STA is cpu torch tensor
+    sta, norm_stats = fit_filter(X, y)
+    model = RevCorLN(sta,ln_cutout_size=cutout_size,center=rf_center,norm_stats=norm_stats)
+    bests = fit_ln_nonlin(X, y, model,degree=[5], ret_all=True)
+    best_poly,best_degree,best_r,best_preds = bests
+    model.poly = best_poly # Torch compatible polys
+    model.poly_degree = best_degree
+
+    return model
+    
+
+def cross_validate_ln(chunked_data, ln_cutout_size, center, ret_models=True, skip_chunks={}):
+    """
+    Performs cross validation for LN model trained using reverse correlation
+
+    chunked_data: ChunkedData object (see datas.py)
+        This is an object that segregates the data into N distinct chunks
+    ln_cutout_size: int
+        the the size of the window to train on the stimulus
+    center: list or tuple of ints (row,col)
+        the center coordinate of the receptive field for the cell
+    ret_models: bool
+        if true, the models are each collected and returned at the end of the 
+        cross validation
+    skip_chunks: set or list
+        chunk indices to skip during training
+    """
+    accs = []
+    models = []
+    print("Fitting LNs...")
+    for i in range(chunked_data.n_chunks):
+        basetime=time.time()
+
+        # STA is cpu torch tensor
+        sta,norm_stats = fit_sta(i,chunked_data,normalize=True)
+
+        model = RevCorLN(sta,ln_cutout_size=ln_cutout_size,center=center,norm_stats=norm_stats)
+        bests = fit_nonlin(chunked_data,i,model,degree=[5],ret_all=True)
+        best_poly,best_degree,best_r,best_preds = bests
+        model.poly = best_poly # Torch compatible polys
+        model.poly_degree = best_degree
+
+        val_X = chunked_data.X[chunked_data.chunks[i]]
+        val_y = chunked_data.y[chunked_data.chunks[i]]
+        val_X = model.normalize(val_X)
+        preds = model(val_X).squeeze()
+        r = tdrutils.pearsonr(preds.squeeze(), val_y.squeeze()).item()
+        accs.append(r)
+        if ret_models:
+            models.append(model)
+        exec_time = time.time()-basetime
+        print("Fit Trial:",i, ", Best Degree:",best_degree, ", Acc:", r, ", Time:", exec_time)
+        del val_X
+        del val_y
+    return models, accs
 
 
