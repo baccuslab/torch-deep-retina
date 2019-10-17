@@ -172,23 +172,103 @@ def pad_to_edge(stim):
     padded_stim[:, y_start:y_start+height, x_start:x_start+width] = stim
     return padded_stim
 
-def correlation_map(mem_pot, model_layer):
+def make_intr_cor_maps(model, layers=['sequential.2', 'sequential.8'], verbose=True):
+    """
+    Collects the correlation maps for each layer in layers for all interneuron cells.
+
+    model: torch nn Module
+    layers: list of str
+        desired layers to be analyzed
+
+    Returns:
+        cor_maps: dict
+            keys: intrnrn files
+            vals: lists of dicts
+                The correlation map dictionaries returned from all_correlation_maps (see 
+                intracellular)
+                keys: layer names str
+                vals: ndarray (C,H,W)
+                    The correlation maps. A unique correlation value for each unit in the layer.
+    """
+    files = ['bipolars_late_2012.h5', 'bipolars_early_2012.h5', 
+            'amacrines_early_2012.h5', 'amacrines_late_2012.h5']
+    cor_maps = dict()
+    for i,f in enumerate(files):
+        cor_maps[f] = []
+        intr_data = load_interneuron_data(root_path="~/interneuron_data/",
+                                      filter_length=model.img_shape[0],
+                                       files=[f], stim_keys={'boxes'})
+        stim_dict, mem_pot_dict, intrnrn_files = intr_data
+        k = list(stim_dict.keys())[0] # Some variant of the file name
+        stim = stim_dict[k]['boxes']
+        stim = tdrstim.spatial_pad(stim, 50)
+        stim = tdrstim.rolling_window(stim, model.img_shape[0])
+        rnge = range(len(mem_pot_dict[k]['boxes']))
+        if verbose:
+            print("File: {}/{}".format(i,len(files)))
+            rnge = tqdm(rnge)
+        for ci in rnge:
+            mem_pot = mem_pot_dict[k]['boxes'][ci]
+            response = tdrutils.inspect(model, stim, insp_keys=set(layers), batch_size=500)
+            maps = all_correlation_maps(mem_pot, response, layer_keys=layers)
+            cor_maps[f].append(maps)
+    return cor_maps
+
+def all_correlation_maps(mem_pot, model_response, layer_keys=['sequential.2', 'sequential.8']):
+    """
+    Returns a dict of correlation maps for each argued layer
+
+    mem_pot: ndarray (T,)
+    model_response: dict
+        keys: str layer names
+        vals: ndarrays (T,C) or (T,C,H,W)
+            layer activations
+
+    Returns:
+        cor_maps: dict
+            keys: str layer names
+            vals: ndarrays (C) or (C,H,W)
+                correlations with mem_pot
+    """
+    cor_maps = dict()
+    for layer in layer_keys:
+        resp = model_response[layer]
+        shape = resp.shape
+        if len(shape) == 4: # (T,C,H,W) case
+            chan_maps = []
+            for chan in range(resp.shape[1]):
+                activs = resp[:,chan]
+                chan_map = correlation_map(mem_pot, activs)
+                chan_maps.append(chan_map)
+            cor_map = np.asarray(chan_maps) # (C, H, W)
+            assert tuple(cor_map.shape) == tuple(shape[1:])
+        else:
+            assert len(shape)==2 # Must have shape of 2 or 4
+            cors = []
+            for i in range(resp.shape[1]):
+                r,_ = pearsonr(mem_pot.squeeze(), resp[:,i])
+                cors.append(r)
+            cor_map = np.asarray(cors)
+        cor_maps[layer] = cor_map
+    return cor_maps
+
+def correlation_map(mem_pot, activ_layer):
     '''
     Takes a 1d membrane potential and computes the correlation with every tiled 
-    unit in model_layer.
+    unit in activation layer.
     
     Args:
         mem_pot: 1-d numpy array
-        model_layer: (time, space, space) layer of activities
+        activ_layer: (time, space, space) layer of activities
     '''
-    height = model_layer.shape[-2]
-    width = model_layer.shape[-1]
+    height = activ_layer.shape[-2]
+    width = activ_layer.shape[-1]
     correlations = np.zeros((height, width))
     for y in range(height):
         for x in range(width):
-            #adjusted_layer = model_layer[:,y,x]/(np.max(model_layer[:,y,x])+1e-40)
+            #adjusted_layer = activ_layer[:,y,x]/(np.max(activ_layer[:,y,x])+1e-40)
             #r,_ = pearsonr(mem_pot, adjusted_layer)
-            r,_ = pearsonr(mem_pot.squeeze(),model_layer[:,y,x].squeeze())
+            r,_ = pearsonr(mem_pot.squeeze(),activ_layer[:,y,x].squeeze())
             correlations[y,x] = r if not np.isnan(r) and r < 1 and r > -1 else 0
     return correlations
 
