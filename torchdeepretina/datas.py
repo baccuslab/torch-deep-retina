@@ -376,11 +376,6 @@ class DataDistributor:
             else:
                 idxs = batch_perm[i*batch_size:(i+1)*batch_size]
 
-            ### TODO: SHIFTING NEEDS TESTING
-            #if self.shift_labels:
-            #    roll_amt = int(np.random.randint(0,len(self.train_y)))
-            #    yield self.train_X[idxs], self.train_y.roll(roll_amt, idxs)
-            #else:
             yield self.train_X[idxs], self.train_y[idxs]
     
     def torch(self):
@@ -407,3 +402,70 @@ class DataDistributor:
         self.val_X = DataObj(self.X, self.val_idxs)
         self.val_y = DataObj(self.y, self.val_idxs)
 
+class ChunkedData:
+    """
+    Used for LN cross validation in figures
+    """
+    def __init__(self, X, y, n_chunks=8, shuffle=False):
+        self.shuffle = shuffle
+        self.n_chunks = n_chunks
+        self.X = torch.FloatTensor(X)
+        self.y = torch.FloatTensor(y)
+        
+        idxs = torch.arange(len(X)).long() if not shuffle else \
+                          torch.randperm(len(X)).long()
+        
+        self.chunks = []
+        seg_size = len(X)//n_chunks
+        for i in range(n_chunks-1):
+            self.chunks.append(idxs[i*seg_size:(i+1)*seg_size])
+        self.chunks.append(idxs[(n_chunks-1)*seg_size:])
+
+    def get_mean(self, test_chunk):
+        """
+        returns mean along dimension 0
+
+        test_chunk - idx of test chunk
+        """
+        n_samples = 0
+        cumu_sum = 0
+        for i in range(self.n_chunks):
+            if i != test_chunk:
+                temp_x = self.X[self.chunks[i]]
+                cumu_sum = cumu_sum + temp_x.sum(0)
+                n_samples += len(self.chunks[i])
+        return cumu_sum/n_samples
+
+    def get_std(self, test_chunk):
+        mean = self.get_mean(test_chunk)
+        cumu_sum = torch.zeros_like(mean)
+        n_samples = 0
+        for i in range(self.n_chunks):
+            if i != test_chunk:
+                temp_x = self.X[self.chunks[i]]
+                cumu_sum = cumu_sum + ((temp_x-mean)**2).sum(0)
+                n_samples += len(self.chunks[i])
+        return torch.sqrt(cumu_sum / n_samples)
+
+    def get_norm_stats(self, test_chunk):
+        mean = self.get_mean(test_chunk)
+        cumu_sum = torch.zeros_like(mean)
+        n_samples = 0
+        for i in range(self.n_chunks):
+            if i != test_chunk:
+                temp_x = self.X[self.chunks[i]]
+                cumu_sum = cumu_sum + ((temp_x-mean)**2).sum(0)
+                n_samples += len(self.chunks[i])
+        return mean, torch.sqrt(cumu_sum / n_samples)
+
+    def get_train_data(self,test_chunk):
+        X,y = [],[]
+        for i in range(self.n_chunks):
+            if i != test_chunk:
+                X.append(self.X[self.chunks[i]])
+                y.append(self.y[self.chunks[i]])
+        if type(self.X) == type(np.array([])):
+            return np.concatenate(X,axis=0), np.concatenate(y,axis=0)
+        else:
+            return torch.cat(X,dim=0), torch.cat(y,dim=0)
+    
