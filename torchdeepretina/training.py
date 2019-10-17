@@ -528,7 +528,7 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
         for k in keys:
             hyps['save_folder'] += "_" + str(k)+str(hyps[k])
 
-        model_hyps = get_model_hyps(hyps)
+        hyps,model_hyps = get_model_hyps(hyps)
 
         # Load q
         hyper_q.put([{k:v for k,v in hyps.items()}, {k:v for k,v in model_hyps.items()}])
@@ -651,8 +651,8 @@ def hyper_search(hyps, hyp_ranges, keys, device, early_stopping=10, stop_toleran
             f.write("\n"+results+"\n")
 
 def get_model_hyps(hyps):
-    hyps = {k:v for k,v in hyps.items()}
     hyps['model_class'] = globals()[hyps['model_type']]
+    hyps = {k:v for k,v in hyps.items()}
     model_hyps = {k:v for k,v in hyps.items()}
 
     fn_args = set(hyps['model_class'].__init__.__code__.co_varnames) 
@@ -662,7 +662,7 @@ def get_model_hyps(hyps):
     for k in keys:
         if k not in fn_args:
             del model_hyps[k]
-    return model_hyps
+    return hyps, model_hyps
 
 
 class ModulePackage:
