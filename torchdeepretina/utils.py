@@ -8,6 +8,9 @@ import os
 import torchdeepretina.stimuli as tdrstim
 from torchdeepretina.physiology import Physio
 from tqdm import tqdm
+import pyret.filtertools as ft
+import scipy.stats
+import pickle
 
 DEVICE = torch.device("cuda:0")
 
@@ -113,7 +116,7 @@ def get_hook(layer_dict, key, to_numpy=True, to_cpu=False):
             layer_dict[key] = out
     return hook
 
-def inspect(model, X, insp_keys={}, batch_size=None, to_numpy=True):
+def inspect(model, X, insp_keys={}, batch_size=None, to_numpy=True, verbose=False):
     """
     Get the response from the argued layers in the model as np arrays. If model is on cpu,
     operations are performed on cpu. Put model on gpu if you desire operations to be
@@ -158,7 +161,10 @@ def inspect(model, X, insp_keys={}, batch_size=None, to_numpy=True):
         use_cuda = next(model.parameters()).is_cuda
         batched_outs = {key:[] for key in insp_keys}
         outputs = []
-        for batch in range(0,len(X), batch_size):
+        rnge = range(0,len(X), batch_size)
+        if verbose:
+            rnge = tqdm(rnge)
+        for batch in rnge:
             x = X[batch:batch+batch_size]
             if use_cuda:
                 x = x.cuda()
@@ -305,7 +311,99 @@ def compute_sta(model, contrast, layer, cell_index, layer_shape=None, verbose=Tr
     del X
     return sta
 
-def revcor_sta(model, layers=['sequential.0','sequential.6'], chans=[8,8], verbose=True):
+def get_mean(x, axis=None, batch_size=1000):
+    """
+    Returns mean of x along argued axis. Used in cases of large datasets.
+
+    x: ndarray or torch tensor
+    axis: int
+    batch_size: int
+        size of increment when calculating mean
+    """
+    cumu_sum = 0
+    if axis is None:
+        for i in range(0,len(x), batch_size):
+            cumu_sum = cumu_sum + x[i:i+batch_size].sum()
+        return cumu_sum/x.numel()
+    else:
+        for i in range(0,len(x), batch_size):
+            cumu_sum = cumu_sum + x[i:i+batch_size].sum(axis)
+        return cumu_sum/len(x)
+
+def get_std(x, axis=None, batch_size=1000, mean=None):
+    """
+    Returns std of x along argued axis. Used in cases of large datasets.
+
+    x: ndarray or torch tensor
+    axis: int
+    batch_size: int
+        size of increment when calculating mean
+    mean: int or ndarray or torch tensor
+        The mean to be used in calculating the std. If None, mean is automatically calculated.
+        If ndarray or torch tensor, must match datatype of x.
+    """
+    if mean is None:
+        mean = get_mean(x,axis,batch_size)
+    cumu_sum = 0
+    if axis is None:
+        for i in range(0,len(x), batch_size):
+            cumu_sum = cumu_sum + ((x[i:i+batch_size]-mean)**2).sum()
+        return torch.sqrt(cumu_sum/x.numel())
+    else:
+        for i in range(0,len(x), batch_size):
+            cumu_sum = cumu_sum + ((x[i:i+batch_size]-mean)**2).sum(axis)
+        return torch.sqrt(cumu_sum/len(x))
+
+
+def pearsonr(x,y):
+    """
+    Calculates the pearson correlation coefficient. This gives same results as scipy's
+    version but allows you to calculate the coefficient over much larger data sizes.
+    Additionally allows calculation for torch tensors.
+
+    x: ndarray or torch tensor 
+    y: ndarray or torch tensor 
+    """
+    x = x.reshape(len(x), -1)
+    y = y.reshape(len(y), -1)
+    try:
+        mux = x.mean()
+        muy = y.mean()
+        sigx = x.std()
+        sigy = y.std()
+    except MemoryError as e:
+        mux = get_mean(x) 
+        muy = get_mean(y) 
+        sigx = get_std(x,mean=mux)
+        sigy = get_std(y,mean=muy)
+    x = x-mux
+    y = y-muy
+    numer = (x*y).mean()
+    denom = sigx*sigy
+    r = numer/denom
+    return r
+
+class poly1d:
+    """
+    Creates a polynomial with the argued fit
+    """
+    def __init__(self, fit):
+        self.coefficients = fit
+        self.poly = self.get_poly(fit)
+
+    def get_poly(self, fit):
+        def poly(x):
+            cumu_sum = 0
+            for i in range(len(fit)):
+                cumu_sum = cumu_sum + fit[i]*(x**(len(fit)-i-1))
+            return cumu_sum
+        return poly
+    
+    def __call__(self, x):
+        return self.poly(x)
+
+def revcor_sta(model, layers=['sequential.0','sequential.6'], chans=[8,8], n_samples=10000,
+                                                             batch_size=500, verbose=True):
     """
     Computes the sta using reverse correlation. Uses the central unit for computation
 
@@ -316,11 +414,13 @@ def revcor_sta(model, layers=['sequential.0','sequential.6'], chans=[8,8], verbo
         keys: layer names
             vals: lists of stas for each channel in the layer
     """
-    noise = np.random.randn(10000,50,50)
+    if type(layers) == type(str()):
+        layers = [layers]
+    noise = np.random.randn(n_samples,50,50)
     filter_size = model.img_shape[0]
     X = tdrstim.concat(noise, nh=filter_size)
     noise = noise[filter_size:]
-    response = inspect(model, X, insp_keys=set(layers), batch_size=500, to_numpy=True)
+    response = inspect(model, X, insp_keys=set(layers), batch_size=batch_size, to_numpy=True)
     stas = {layer:[] for layer in layers}
     for layer,chan in zip(layers,chans):
         resp = response[layer]
@@ -330,8 +430,8 @@ def revcor_sta(model, layers=['sequential.0','sequential.6'], chans=[8,8], verbo
             else:
                 resp = resp.reshape(len(resp), len(chan), *model.shapes[1])
         center = resp.shape[-1]//2
-        chan = tqdm(chan) if verbose else chan
-        for c in range(chan):
+        chan = tqdm(range(chan)) if verbose else range(chan)
+        for c in chan:
             sta,_ = ft.revcorr(noise, scipy.stats.zscore(resp[:,c,center,center]),
                                                              0,model.img_shape[0])
             stas[layer].append(sta)
@@ -392,6 +492,41 @@ def multi_shuffle(arrays):
             arrays[j][idx:idx+1] = temp
             del temp
     return arrays
+
+def save_ln(model,file_name):
+    """
+    Saves an LNModel to file
+
+    model: LNModel object (see models.py)
+    file_name: str
+        path to save model to
+    """
+    model_dict = {"filt":model.filt, "fit":model.poly.coefficients, "span":model.span, 
+                                                                "center":model.center}
+    with open(file_name,'wb') as f:
+        pickle.dump(model_dict,f)
+
+def save_ln_group(models, file_name):
+    """
+    Saves group of LNModels to file. Often models are trained using crossvalidation,
+    which implicitely ties the models together as an individual unit.
+
+    model: list of LNModel objects (see models.py)
+    file_name: str
+        path to save models to
+    """
+    model_dict = {
+                  "filts":[model.filt for model in models],
+                  "fits":[model.poly.coefficients for model in models],
+                  "spans":[model.span for model in models],
+                  "centers":[model.center for model in models],
+                  "norm_stats":[model.norm_stats for model in models],
+                  "cell_file":[model.cell_file for model in models],
+                  "cell_idx":[model.cell_idx for model in models],
+    }
+    with open(file_name,'wb') as f:
+        pickle.dump(model_dict,f)
+    
 
 def save_checkpoint(save_dict, folder, exp_id, del_prev=False):
     """
