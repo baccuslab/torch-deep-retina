@@ -20,6 +20,7 @@ from skimage.filters import gaussian
 from skimage.transform import downscale_local_mean
 import skimage.draw
 import cv2
+import torch
 
 __all__ = ['concat', 'white', 'contrast_steps', 'flash', 'spatialize', 'bar',
            'driftingbar', 'cmask', 'paired_flashes','rolling_window','get_cutout',"spatial_pad"]
