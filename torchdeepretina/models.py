@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torchdeepretina.torch_utils import *
+import torchdeepretina.utils as tdrutils
 import numpy as np
 from scipy import signal
 
@@ -525,4 +526,55 @@ class KineticsModel(TDRModel):
         if not self.training and self.infr_exp:
             fx = torch.exp(fx)
         return fx, [h0, h1]
+
+class RevCorLN:
+    """
+    LN model made by reverse correlation with fitted polynomial nonlinearity.
+    """
+    def __init__(self, filt, ln_cutout_size, center, norm_stats=[0,1], fit=[1,0], cell_file=None, 
+                                                                         cell_idx=None):
+        if type(filt) == type(np.array([])):
+            filt = torch.FloatTensor(filt)
+        self.filt = filt.reshape(-1)
+        self.span = ln_cutout_size
+        self.center = center
+        self.poly = tdrutils.poly1d(fit)
+        self.norm_stats = norm_stats
+        self.cell_file = cell_file
+        self.cell_idx = cell_idx
+
+    def normalize(self, x):
+        """
+        Normalizes x using the mean and std that were used during training of this model.
+        """
+        mu,sigma = self.norm_stats
+        shape = x.shape
+        x = x.reshape(len(x),-1)
+        try:
+            normed_x = (x-mu)/(sigma+1e-7)
+            return normed_x.reshape(shape)
+        except MemoryError as e:
+            step_size = 1000
+            normed = torch.empty_like(x)
+            for i in range(0,len(x),step_size):
+                temp = x[i:i+step_size]
+                normed_x = (temp-mu)/(sigma+1e-7)
+                normed[i:i+step_size] = normed_x.reshape(-1,*normed.shape[1:])
+            return normed.reshape(shape)
+
+    def convolve(self, x):
+        if type(x) == type(np.array([])):
+            x = torch.FloatTensor(x)
+        batch_size = 1000
+        self.filt = self.filt.cuda()
+        x = x.reshape(len(x), -1)
+        outputs = torch.empty(len(x)).float()
+        for i in range(0,len(x),batch_size):
+            outs = torch.einsum("ij,j->i", x[i:i+batch_size].cuda(), self.filt)
+            outputs[i:i+len(outs)] = outs.cpu()
+        return outputs
+
+    def __call__(self,x):
+        fx = self.convolve(x)
+        return self.poly(fx)
 
