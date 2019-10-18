@@ -54,7 +54,8 @@ class Trainer:
                 self.ret_q.put([results])
                 train_args = self.run_q.get()
             except Exception as e:
-                print("Caught error",e,"on", train_args[0]['exp_num'], "will retry in 100 seconds...")
+                print("Caught error",e,"on", train_args[0]['exp_num'], 
+                                            "will retry in 100 seconds...")
                 sleep(100)
 
     def get_model_and_distr(self, hyps, model_hyps, train_data):
@@ -71,9 +72,11 @@ class Trainer:
         num_val = 10000
         seq_len = 1 if not model.recurrent else hyps['recur_seq_len']
         shift_labels = False if 'shift_labels' not in hyps else hyps['shift_labels']
-        data_distr = DataDistributor(train_data, num_val, batch_size=hyps['batch_size'], shuffle=hyps['shuffle'], 
-                                                                    recurrent=model.recurrent, seq_len=seq_len, 
-                                                                    shift_labels=shift_labels)
+        zscorey = False if 'zscorey' not in hyps else hyps['zscorey']
+        data_distr = DataDistributor(train_data, num_val, batch_size=hyps['batch_size'], 
+                                        shuffle=hyps['shuffle'], recurrent=model.recurrent, 
+                                                seq_len=seq_len, shift_labels=shift_labels, 
+                                                                            zscorey=zscorey)
         data_distr.torch()
         return model, data_distr
 
@@ -118,13 +121,14 @@ class Trainer:
 
     def print_train_update(self, error, grade, l1, model, n_loops, i):
         loss = error + grade + l1
-        s = "Loss: {:.5e} – ".format(loss.item())
+        s = "Loss: {:.5e} | ".format(loss.item())
         if grade.item() > 0:
-            s += "Error: {:.5e} – Grade: {:.5e} – ".format(error.item(), grade.item())
+            s += "Error: {:.5e} | Grade: {:.5e} | ".format(error.item(), grade.item())
         if model.kinetic:
             ps = model.kinetics.named_parameters()
-            s += " – ".join([str(name)+":"+str(round(p.data.item(),4)) for name,p in list(ps)]) + " – "
-        print(s, i, "/", n_loops, end="       \r")
+            s += " | ".join([str(name)+":"+str(round(p.data.item(),4)) for name,p in list(ps)])
+        s = "{} | {}/{}".format(s,i,n_loops)
+        print(s, end="       \r")
 
     def validate_recurrent(self, hyps, model, data_distr, hs, loss_fn, verbose=False):
         """
@@ -158,7 +162,9 @@ class Trainer:
                 if hyps['l1'] > 0:
                     val_loss += (hyps['l1'] * torch.norm(outs, 1).float()/outs.shape[0]).item()
                 if verbose and i%(n_loops//10) == 0:
-                    print("{}/{}".format(b*data_distr.val_shape[0] + i,data_distr.val_shape[0]*batch_size), end="     \r")
+                    numer = b*data_distr.val_shape[0] + i
+                    denom = data_distr.val_shape[0]*batch_size
+                    print("{}/{}".format(numer,denom), end="     \r")
         return val_loss, val_preds, val_targs
 
     def validate_static(self, hyps, model, data_distr, loss_fn, step_size=500, verbose=False):
@@ -254,10 +260,15 @@ class Trainer:
 
                 # Error Evaluation
                 if model.recurrent:
-                    y,error,grade,hs = recurrent_eval(hyps, x, label, model, hs, loss_fn, teacher=teacher)
+                    y,error,grade,hs = recurrent_eval(hyps, x, label, model, hs, loss_fn,
+                                                                         teacher=teacher)
                 else:
                     y,error,grade = static_eval(hyps, x, label, model, loss_fn, teacher=teacher)
-                activity_l1 = torch.zeros(1).to(device) if hyps['l1']<=0 else hyps['l1'] * torch.norm(y, 1).float().mean()
+                if hyps['l1']<=0:
+                    activity_l1 = torch.zeros(1).to(device)
+                else: 
+                    activity_l1 = hyps['l1'] * torch.norm(y, 1).float().mean()
+
                 if 'gauss_reg' in hyps and hyps['gauss_reg'] > 0:
                     activity_l1 += hyps['gauss_loss_coef']*gauss_reg.get_loss()
 
@@ -274,7 +285,7 @@ class Trainer:
 
             # Clean Up Train Loop
             avg_loss = epoch_loss/n_loops
-            stats_string += 'Avg Loss: ' + str(avg_loss) + " -- exec time:"+ str(time.time() - starttime) +"\n"
+            stats_string += 'Avg Loss: {} -- Time: {}\n'.format(avg_loss, time.time()-starttime)
             del x
             del y
             del label
@@ -297,11 +308,13 @@ class Trainer:
 
                 # Validation Block
                 if model.recurrent:
-                    val_loss, val_preds, val_targs = self.validate_recurrent(hyps, model, data_distr, hs,
-                                                                                loss_fn, verbose=verbose)
+                    val_loss, val_preds, val_targs = self.validate_recurrent(hyps, model, 
+                                                                    data_distr, hs, loss_fn, 
+                                                                    verbose=verbose)
                 else:
-                    val_loss, val_preds, val_targs = self.validate_static(hyps, model, data_distr, loss_fn,
-                                                                       step_size=step_size, verbose=verbose)
+                    val_loss, val_preds, val_targs = self.validate_static(hyps,model,data_distr, 
+                                                                    loss_fn, step_size=step_size,
+                                                                    verbose=verbose)
 
                 # Validation Evaluation
                 val_loss = val_loss/n_loops
@@ -315,7 +328,7 @@ class Trainer:
                 pearsons = []
                 for cell in range(val_preds.shape[-1]):
                     pearsons.append(pearsonr(val_preds[:, cell], val_targs[:,cell])[0])
-                stats_string += "Val Cell Pearsons:" + " - ".join([str(p) for p in pearsons])+'\n'
+                stats_string += "Val Cell Cors:" + " | ".join([str(p) for p in pearsons])+'\n'
                 val_acc = np.mean(pearsons)
                 stop = self.stop_early(val_acc)
 
@@ -328,7 +341,8 @@ class Trainer:
                     exp_val_acc = np.mean(pearsons)
 
                 # Clean Up
-                stats_string += "Avg Val Pearson: {} -- Val Loss: {} -- Exp Val: {}\n".format(val_acc, val_loss, exp_val_acc)
+                stats_string += "Val Cor: {} | Val Loss: {} | Exp Val: {}\n".format(val_acc,
+                                                                      val_loss, exp_val_acc)
                 scheduler.step(val_loss)
                 del val_preds
 
@@ -364,6 +378,8 @@ class Trainer:
                 "exp_val_acc":exp_val_acc,
                 "test_pearson":avg_pearson,
                 "norm_stats":train_data.stats,
+                "ymean":data_distr.y_mean,
+                "ystd":data_distr.y_std,
             }
             for k in hyps.keys():
                 if k not in save_dict:
@@ -380,9 +396,15 @@ class Trainer:
                 break
 
         # Final save
-        results = {"save_folder":hyps['save_folder'], "Loss":avg_loss, "ValAcc":val_acc, "ValLoss":val_loss, "TestPearson":avg_pearson}
+        results = {"save_folder":hyps['save_folder'], 
+                    "Loss":avg_loss, 
+                    "ValAcc":val_acc, 
+                    "ValLoss":val_loss, 
+                    "TestPearson":avg_pearson}
         with open(hyps['save_folder'] + "/hyperparams.txt",'a') as f:
-            f.write("\n" + " ".join([str(k)+":"+str(results[k]) for k in sorted(results.keys())]) + '\n')
+            s = " ".join([str(k)+":"+str(results[k]) for k in sorted(results.keys())])
+            s = "\n" + s + '\n'
+            f.write(s)
         return results
 
 def recurrent_eval(hyps, x, label, model, hs, loss_fn, teacher=None):
@@ -472,8 +494,8 @@ def get_data(hyps):
     norm_stats = [train_data.stats['mean'], train_data.stats['std']] 
 
     try:
-        test_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],hyps['stim_type'],'test',img_depth,0, 
-                                                                                     norm_stats=norm_stats))
+        test_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],hyps['stim_type'],
+                                                'test',img_depth,0, norm_stats=norm_stats))
         test_data.X = test_data.X[:500]
         test_data.y = test_data.y[:500]
     except:
@@ -528,7 +550,8 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
         for k in keys:
             hyps['save_folder'] += "_" + str(k)+str(hyps[k])
 
-        hyps,model_hyps = get_model_hyps(hyps)
+        hyps['model_class'] = globals()[hyps['model_type']]
+        model_hyps = get_model_hyps(hyps)
 
         # Load q
         hyper_q.put([{k:v for k,v in hyps.items()}, {k:v for k,v in model_hyps.items()}])
@@ -549,8 +572,9 @@ def get_device(visible_devices, cuda_buffer=3000):
             return i
     return -1
 
-def mp_hyper_search(hyps, hyp_ranges, keys, n_workers=4, visible_devices={0,1,2,3,4,5}, cuda_buffer=3000,
-                                                    ram_buffer=6000, early_stopping=10, stop_tolerance=.01):
+def mp_hyper_search(hyps, hyp_ranges, keys, n_workers=4, visible_devices={0,1,2,3,4,5}, 
+                                                      cuda_buffer=3000, ram_buffer=6000, 
+                                                      early_stopping=10, stop_tolerance=.01):
     starttime = time.time()
     # Make results file
     if not os.path.exists(hyps['exp_name']):
@@ -579,7 +603,8 @@ def mp_hyper_search(hyps, hyp_ranges, keys, n_workers=4, visible_devices={0,1,2,
     procs = []
     print("Initializing workers")
     for i in range(n_workers):
-        worker = Trainer(run_q, return_q, early_stopping=early_stopping, stop_tolerance=stop_tolerance)
+        worker = Trainer(run_q, return_q, early_stopping=early_stopping, 
+                                            stop_tolerance=stop_tolerance)
         workers.append(worker)
         proc = mp.Process(target=worker.loop_training)
         proc.start()
@@ -607,8 +632,8 @@ def mp_hyper_search(hyps, hyp_ranges, keys, n_workers=4, visible_devices={0,1,2,
             results = return_q.get()[0]
             print("Collected", results['save_folder'])
             with open(results_file,'a') as f:
-                results = " -- ".join([str(k)+":"+str(results[k]) for k in sorted(results.keys())])
-                f.write("\n"+results+"\n")
+                s = " | ".join([str(k)+":"+str(results[k]) for k in sorted(results.keys())])
+                f.write("\n"+s+"\n")
             result_count += 1
 
     for proc in procs:
@@ -652,7 +677,6 @@ def hyper_search(hyps, hyp_ranges, keys, device, early_stopping=10, stop_toleran
 
 def get_model_hyps(hyps):
     hyps['model_class'] = globals()[hyps['model_type']]
-    hyps = {k:v for k,v in hyps.items()}
     model_hyps = {k:v for k,v in hyps.items()}
 
     fn_args = set(hyps['model_class'].__init__.__code__.co_varnames) 
@@ -662,8 +686,7 @@ def get_model_hyps(hyps):
     for k in keys:
         if k not in fn_args:
             del model_hyps[k]
-    return hyps, model_hyps
-
+    return model_hyps
 
 class ModulePackage:
     def __init__(self, model, layer_keys):
@@ -708,11 +731,14 @@ class LossFxnWrapper:
         Assumes a stride of 1 with 0 padding in each layer.
         """
         # Each quantity is even, thus the final half_effective_ksize is odd
-        half_effective_ksize = (hyps['ksizes'][0]-1) + (hyps['ksizes'][1]-1) + (hyps['ksizes'][2]//2-1) + 1
+        half_effective_ksize = (hyps['ksizes'][0]-1) + (hyps['ksizes'][1]-1) +\
+                                                    (hyps['ksizes'][2]//2-1) + 1
         coords = []
         for center in centers:
-            row = min(max(0,center[0]-half_effective_ksize), hyps['img_shape'][1]-2*(half_effective_ksize-1))
-            col = min(max(0,center[1]-half_effective_ksize), hyps['img_shape'][2]-2*(half_effective_ksize-1))
+            row = min(max(0,center[0]-half_effective_ksize), 
+                            hyps['img_shape'][1]-2*(half_effective_ksize-1))
+            col = min(max(0,center[1]-half_effective_ksize), 
+                            hyps['img_shape'][2]-2*(half_effective_ksize-1))
             coords.append([row,col])
         return torch.LongTensor(coords)
 
@@ -906,7 +932,8 @@ def train_ln(X, y, rf_center, cutout_size):
     return model
     
 
-def cross_validate_ln(chunked_data, ln_cutout_size, center, ret_models=True, skip_chunks={}):
+def cross_validate_ln(chunked_data, ln_cutout_size, center, ret_models=True, skip_chunks={}, 
+                                                                                verbose=True):
     """
     Performs cross validation for LN model trained using reverse correlation
 
@@ -924,7 +951,8 @@ def cross_validate_ln(chunked_data, ln_cutout_size, center, ret_models=True, ski
     """
     accs = []
     models = []
-    print("Fitting LNs...")
+    if verbose:
+        print("Fitting LNs...")
     for i in range(chunked_data.n_chunks):
         basetime=time.time()
 
@@ -946,9 +974,10 @@ def cross_validate_ln(chunked_data, ln_cutout_size, center, ret_models=True, ski
         if ret_models:
             models.append(model)
         exec_time = time.time()-basetime
-        print("Fit Trial:",i, ", Best Degree:",best_degree, ", Acc:", r, ", Time:", exec_time)
+        if verbose:
+            print("Fit Trial:",i, ", Best Degree:",best_degree, ", Acc:", r, 
+                                                        ", Time:", exec_time)
         del val_X
         del val_y
     return models, accs
-
 

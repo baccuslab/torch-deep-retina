@@ -244,10 +244,12 @@ class DataObj:
 
 class DataDistributor:
     """
-    This class is used to abstract away the manipulations required for shuffling or organizing data for rnns.
+    This class is used to abstract away the manipulations required for shuffling or organizing 
+    data for rnns.
     """
 
-    def __init__(self, data, val_size=30000, batch_size=512, seq_len=1, shuffle=True, rand_sample=None, recurrent=False, shift_labels=False):
+    def __init__(self, data, val_size=30000, batch_size=512, seq_len=1, shuffle=True, 
+                    rand_sample=None, recurrent=False, shift_labels=False, zscorey=False):
         """
         data - a class or named tuple containing an X and y member variable.
         val_size - the number of samples dedicated to validation
@@ -274,6 +276,13 @@ class DataDistributor:
         self.y = data.y
         if shift_labels:
             self.y = self.shift_in_groups(self.y, group_size=200)
+        if zscorey:
+            self.y_mean = self.y.mean()
+            self.y_std = self.y.std()
+            self.y = (self.y-self.y_mean)/(self.y_std+1e-5)
+        else:
+            self.y_mean = None
+            self.y_std =  None
         rand_sample = shuffle if rand_sample is None else rand_sample
 
         if seq_len > 1:
