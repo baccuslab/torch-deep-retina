@@ -247,6 +247,7 @@ def all_correlation_maps(mem_pot, model_response, layer_keys=['sequential.2', 's
             cors = []
             for i in range(resp.shape[1]):
                 r,_ = pearsonr(mem_pot.squeeze(), resp[:,i])
+                r = r if not np.isnan(r) and r < 1 and r > -1 else 0
                 cors.append(r)
             cor_map = np.asarray(cors)
         cor_maps[layer] = cor_map
@@ -292,6 +293,7 @@ def max_correlation(mem_pot, model_layer, abs_val=False):
         pearsons = []
         for chan in range(model_layer.shape[1]):
             r,_ = pearsonr(mem_pot, model_layer[:,chan])
+            r = r if not np.isnan(r) and r < 1 and r > -1 else 0
             pearsons.append(r)
         # Set nan and fishy values to zero
         pearsons = [r if not np.isnan(r) and r < 1 and r > -1 else 0 for r in pearsons]
@@ -556,6 +558,7 @@ def get_cor_generalization(model, stim_dict, mem_pot_dict,layers={"sequential.2"
                                 pot = mem_pot_dict[cell_file][stim_t][cell_idx]
                                 temp_resp = responses[stim_t][layer][:,chan,row,col]
                                 r,_ = pearsonr(temp_resp, pot)
+                                r = r if not np.isnan(r) and r < 1 and r > -1 else 0
                                 table['cell_file'].append(cell_file)
                                 table['cell_idx'].append(cell_idx)
                                 table['stim_type'].append(stim_t)
