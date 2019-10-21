@@ -211,6 +211,7 @@ def load_model(folder, data=None, hyps=None, main_dir="../training_scripts/"):
         model.load_state_dict(data['model_state_dict'])
     except KeyError as e:
         print("Failed to load state_dict. This chkpt does not contain a model state_dict!")
+    model.norm_stats = data['norm_stats']
     return model
 
 def read_model(folder, ret_metrics=False):
@@ -260,6 +261,7 @@ def read_model(folder, ret_metrics=False):
         model.load_state_dict(data['model_state_dict'])
     model = model.to(DEVICE)
     metrics['norm_stats'] = [data['norm_stats']['mean'], data['norm_stats']['std']]
+    model.norm_stats = data['norm_stats']
     if ret_metrics:
         return model, metrics
     return model
@@ -277,6 +279,7 @@ def read_model_file(file_name, model_type=None):
         model_type = data['model_type']
     model = globals()[model_type](**data['model_hyps'])
     model.load_state_dict(data['model_state_dict'])
+    model.norm_stats = data['norm_stats']
     return model
 
 def inspect(*args, **kwargs):
@@ -392,7 +395,10 @@ def test_model(model, hyps):
                                             norm_stats=hyps['norm_stats'])
     with torch.no_grad():
         response = tdrutils.inspect(model, data.X, batch_size=1000, to_numpy=False)['outputs']
-        lossfxn = globals()[hyps['lossfxn']](log_input=hyps['log_poisson'])
+        if hyps['lossfxn'] == "PoissonNLLLoss":
+            lossfxn = globals()[hyps['lossfxn']](log_input=hyps['log_poisson'])
+        else:
+            lossfxn = globals()[hyps['lossfxn']]()
         loss = lossfxn(response, torch.FloatTensor(data.y)).item()
     resp = response.data.numpy()
     pearson = scipy.stats.pearsonr
@@ -461,7 +467,7 @@ def analyze_model(folder, make_figs=True, verbose=True):
     model,metrics = read_model(folder,ret_metrics=True)
     hyps['norm_stats'] = metrics['norm_stats']
     model.eval()
-    model.cuda()
+    model.to(DEVICE)
     if make_figs:
         if verbose:
             print("Making figures")
@@ -476,11 +482,11 @@ def analyze_model(folder, make_figs=True, verbose=True):
 
     layers = ["sequential.2", 'sequential.8']
     # TODO: Make this if statement easy to turn on and off
-    if "convs" in dir(model.sequential[0]):
-        temp = ["sequential.0.convs." + str(i) for i in range(7)]
-        layers = layers + temp
-        temp = ["sequential.6.convs." + str(i) for i in range(5)]
-        layers = layers + temp
+    #if "convs" in dir(model.sequential[0]):
+    #    temp = ["sequential.0.convs." + str(i) for i in range(7)]
+    #    layers = layers + temp
+    #    temp = ["sequential.6.convs." + str(i) for i in range(5)]
+    #    layers = layers + temp
     intr_df = get_intr_cors(model, layers=layers, verbose=verbose)
     intr_df['save_folder'] = folder
 
@@ -513,7 +519,7 @@ def analysis_pipeline(main_folder, make_figs=True, verbose=True):
         if os.path.exists(csv_path):
             dfs[csv] = pd.read_csv(csv_path, sep="!")
         else:
-            dfs[csv] = pd.DataFrame()
+            dfs[csv] = {"empty":True}
     for folder in model_folders:
         save_folder = os.path.join(main_folder, folder)
         if "save_folder" in dfs[csvs[0]] and save_folder in set(dfs[csvs[0]]['save_folder']):
@@ -527,9 +533,15 @@ def analysis_pipeline(main_folder, make_figs=True, verbose=True):
         
         df, intr_df = analyze_model(save_folder, make_figs=make_figs, verbose=verbose)
         if not("save_folder" in dfs[csvs[0]] and folder in set(dfs[csvs[0]]['save_folder'])):
-            dfs[csvs[0]] = dfs[csvs[0]].append(df, sort=True)
+            if 'empty' in dfs[csvs[0]]:
+                dfs[csvs[0]] = df
+            else:
+                dfs[csvs[0]] = dfs[csvs[0]].append(df, sort=True)
         if not("save_folder" in dfs[csvs[1]] and folder in set(dfs[csvs[1]]['save_folder'])):
-            dfs[csvs[1]] = dfs[csvs[1]].append(intr_df,sort=True)
+            if 'empty' in dfs[csvs[1]]:
+                dfs[csvs[1]] = intr_df
+            else:
+                dfs[csvs[1]] = dfs[csvs[1]].append(intr_df,sort=True)
     return dfs
 
 
