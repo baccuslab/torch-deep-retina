@@ -7,6 +7,8 @@ import pickle
 import numpy as np
 from .utils import freeze_weights
 
+DEVICE = torch.device("cuda:0")
+
 def load_json(json_file):
     with open(json_file) as f:
         s = f.read()
@@ -15,7 +17,7 @@ def load_json(json_file):
 
 def cuda_if(x):
     if torch.cuda.is_available:
-        return x.cuda()
+        return x.to(DEVICE)
     return x
 
 class STAAscent:

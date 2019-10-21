@@ -23,6 +23,8 @@ import gc
 import resource
 import json
 
+DEVICE = torch.device("cuda:0")
+
 class Trainer:
     def __init__(self, run_q=None, return_q=None, early_stopping=10, stop_tolerance=0.01):
         self.run_q = run_q
@@ -773,7 +775,7 @@ def fit_sta(test_chunk, chunked_data, normalize=True):
                 temp_x = x[j:j+batch_size]
                 if normalize:
                     temp_x = (temp_x-mean)/(std+1e-5)
-                matmul = torch.einsum("ij,i->j",temp_x.cuda(),y[j:j+batch_size].cuda())
+                matmul = torch.einsum("ij,i->j",temp_x.to(DEVICE),y[j:j+batch_size].to(DEVICE))
                 cumu_sum = cumu_sum + matmul.cpu()
                 n_samples += len(temp_x)
     if normalize:
@@ -882,28 +884,6 @@ def fit_ln_nonlin(X, y, model, degree=5, ret_all=False):
         return best_poly, best_degree, best_r, best_preds
     return best_poly
 
-def fit_filter(X, y, batch_size=500):
-    """
-    Fits a linear filter for the given X and y
-
-    X: torch tensor (T, C) or (T, C, H, W)
-    y: torch tensor
-    """
-    X = X.reshape(len(X), -1)
-    mean = tdrutils.get_mean(X)
-    std = tdrutils.get_std(X, mean=mean)
-    norm_stats = [mean, std]
-    n_samples = 0
-    cumu_sum = 0
-    for i in range(0,len(X),batch_size):
-        x = X[i:i+batch_size]
-        truth = y[i:i+batch_size]
-        x = (x-mean)/(std+1e-5)
-        matmul = torch.einsum("ij,i->j",x.cuda(),truth.cuda())
-        cumu_sum = cumu_sum + matmul.cpu()
-        n_samples += len(x)
-    return cumu_sum/n_samples, norm_stats
-
 def train_ln(X, y, rf_center, cutout_size):
     """
     Fits an LN model to the data
@@ -922,8 +902,9 @@ def train_ln(X, y, rf_center, cutout_size):
         y = torch.FloatTensor(y)
 
     # STA is cpu torch tensor
-    sta, norm_stats = fit_filter(X, y)
-    model = RevCorLN(sta,ln_cutout_size=cutout_size,center=rf_center,norm_stats=norm_stats)
+    sta, norm_stats, _ = tdrutils.revcor(X, y, ret_norm_stats=True)
+    model = RevCorLN(sta.reshape(-1),ln_cutout_size=cutout_size,center=rf_center,
+                                                            norm_stats=norm_stats)
     bests = fit_ln_nonlin(X, y, model,degree=[5], ret_all=True)
     best_poly,best_degree,best_r,best_preds = bests
     model.poly = best_poly # Torch compatible polys
