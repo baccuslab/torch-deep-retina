@@ -475,7 +475,7 @@ def revcor(X, y, batch_size=500, to_numpy=False, ret_norm_stats=False):
     xnorm_stats = [xmean, xstd]
     ymean = get_mean(y)
     ystd = get_std(y, mean=ymean)
-    xnorm_stats = [ymean, ystd]
+    ynorm_stats = [ymean, ystd]
     with torch.no_grad():
         if batch_size is None:
             X = (X-xmean)/(xstd+1e-5)
