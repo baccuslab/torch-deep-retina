@@ -116,6 +116,34 @@ def get_hook(layer_dict, key, to_numpy=True, to_cpu=False):
             layer_dict[key] = out
     return hook
 
+def linear_response(filt, stim, batch_size=1000, to_numpy=True):
+    """
+    Runs the filter as a convolution over the stimulus.
+
+    filt: torch tensor or ndarray (C,) or (C,H,W)
+    stim: torch tensor or ndarray (T,C) or (T,C,H,W)
+    """
+    if type(filt) == type(np.array([])):
+        filt = torch.FloatTensor(filt)
+    if type(stim) == type(np.array([])):
+        stim = torch.FloatTensor(stim)
+    filt = filt.to(DEVICE)
+    filt = filt.reshape(-1)
+    stim = stim.reshape(len(stim), -1)
+    assert filt.shape[0] == stim.shape[1] # Filter must match spatiotemporal dims of stimulus
+    if batch_size is None:
+        stim = stim.to(DEVICE)
+        resp = torch.einsum("ij,j->i", stim, filt).cpu()
+    else:
+        resps = []
+        for i in range(0, len(stim), batch_size):
+            temp = torch.einsum("ij,j->i", stim[i:i+batch_size].to(DEVICE), filt)
+            resps.append(temp.cpu())
+        resp = torch.cat(resps, dim=0)
+    if to_numpy:
+        resp = resp.detach().numpy()
+    return resp
+
 def inspect(model, X, insp_keys={}, batch_size=None, to_numpy=True, verbose=False):
     """
     Get the response from the argued layers in the model as np arrays. If model is on cpu,
@@ -149,9 +177,17 @@ def inspect(model, X, insp_keys={}, batch_size=None, to_numpy=True, verbose=Fals
                 handle = mod.register_forward_hook(hook)
                 handles.append(handle)
     X = torch.FloatTensor(X)
+
+    # prev_grad_state is used to ensure we do not mess with an outer "with torch.no_grad():"
+    prev_grad_state = torch.is_grad_enabled() 
+    if to_numpy:
+        # Turns off all gradient calculations. When returning numpy arrays, the computation
+        # graph is inaccessible, as such we do not need to calculate it.
+        torch.set_grad_enabled(False)
+
     if batch_size is None:
         if next(model.parameters()).is_cuda:
-            X = X.cuda()
+            X = X.to(DEVICE)
         preds = model(X)
         if to_numpy:
             layer_outs['outputs'] = preds.detach().cpu().numpy()
@@ -167,7 +203,7 @@ def inspect(model, X, insp_keys={}, batch_size=None, to_numpy=True, verbose=Fals
         for batch in rnge:
             x = X[batch:batch+batch_size]
             if use_cuda:
-                x = x.cuda()
+                x = x.to(DEVICE)
             preds = model(x).cpu()
             if to_numpy:
                 preds = preds.detach().numpy()
@@ -179,9 +215,15 @@ def inspect(model, X, insp_keys={}, batch_size=None, to_numpy=True, verbose=Fals
             layer_outs = {k:np.concatenate(v,axis=0) for k,v in batched_outs.items()}
         else:
             layer_outs = {k:torch.cat(v,dim=0) for k,v in batched_outs.items()}
+    
+    # If we turned off the grad state, this will turn it back on. Otherwise leaves it the same.
+    torch.set_grad_enabled(prev_grad_state) 
+    
+    # This for loop ensures we do not create a memory leak when using hooks
     for i in range(len(handles)):
         handles[i].remove()
     del handles
+
     return layer_outs
 
 def batch_compute_model_response(stimulus, model, batch_size=500, recurrent=False, 
@@ -240,7 +282,8 @@ def batch_compute_model_response(stimulus, model, batch_size=500, recurrent=Fals
     del phys
     return model_response
 
-def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, verbose=True):
+def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, to_numpy=True,
+                                                                               verbose=True):
     """
     Gets the gradient of the model output at the specified layer and cell idx with respect
     to the inputs (X). Returns a gradient array with the same shape as X.
@@ -265,7 +308,6 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, v
             hook_handle = module.register_forward_hook(hook)
 
     # Get gradient with respect to activations
-    model.eval()
     X.requires_grad = True
     n_loops = X.shape[0]//batch_size
     rng = range(n_loops)
@@ -273,8 +315,7 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, v
         rng = tqdm(rng)
     for i in rng:
         idx = i*batch_size
-        x = X[idx:idx+batch_size]
-        x = x.to(device)
+        x = X[idx:idx+batch_size].to(device)
         if model.recurrent:
             _, hs = model(x, hs)
             hs = [h.data for h in hs]
@@ -287,25 +328,37 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, v
             fx = hook_outs[layer][:,cell_idx[0]]
         else:
             fx = hook_outs[layer][:, cell_idx[0], cell_idx[1], cell_idx[2]]
-        fx = fx.mean()
+        fx = fx.sum()
         fx.backward()
     hook_handle.remove()
     requires_grad(model, True)
-    return X.grad.data.cpu().numpy()
+    if to_numpy:
+        return X.grad.data.cpu().numpy()
+    else:
+        return X.grad.data.cpu()
 
-def compute_sta(model, contrast, layer, cell_index, layer_shape=None, verbose=True):
+def compute_sta(model, contrast, layer, cell_index, layer_shape=None, batch_size=500, 
+                                                         n_samples=10000,to_numpy=True, 
+                                                         verbose=True):
     """
     Computes the STA using the average of instantaneous receptive 
     fields (gradient of output with respect to input)
+
+    model: torch Module
+    contrast: float
+        contrast of whitenoise to calculate the sta
+    layer
     """
     # generate some white noise
-    #X = stim.concat(white(1040, contrast=contrast)).copy()
-    X = tdrstim.concat(contrast*np.random.randn(10000,50,50),nh=model.img_shape[0])
+    X = tdrstim.concat(tdrstim.white(n_samples, contrast=contrast))
+    #X = tdrstim.concat(contrast*np.random.randn(n_samples,50,50),nh=model.img_shape[0])
     X = torch.FloatTensor(X)
     X.requires_grad = True
 
     # compute the gradient of the model with respect to the stimulus
-    drdx = get_stim_grad(model, X, layer, cell_index, layer_shape=layer_shape, verbose=verbose)
+    drdx = get_stim_grad(model, X, layer, cell_index, layer_shape=layer_shape,
+                                       batch_size=batch_size, to_numpy=to_numpy,
+                                                                verbose=verbose)
     sta = drdx.mean(0)
 
     del X
@@ -402,8 +455,90 @@ class poly1d:
     def __call__(self, x):
         return self.poly(x)
 
-def revcor_sta(model, layers=['sequential.0','sequential.6'], chans=[8,8], n_samples=10000,
-                                                             batch_size=500, verbose=True):
+def revcor(X, y, batch_size=500, to_numpy=False, ret_norm_stats=False):
+    """
+    Reverse correlates X and y using the GPU
+
+    X: torch tensor (T, C) or (T, C, H, W)
+    y: torch tensor (T,)
+    batch_size: int
+    ret_norm_stats: bool
+        if true, returns the normalization statistics of both the X and y tensors
+    """
+    if type(X) == type(np.array([])):
+        X = torch.FloatTensor(X)
+        y = torch.FloatTensor(y)
+    Xshape = X.shape[1:]
+    X = X.reshape(len(X), -1)
+    xmean = get_mean(X)
+    xstd = get_std(X, mean=xmean)
+    xnorm_stats = [xmean, xstd]
+    ymean = get_mean(y)
+    ystd = get_std(y, mean=ymean)
+    xnorm_stats = [ymean, ystd]
+    with torch.no_grad():
+        if batch_size is None:
+            X = (X-xmean)/(xstd+1e-5)
+            y = (y-ymean)/(ystd+1e-5)
+            matmul = torch.einsum("ij,i->j", X.to(DEVICE), y.to(DEVICE))
+            sta = (matmul/len(X)).detach().cpu()
+        else:
+            n_samples = 0
+            cumu_sum = 0
+            for i in range(0,len(X),batch_size):
+                x = X[i:i+batch_size]
+                truth = y[i:i+batch_size]
+                x = (x-xmean)/(xstd+1e-5)
+                matmul = torch.einsum("ij,i->j",x.to(DEVICE),truth.to(DEVICE))
+                cumu_sum = cumu_sum + matmul.cpu().detach()
+                n_samples += len(x)
+            sta = cumu_sum/n_samples
+    sta = sta.reshape(Xshape)
+    if to_numpy:
+        sta = sta.numpy()
+    if ret_norm_stats:
+        return sta, xnorm_stats, ynorm_stats
+    return sta
+
+def revcor_sta(model, layer, cell_index, layer_shape=None, n_samples=15000, batch_size=500,
+                                                 contrast=1, to_numpy=False, verbose=True):
+    """
+    Calculates the STA using the reverse correlation method.
+
+    model: torch Module
+    layer: str
+        name of layer in model
+    cell_index: int or list-like (idx,) or (chan, row, col)
+    layer_shape: list-like
+        desired shape of layer. useful when layer is flat, but desired shape is not
+    n_samples: int
+        number of whitenoise samples to use in calculation
+    batch_size: int
+        size of batching for calculations performed on GPU
+    contrast: float
+        contrast of whitenoise used to calculate STA
+    to_numpy: bool
+        returns values as numpy arrays if true, else as torch tensors
+    """
+    noise = contrast*np.random.randn(n_samples,*model.img_shape[1:])
+    X = tdrstim.concat(noise, nh=model.img_shape[0])
+    with torch.no_grad():
+        response = inspect(model, X, insp_keys=set([layer]), batch_size=batch_size, 
+                                                                    to_numpy=False)
+    resp = response[layer]
+    if layer_shape is not None:
+        resp = resp.reshape(layer_shape)
+    if type(cell_index) == type(int()):
+        resp = resp[:,cell_index]
+    elif len(cell_index) == 2:
+        resp = resp[:,cell_index[0]]
+    else:
+        resp = resp[:,cell_index[0], cell_index[1], cell_index[2]]
+    sta = revcor(X, resp, batch_size=batch_size, to_numpy=to_numpy)
+    return sta.reshape(model.img_shape)
+
+def revcor_sta_allchans(model, layers=['sequential.0','sequential.6'], chans=[8,8], 
+                                    n_samples=10000, batch_size=500, verbose=True):
     """
     Computes the sta using reverse correlation. Uses the central unit for computation
 
@@ -419,8 +554,9 @@ def revcor_sta(model, layers=['sequential.0','sequential.6'], chans=[8,8], n_sam
     noise = np.random.randn(n_samples,50,50)
     filter_size = model.img_shape[0]
     X = tdrstim.concat(noise, nh=filter_size)
-    noise = noise[filter_size:]
-    response = inspect(model, X, insp_keys=set(layers), batch_size=batch_size, to_numpy=True)
+    with torch.no_grad():
+        response = inspect(model, X, insp_keys=set(layers), batch_size=batch_size,
+                                                                    to_numpy=True)
     stas = {layer:[] for layer in layers}
     for layer,chan in zip(layers,chans):
         resp = response[layer]
@@ -432,8 +568,7 @@ def revcor_sta(model, layers=['sequential.0','sequential.6'], chans=[8,8], n_sam
         center = resp.shape[-1]//2
         chan = tqdm(range(chan)) if verbose else range(chan)
         for c in chan:
-            sta,_ = ft.revcorr(noise, scipy.stats.zscore(resp[:,c,center,center]),
-                                                             0,model.img_shape[0])
+            sta = revcor(X, resp[:,c,center,center])
             stas[layer].append(sta)
     return stas
 
@@ -501,8 +636,15 @@ def save_ln(model,file_name):
     file_name: str
         path to save model to
     """
-    model_dict = {"filt":model.filt, "fit":model.poly.coefficients, "span":model.span, 
-                                                                "center":model.center}
+    model_dict = {
+                  "filt":  model.filt, 
+                  "fit":   model.poly.coefficients,
+                  "span":  model.span,
+                  "center":model.center,
+                  "norm_stats":model.norm_stats,
+                  "cell_file":model.cell_file,
+                  "cell_idx": model.cell_idx,
+    }
     with open(file_name,'wb') as f:
         pickle.dump(model_dict,f)
 
@@ -613,8 +755,8 @@ def get_grad(model, X, layer_idx=None, cell_idxs=None):
     if back_to_train:
         model.eval()
     back_to_cpu = next(model.parameters()).is_cuda
-    model.cuda()
-    outs = model(tensor.cuda())
+    model.to(DEVICE)
+    outs = model(tensor.to(DEVICE))
     if cell_idxs is not None:
         outs = outs[:,cell_idxs]
     outs.sum().backward()
@@ -711,7 +853,7 @@ class GaussRegularizer:
     
     def get_loss(self):
         if self.weights[0].data.is_cuda and not self.gaussians[0].is_cuda:
-            self.gaussians = [g.cuda() for g in self.gaussians]
+            self.gaussians = [g.to(DEVICE) for g in self.gaussians]
         loss = 0
         for weight,gauss in zip(self.weights,self.gaussians):
             loss += (weight*gauss).mean()
