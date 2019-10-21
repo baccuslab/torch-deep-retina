@@ -44,7 +44,7 @@ if __name__ == "__main__":
         print("Analyzing", grand_folder)
         dfs = analysis.analysis_pipeline(grand_folder, make_figs=False, verbose=True)
         for k in dfs.keys():
-            dfs[k].to_csv(os.path.join(grand_folder,k),sep="!")
+            dfs[k].to_csv(os.path.join(grand_folder,k), sep="!", index=False, header=True)
 
 
 
