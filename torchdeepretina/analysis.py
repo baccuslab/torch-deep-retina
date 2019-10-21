@@ -262,6 +262,14 @@ def read_model(folder, ret_metrics=False):
     model = model.to(DEVICE)
     metrics['norm_stats'] = [data['norm_stats']['mean'], data['norm_stats']['std']]
     model.norm_stats = data['norm_stats']
+    if 'y_stats' not in data:
+        if 'ymean' in data:
+            data['y_stats'] = {'mean':data['ymean'], 'std':data['ystd']}
+        else:
+            data['y_stats'] = {'mean':None, 'std':None}
+    model.y_stats = data['y_stats']
+    metrics['y_stats'] = [data['y_stats']['mean'], data['y_stats']['std']]
+    metrics
     if ret_metrics:
         return model, metrics
     return model
