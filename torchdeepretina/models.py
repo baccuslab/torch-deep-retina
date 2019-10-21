@@ -5,6 +5,8 @@ import torchdeepretina.utils as tdrutils
 import numpy as np
 from scipy import signal
 
+DEVICE = torch.device('cuda:0')
+
 def try_kwarg(kwargs, key, default):
     try:
         return kwargs[key]
@@ -229,12 +231,13 @@ class SkipAmacRNN(TDRModel):
         
         # Bipolar Block
         if stackconvs:
-            self.bipolar1 = LinearStackedConv2d(self.img_shape[0],self.chans[0],kernel_size=self.ksizes[0], 
-                                                                                        abs_bnorm=False, 
-                                                                                        bias=self.bias, 
-                                                                                        drop_p=self.drop_p)
+            self.bipolar1 = LinearStackedConv2d(self.img_shape[0],self.chans[0],
+                                                kernel_size=self.ksizes[0], 
+                                                abs_bnorm=False, bias=self.bias, 
+                                                drop_p=self.drop_p)
         else:
-            self.bipolar1 = nn.Conv2d(self.img_shape[0], self.chans[0], self.ksizes[0], bias=self.bias)
+            self.bipolar1 = nn.Conv2d(self.img_shape[0], self.chans[0], self.ksizes[0], 
+                                                                        bias=self.bias)
         shape = update_shape(shape, self.ksizes[0])
         self.shapes.append(tuple(shape))
         self.h_shapes.append((self.chans[0], *shape))
@@ -243,21 +246,25 @@ class SkipAmacRNN(TDRModel):
         modules = []
         if bnorm:
             modules.append(Flatten())
-            modules.append(nn.BatchNorm1d(self.chans[0]*shape[0]*shape[1], momentum=self.bn_moment))
+            modules.append(nn.BatchNorm1d(self.chans[0]*shape[0]*shape[1], 
+                                                    momentum=self.bn_moment))
             modules.append(Reshape((-1, self.chans[0], shape[0], shape[1])))
         modules.append(GaussianNoise(std=self.noise))
         modules.append(nn.ReLU())
         self.bipolar2 = nn.Sequential(*modules)
 
         # Amacrine Block
-        self.amacrine1 = AmacRNNFull(self.chans[0], self.chans[1], rnn_chans[0], self.ksizes[1], bias=self.bias, stackconvs=stackconvs)
+        self.amacrine1 = AmacRNNFull(self.chans[0], self.chans[1], rnn_chans[0], 
+                                                    self.ksizes[1], bias=self.bias, 
+                                                    stackconvs=stackconvs)
         shape = update_shape(shape, self.ksizes[1])
         self.shapes.append(tuple(shape))
 
         modules = []
         modules.append(Flatten())
         if bnorm:
-            modules.append(nn.BatchNorm1d(self.chans[0]*shape[0]*shape[1], momentum=self.bn_moment))
+            modules.append(nn.BatchNorm1d(self.chans[0]*shape[0]*shape[1], 
+                                                    momentum=self.bn_moment))
         modules.append(GaussianNoise(std=self.noise))
         modules.append(nn.ReLU())
         modules.append(InvertSign())
@@ -265,7 +272,8 @@ class SkipAmacRNN(TDRModel):
 
         # Ganglion Block
         modules = []
-        length = self.chans[0]*self.shapes[0][0]*self.shapes[0][1] + self.chans[1]*self.shapes[1][0]*self.shapes[1][1]
+        length = self.chans[0]*self.shapes[0][0]*self.shapes[0][1] + \
+                                    self.chans[1]*self.shapes[1][0]*self.shapes[1][1]
         modules.append(AbsLinear(length, self.n_units, bias=self.linear_bias))
         if self.bnorm:
             modules.append(nn.BatchNorm1d(self.n_units, eps=1e-3, momentum=self.bn_moment))
@@ -318,13 +326,16 @@ class RNNCNN(TDRModel):
 
         # Block 1
         modules = []
-        self.rnns.append(rnn_class(self.img_shape[0], self.chans[0], rnn_chans[0], kernel_size=self.ksizes[0], bias=self.bias))
+        self.rnns.append(rnn_class(self.img_shape[0], self.chans[0], rnn_chans[0], 
+                                                        kernel_size=self.ksizes[0], 
+                                                        bias=self.bias))
         shape = update_shape(shape, self.ksizes[0])
         self.shapes.append(tuple(shape))
         self.h_shapes.append((rnn_chans[1], *shape))
         modules.append(Flatten())
         if self.bnorm:
-            modules.append(nn.BatchNorm1d(self.chans[0]*shape[0]*shape[1], eps=1e-3, momentum=self.bn_moment))
+            modules.append(nn.BatchNorm1d(self.chans[0]*shape[0]*shape[1], eps=1e-3, 
+                                                            momentum=self.bn_moment))
         modules.append(GaussianNoise(std=self.noise))
         modules.append(nn.ReLU())
         modules.append(Reshape((-1,self.chans[0],*shape)))
@@ -332,15 +343,19 @@ class RNNCNN(TDRModel):
 
         # Block 2
         modules = []
-        self.rnns.append(rnn_class(self.chans[0], self.chans[1], rnn_chans[1], kernel_size=self.ksizes[1], bias=self.bias))
+        self.rnns.append(rnn_class(self.chans[0], self.chans[1], rnn_chans[1], 
+                                                    kernel_size=self.ksizes[1],
+                                                    bias=self.bias))
         shape = update_shape(shape, self.ksizes[1])
         self.shapes.append(tuple(shape))
         modules.append(Flatten())
         if self.bnorm:
-            modules.append(nn.BatchNorm1d(self.chans[1]*shape[0]*shape[1], eps=1e-3, momentum=self.bn_moment))
+            modules.append(nn.BatchNorm1d(self.chans[1]*shape[0]*shape[1], eps=1e-3,
+                                                           momentum=self.bn_moment))
         modules.append(GaussianNoise(std=self.noise))
         modules.append(nn.ReLU())
-        modules.append(nn.Linear(self.chans[1]*shape[0]*shape[1],self.n_units, bias=self.linear_bias))
+        modules.append(nn.Linear(self.chans[1]*shape[0]*shape[1],self.n_units,
+                                                        bias=self.linear_bias))
         if self.bnorm:
             modules.append(nn.BatchNorm1d(self.n_units, eps=1e-3, momentum=self.bn_moment))
         else:
@@ -367,13 +382,17 @@ class RNNCNN(TDRModel):
         return fx, [h1, h2]
 
 class LinearStackedBNCNN(TDRModel):
-    def __init__(self, drop_p=0, one2one=False, stack_ksizes=[3,3], stack_chans=[None,None], **kwargs):
+    def __init__(self, drop_p=0, one2one=False, stack_ksizes=[3,3], stack_chans=[None,None],
+                                                                final_bias=False, 
+                                                                paddings=None, **kwargs):
         super().__init__(**kwargs)
         self.name = 'StackedNet'
         self.drop_p = drop_p
         self.one2one = one2one
         self.stack_ksizes = stack_ksizes
         self.stack_chans = stack_chans
+        self.paddings = [0 for x in stack_ksizes] if paddings is None else paddings
+        self.final_bias = final_bias
         shape = self.img_shape[1:] # (H, W)
         self.shapes = []
 
@@ -381,15 +400,17 @@ class LinearStackedBNCNN(TDRModel):
         if one2one:
             modules.append(OneToOneLinearStackedConv2d(self.img_shape[0],self.chans[0],
                                                             kernel_size=self.ksizes[0], 
-                                                                    bias=self.bias))
+                                                            padding=self.paddings[0],
+                                                            bias=self.bias))
         else:
             modules.append(LinearStackedConv2d(self.img_shape[0],self.chans[0],
                                                     kernel_size=self.ksizes[0], 
-                                               abs_bnorm=False, bias=self.bias, 
-                                                       stack_chan=self.stack_chans[0], 
-                                                       stack_ksize=self.stack_ksizes[0],
-                                                       drop_p=self.drop_p))
-        shape = update_shape(shape, self.ksizes[0])
+                                                    abs_bnorm=False, bias=self.bias, 
+                                                    stack_chan=self.stack_chans[0], 
+                                                    stack_ksize=self.stack_ksizes[0],
+                                                    drop_p=self.drop_p, 
+                                                    padding=self.paddings[0]))
+        shape = update_shape(shape, self.ksizes[0], padding=self.paddings[0])
         self.shapes.append(tuple(shape))
         modules.append(Flatten())
         modules.append(AbsBatchNorm1d(self.chans[0]*shape[0]*shape[1], eps=1e-3, 
@@ -400,18 +421,21 @@ class LinearStackedBNCNN(TDRModel):
         if one2one:
             modules.append(OneToOneLinearStackedConv2d(self.chans[0],self.chans[1],
                                                         kernel_size=self.ksizes[1], 
-                                                                    bias=self.bias))
+                                                        padding=self.paddings[1],
+                                                        bias=self.bias))
         else:
             modules.append(LinearStackedConv2d(self.chans[0],self.chans[1],
                                                     kernel_size=self.ksizes[1], 
                                                     abs_bnorm=False, bias=self.bias, 
-                                                        stack_chan=self.stack_chans[1], 
-                                                        stack_ksize=self.stack_ksizes[1],
-                                                        drop_p=self.drop_p))
-        shape = update_shape(shape, self.ksizes[1])
+                                                    stack_chan=self.stack_chans[1], 
+                                                    stack_ksize=self.stack_ksizes[1],
+                                                    padding=self.paddings[1],
+                                                    drop_p=self.drop_p))
+        shape = update_shape(shape, self.ksizes[1], padding=self.paddings[1])
         self.shapes.append(tuple(shape))
         modules.append(Flatten())
-        modules.append(AbsBatchNorm1d(self.chans[1]*shape[0]*shape[1], eps=1e-3, momentum=self.bn_moment))
+        modules.append(AbsBatchNorm1d(self.chans[1]*shape[0]*shape[1], eps=1e-3, 
+                                                        momentum=self.bn_moment))
         modules.append(GaussianNoise(std=self.noise))
         modules.append(nn.ReLU())
         if self.convgc:
@@ -423,12 +447,15 @@ class LinearStackedBNCNN(TDRModel):
             modules.append(GrabUnits(self.centers, self.ksizes, self.img_shape, self.n_units))
             modules.append(AbsBatchNorm1d(self.n_units, momentum=self.bn_moment))
         else:
-            modules.append(nn.Linear(self.chans[1]*shape[0]*shape[1], self.n_units, bias=self.linear_bias))
+            modules.append(nn.Linear(self.chans[1]*shape[0]*shape[1], self.n_units, 
+                                                                bias=self.linear_bias))
             modules.append(AbsBatchNorm1d(self.n_units, eps=1e-3, momentum=self.bn_moment))
         if self.softplus:
             modules.append(nn.Softplus())
         else:
             modules.append(Exponential(train_off=True))
+        if self.final_bias:
+            modules.append(Add(0,trainable=True))
         self.sequential = nn.Sequential(*modules)
 
     def forward(self, x):
@@ -437,6 +464,9 @@ class LinearStackedBNCNN(TDRModel):
         return self.sequential(x)
     
     def tiled_forward(self,x):
+        """
+        Allows for the fully convolutional functionality
+        """
         if not self.convgc:
             return self.forward(x)
         fx = self.sequential[:-3](x) # Remove GrabUnits layer
@@ -566,11 +596,11 @@ class RevCorLN:
         if type(x) == type(np.array([])):
             x = torch.FloatTensor(x)
         batch_size = 1000
-        self.filt = self.filt.cuda()
+        self.filt = self.filt.to(DEVICE)
         x = x.reshape(len(x), -1)
         outputs = torch.empty(len(x)).float()
         for i in range(0,len(x),batch_size):
-            outs = torch.einsum("ij,j->i", x[i:i+batch_size].cuda(), self.filt)
+            outs = torch.einsum("ij,j->i", x[i:i+batch_size].to(DEVICE), self.filt)
             outputs[i:i+len(outs)] = outs.cpu()
         return outputs
 
