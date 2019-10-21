@@ -562,7 +562,10 @@ class LinearStackedConv2d(nn.Module):
     '''
     Builds argued kernel out of multiple KxK kernels without added nonlinearities.
     '''
-    def __init__(self, in_channels, out_channels, kernel_size, bias=True, stack_ksize=3, stack_chan=None, abs_bnorm=False, conv_bias=False, drop_p=0, padding=0):
+    def __init__(self, in_channels, out_channels, kernel_size, bias=True, stack_ksize=3, 
+                                                        stack_chan=None, abs_bnorm=False, 
+                                                        conv_bias=False, drop_p=0, 
+                                                        padding=0):
         super(LinearStackedConv2d, self).__init__()
         assert kernel_size % 2 == 1 # kernel must be odd
         assert kernel_size > 1 # kernel must be greater than 1
@@ -572,7 +575,7 @@ class LinearStackedConv2d(nn.Module):
         self.bias = bias
         self.conv_bias = conv_bias
         self.abs_bnorm = abs_bnorm
-        self.padding = padding
+        self.padding = 0 if padding is None else padding
         self.drop_p = drop_p
         self.stack_chan = out_channels if stack_chan is None else stack_chan
 
@@ -587,31 +590,45 @@ class LinearStackedConv2d(nn.Module):
         n_filters = int(n_filters)
 
         if n_filters > 1:
-            convs = [nn.Conv2d(in_channels, self.stack_chan, self.stack_ksize, bias=conv_bias)]
+            pad_inc = int(self.stack_ksize//2)
+            pad = min(pad_inc,padding) if padding > 0 else 0
+            padding -= pad
+
+            convs = [nn.Conv2d(in_channels, self.stack_chan, self.stack_ksize, bias=conv_bias, 
+                                                                               padding=pad)]
             if abs_bnorm:
                 convs.append(AbsBatchNorm2d(self.stack_chan))
             if drop_p > 0:
                 convs.append(nn.Dropout(drop_p))
             for i in range(n_filters-1):
-                if i == n_filters-2:
-                    convs.append(nn.Conv2d(self.stack_chan, out_channels, self.last_ksize, bias=bias))
-                else:
-                    convs.append(nn.Conv2d(self.stack_chan, self.stack_chan, self.stack_ksize, bias=conv_bias))
+                pad = min(pad_inc,padding) if padding > 0 else 0
+                padding -= pad
+
+                if i < n_filters-2: 
+                    convs.append(nn.Conv2d(self.stack_chan, self.stack_chan, self.stack_ksize, 
+                                                                             bias=conv_bias,
+                                                                             padding=pad))
                     if abs_bnorm:
                         convs.append(AbsBatchNorm2d(out_channels))
                     if drop_p > 0:
                         convs.append(nn.Dropout(drop_p))
+                # Last Convolution
+                else:
+                    pad = padding if padding > 0 else 0
+                    convs.append(nn.Conv2d(self.stack_chan, out_channels, self.last_ksize, 
+                                                                               bias=bias,
+                                                                               padding=pad))
         else:
-            convs = [nn.Conv2d(in_channels, out_channels, self.stack_ksize, bias=bias)]
+            convs = [nn.Conv2d(in_channels, out_channels, self.stack_ksize, bias=bias,
+                                                                     padding=padding)]
         self.convs = nn.Sequential(*convs)
 
     def forward(self, x):
-        x = F.pad(x, (self.padding, self.padding, self.padding, self.padding))
         return self.convs(x)
 
     def extra_repr(self):
         try:
-            return 'bias={}, abs_bnorm={}'.format(self.bias, self.abs_bnorm)
+            return 'bias={}, abs_bnorm={}, padding={}'.format(self.bias, self.abs_bnorm, self.padding)
         except:
             return "bias={}, abs_bnorm={}".format(self.bias, True)
 
@@ -915,7 +932,7 @@ class Add(nn.Module):
         self.additive = nn.Parameter(torch.ones(1)*additive, requires_grad=trainable)
 
     def forward(self, x):
-        if not self.trainable and self.additive.requires_grad:
+        if not self.trainable:
             self.additive.requires_grad = False
         return x+self.additive
 
