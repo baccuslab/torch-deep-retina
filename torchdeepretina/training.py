@@ -123,12 +123,12 @@ class Trainer:
 
     def print_train_update(self, error, grade, l1, model, n_loops, i):
         loss = error + grade + l1
-        s = "Loss: {:.5e} | ".format(loss.item())
+        s = "Loss: {:.5e}".format(loss.item())
         if grade.item() > 0:
-            s += "Error: {:.5e} | Grade: {:.5e} | ".format(error.item(), grade.item())
+            s = "{} | Error: {:.5e} | Grade: {:.5e} | ".format(s, error.item(), grade.item())
         if model.kinetic:
             ps = model.kinetics.named_parameters()
-            s += " | ".join([str(name)+":"+str(round(p.data.item(),4)) for name,p in list(ps)])
+            s += " | " + " | ".join([str(name)+":"+str(round(p.data.item(),4)) for name,p in list(ps)])
         s = "{} | {}/{}".format(s,i,n_loops)
         print(s, end="       \r")
 
@@ -380,8 +380,7 @@ class Trainer:
                 "exp_val_acc":exp_val_acc,
                 "test_pearson":avg_pearson,
                 "norm_stats":train_data.stats,
-                "ymean":data_distr.y_mean,
-                "ystd":data_distr.y_std,
+                "y_stats":{'mean':data_distr.y_mean, 'std':data_distr.y_std}
             }
             for k in hyps.keys():
                 if k not in save_dict:
