@@ -43,7 +43,7 @@ class BNCNN_3D(nn.Module):
     
 class KineticsModel(nn.Module):
     def __init__(self, bnorm=True, drop_p=0, scale_kinet=False, recur_seq_len=5, n_units=5, 
-                 noise=.05, bias=True, linear_bias=None, chans=[8,8], bn_moment=.01, softplus=True, 
+                 noise=.05, bias=True, linear_bias=False, chans=[8,8], bn_moment=.01, softplus=True, 
                  inference_exp=False, img_shape=(40,50,50), ksizes=(15,11), centers=None):
         super(KineticsModel, self).__init__()
         

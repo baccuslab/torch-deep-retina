@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 from torch.utils.data.dataloader import DataLoader
@@ -6,16 +7,9 @@ import numpy as np
 from collections import deque
 from models import *
 from data import *
-from evaluation import pearsonr
-
-def get_hs(model, batch_size, device):
-    hs = []
-    hs.append(torch.zeros(batch_size, *model.h_shapes[0]).to(device))
-    hs[0][:,0] = 1
-    hs.append(deque([],maxlen=model.seq_len))
-    for i in range(model.seq_len):
-        hs[1].append(torch.zeros(batch_size, *model.h_shapes[1]).to(device))
-    return hs
+from evaluation import pearsonr_eval
+from utils import *
+from config import get_default_cfg
 
 def train(cfg):
     
@@ -47,26 +41,25 @@ def train(cfg):
         for idx,(x,y) in enumerate(train_data):
             loss = 0
             x = x.to(device)
-            y = y.to(device)
+            y = y.double().to(device)
             out, hs = model(x, hs)
-            loss += loss_fn(out, y)
-            if idx%cfg.Optimize.trunc_intrvl == 0:
+            loss += loss_fn(out.double(), y)
+            if idx%cfg.Optimize.trunc_intvl == 0:
                 loss.backward()
                 optimizer.step()
                 epoch_loss += loss.detach().cpu().numpy()
                 loss = 0
-                hs = hs.detach()
                 hs[0] = hs[0].data.clone()
                 hs[1] = deque([h.data.clone() for h in hs[1]], maxlen=model.seq_len)
                 
         epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size
         
         validation_data =  DataLoader(dataset=ValidationDataset(cfg.Data.data_path))
-        pearson = pearsonr(model, validation_data, cfg.Model.n_units, device)
+        pearson = pearsonr_eval(model, validation_data, cfg.Model.n_units, device)
         
         print('epoch: {}, loss: {}, pearson correlation: {}'.format(epoch, epoch_loss, pearson))
         
-        if epoch%cfg.save_intrvl == 0:
+        if epoch%cfg.save_intvl == 0:
             try:
                 os.mkdir(os.path.join(cfg.save_path, cfg.exp_id))
                 print("Directory Created ") 
@@ -77,4 +70,6 @@ def train(cfg):
                                      .format(epoch, epoch_loss, pearson)+'.pth')
             torch.save(model.state_dict(), save_path)
     
-    
+if __name__ == "__main__":
+    cfg = get_default_cfg()
+    train(cfg)
