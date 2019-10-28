@@ -3,7 +3,7 @@ from yacs.config import CfgNode
 
 _C = CfgNode()
 
-_C.exp_id = 'random'
+_C.exp_id = 'random2'
 _C.img_shape = (40,50,50)
 _C.gpu = 1
 _C.epoch = 50

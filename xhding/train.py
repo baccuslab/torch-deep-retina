@@ -37,14 +37,15 @@ def train(cfg):
     
     for epoch in range(cfg.epoch):
         epoch_loss = 0
+        loss = 0
         hs = get_hs(model, cfg.Data.batch_size, device)
         for idx,(x,y) in enumerate(train_data):
-            loss = 0
             x = x.to(device)
             y = y.double().to(device)
             out, hs = model(x, hs)
             loss += loss_fn(out.double(), y)
             if idx%cfg.Optimize.trunc_intvl == 0:
+                optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 epoch_loss += loss.detach().cpu().numpy()
@@ -64,7 +65,7 @@ def train(cfg):
                 os.mkdir(os.path.join(cfg.save_path, cfg.exp_id))
                 print("Directory Created ") 
             except FileExistsError:
-                print("Directory already exists")
+                pass
             save_path = os.path.join(cfg.save_path, cfg.exp_id, 
                                      'epoch_{}_loss_{}_pearson_{}'
                                      .format(epoch, epoch_loss, pearson)+'.pth')
