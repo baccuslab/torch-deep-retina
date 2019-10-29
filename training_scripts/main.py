@@ -108,9 +108,8 @@ if __name__ == "__main__":
     print("Using start num:", hyps['starting_exp_num'])
     print()
 
-    keys = list(hyp_ranges.keys())
     start_time = time.time()
-    hyper_search(hyps, hyp_ranges, keys, device)
+    hyper_search(hyps, hyp_ranges, device)
     print("Total Execution Time:", time.time() - start_time)
     print("\n\nBeginning Analysis..")
     exp_folder = hyps['exp_name']
