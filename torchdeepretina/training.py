@@ -541,11 +541,16 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
     train - method that handles training of model. Should return a dict of results.
     hyper_q - Queue to hold all parameter sets
     idx - the index of the current key to be searched over
+
+    Returns:
+        hyper_q: Queue of lists of dicts [hyps, model_hyps]
     """
     # Base call, runs the training and saves the result
     if idx >= len(keys):
         if 'exp_num' not in hyps:
-            if 'starting_exp_num' not in hyps: hyps['starting_exp_num'] = 0
+            if 'starting_exp_num' not in hyps or hyps['starting_exp_num'] is None or\
+                                                      hyps['starting_exp_num'] == []:
+                hyps['starting_exp_num'] = 0
             hyps['exp_num'] = hyps['starting_exp_num']
         hyps['save_folder'] = hyps['exp_name'] + "/" + hyps['exp_name'] +"_"+ str(hyps['exp_num']) 
         for k in keys:
@@ -573,7 +578,7 @@ def get_device(visible_devices, cuda_buffer=3000):
             return i
     return -1
 
-def mp_hyper_search(hyps, hyp_ranges, keys, n_workers=4, visible_devices={0,1,2,3,4,5}, 
+def mp_hyper_search(hyps, hyp_ranges, n_workers=4, visible_devices={0,1,2,3,4,5}, 
                                                       cuda_buffer=3000, ram_buffer=6000, 
                                                       early_stopping=10, stop_tolerance=.01):
     starttime = time.time()
@@ -592,8 +597,7 @@ def mp_hyper_search(hyps, hyp_ranges, keys, n_workers=4, visible_devices={0,1,2,
         f.write('\n')
     
     hyper_q = mp.Queue()
-    
-    hyper_q = fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0)
+    hyper_q = fill_hyper_q(hyps, hyp_ranges, list(hyp_ranges.keys()), hyper_q, idx=0)
     total_searches = hyper_q.qsize()
     print("n_searches:", total_searches)
 
@@ -641,7 +645,7 @@ def mp_hyper_search(hyps, hyp_ranges, keys, n_workers=4, visible_devices={0,1,2,
         proc.terminate()
         proc.join(timeout=1.0)
 
-def hyper_search(hyps, hyp_ranges, keys, device, early_stopping=10, stop_tolerance=.01):
+def hyper_search(hyps, hyp_ranges, device, early_stopping=10, stop_tolerance=.01):
     starttime = time.time()
     # Make results file
     if not os.path.exists(hyps['exp_name']):
@@ -658,8 +662,7 @@ def hyper_search(hyps, hyp_ranges, keys, device, early_stopping=10, stop_toleran
         f.write('\n')
     
     hyper_q = Queue()
-    
-    hyper_q = fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0)
+    hyper_q = fill_hyper_q(hyps, hyp_ranges, list(hyp_ranges.keys()), hyper_q, idx=0)
     total_searches = hyper_q.qsize()
     print("n_searches:", total_searches)
 
