@@ -274,19 +274,22 @@ def read_model(folder, ret_metrics=False):
         return model, metrics
     return model
 
-def read_model_file(file_name, model_type=None):
+def read_model_file(file_name, model_type=None, load_state_dict=True):
     """
     file_name: str
         path to the model save file. The save should contain "model_hyps", "model_state_dict",
         and ideally "model_type" as keys.
     model_type: str or None
         optional string name of model class to be loaded
+    load_state_dict: bool
+        if true, the state dict is loaded into the model
     """
     data = torch.load(file_name, map_location="cpu")
     if model_type is None:
         model_type = data['model_type']
     model = globals()[model_type](**data['model_hyps'])
-    model.load_state_dict(data['model_state_dict'])
+    if load_state_dict:
+        model.load_state_dict(data['model_state_dict'])
     model.norm_stats = data['norm_stats']
     return model
 
@@ -381,7 +384,7 @@ def get_model_folders(main_folder):
                 if ".pt" in content:
                     folders.append(sub_d)
                     break
-    return folders
+    return sorted(folders, key=lambda x: x.split("/")[-1].split("_")[1])
 
 def get_analysis_table(folder, hyps=None):
     """
@@ -414,8 +417,8 @@ def test_model(model, hyps):
     cor = np.mean(cors)
     return loss, cor
 
-def get_intr_cors(model, layers=['sequential.0', 'sequential.6'], stim_keys={"boxes"}, 
-                                                                        verbose=True):
+def get_intr_cors(model, layers=['sequential.0', 'sequential.6'], stim_keys={"boxes"},
+                                                             files=None,verbose=True):
     """
     Gets and returns a DataFrame of the interneuron correlations with the model.
 
@@ -428,7 +431,7 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'], stim_keys={"bo
         print("Using stim keys:", ", ".join(list(stim_keys)))
     filt_len = model.img_shape[0]
     interneuron_data = tdrdatas.load_interneuron_data(root_path="~/interneuron_data",
-                                                            filter_length=filt_len)
+                                                  filter_length=filt_len,files=files)
     stim_dict, mem_pot_dict, _ = interneuron_data
 
     table = tdrintr.get_intr_cors(model, stim_dict, mem_pot_dict, layers=set(layers),
