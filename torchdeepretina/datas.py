@@ -78,9 +78,9 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, cutout_widt
     cutout_width : int, optional
         If not None, cuts out the stimulus around the STA (assumes cells is a scalar)
 
-    norm_stats : listlike of floats i.e. [mean, std], optional
+    norm_stats : listlike of floats or dict i.e. [mean, std], optional
         If a list of len 2 is argued, idx 0 will be used as the mean and idx 1 the std for
-        data normalization
+        data normalization. if dict, use 'mean' and 'std' as keys
 
     data_path : string
         path to the data folders
@@ -110,8 +110,11 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, cutout_widt
             stim = ft.cutout(arr, idx=(px, py), width=cutout_width).astype('float32')
         stats = {}
         if norm_stats is not None:
-            stats['mean'] = norm_stats[0]
-            stats['std'] = norm_stats[1]
+            if isinstance(norm_stats, dict):
+                stats = {k:v for k,v in norm_stats.keys()}
+            else:
+                stats['mean'] = norm_stats[0]
+                stats['std'] = norm_stats[1]
         else:
             stats['mean'] = stim.mean()
             stats['std'] = stim.std()+1e-7
