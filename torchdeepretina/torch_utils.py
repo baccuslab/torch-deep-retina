@@ -562,10 +562,33 @@ class LinearStackedConv2d(nn.Module):
     '''
     Builds argued kernel out of multiple KxK kernels without added nonlinearities.
     '''
-    def __init__(self, in_channels, out_channels, kernel_size, bias=True, stack_ksize=3, 
-                                                        stack_chan=None, abs_bnorm=False, 
-                                                        conv_bias=False, drop_p=0, 
-                                                        padding=0):
+    def __init__(self, in_channels, out_channels, kernel_size, bias=True, conv_bias=False,
+                                                        stack_ksize=3, stack_chan=None, 
+                                                        abs_bnorm=False, bnorm=False,  
+                                                        drop_p=0, padding=0, stride=(1,1)):
+        """
+        in_channels: int
+        out_channels: int
+        kernel_size: int
+            the size of the effective convolution kernel
+        bias: bool
+            bias refers to the final layer only
+        conv_bias: bool
+            conv_bias refers to the inner stacked convolution biases
+        stack_ksize: int
+            the size of the stacked filters (must be odd integers)
+        stack_chan: int
+            the number of channels in the inner stacked convolutions
+        bnorm: bool
+            if true, inserts batchnorm layers between each stacked convolution
+        abs_bnorm: bool
+            if true, inserts absolute value batchnorm layers between each stacked convolution
+            takes precedence over bnorm
+        drop_p: float
+            the amount of dropout used between stacked convolutions
+        padding: int
+        stride: int or tuple
+        """
         super(LinearStackedConv2d, self).__init__()
         assert kernel_size % 2 == 1 # kernel must be odd
         assert kernel_size > 1 # kernel must be greater than 1
@@ -609,7 +632,9 @@ class LinearStackedConv2d(nn.Module):
                                                                              bias=conv_bias,
                                                                              padding=pad))
                     if abs_bnorm:
-                        convs.append(AbsBatchNorm2d(out_channels))
+                        convs.append(AbsBatchNorm2d(self.stack_ksize))
+                    elif bnorm:
+                        convs.append(nn.BatchNorm2d(self.stack_ksize))
                     if drop_p > 0:
                         convs.append(nn.Dropout(drop_p))
                 # Last Convolution
@@ -617,7 +642,8 @@ class LinearStackedConv2d(nn.Module):
                     pad = padding if padding > 0 else 0
                     convs.append(nn.Conv2d(self.stack_chan, out_channels, self.last_ksize, 
                                                                                bias=bias,
-                                                                               padding=pad))
+                                                                               padding=pad,
+                                                                               stride=stride))
         else:
             convs = [nn.Conv2d(in_channels, out_channels, self.stack_ksize, bias=bias,
                                                                      padding=padding)]
