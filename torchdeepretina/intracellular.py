@@ -214,7 +214,8 @@ def make_intr_cor_maps(model, layers=['sequential.2', 'sequential.8'], verbose=T
             cor_maps[f].append(maps)
     return cor_maps
 
-def all_correlation_maps(mem_pot, model_response, layer_keys=['sequential.2', 'sequential.8']):
+def all_correlation_maps(mem_pot, model_response, layer_keys=['sequential.2', 'sequential.8'],
+                                                                               verbose=False):
     """
     Returns a dict of correlation maps for each argued layer
 
@@ -248,12 +249,18 @@ def all_correlation_maps(mem_pot, model_response, layer_keys=['sequential.2', 's
             for i in range(resp.shape[1]):
                 r,_ = pearsonr(mem_pot.squeeze(), resp[:,i])
                 r = r if not np.isnan(r) and r < 1 and r > -1 else 0
+                if np.log(abs(resp[:,i].mean())) < -15:
+                    if verbose and abs(r) > 0.1:
+                        s = "Extremely small layer values, pearson of {} can "+\
+                                          "not be trusted and is being set to 0"
+                        print(s.format(r))
+                    r = 0
                 cors.append(r)
             cor_map = np.asarray(cors)
         cor_maps[layer] = cor_map
     return cor_maps
 
-def correlation_map(mem_pot, activ_layer):
+def correlation_map(mem_pot, activ_layer, verbose=False):
     '''
     Takes a 1d membrane potential and computes the correlation with every tiled 
     unit in activation layer.
@@ -270,10 +277,16 @@ def correlation_map(mem_pot, activ_layer):
             #adjusted_layer = activ_layer[:,y,x]/(np.max(activ_layer[:,y,x])+1e-40)
             #r,_ = pearsonr(mem_pot, adjusted_layer)
             r,_ = pearsonr(mem_pot.squeeze(),activ_layer[:,y,x].squeeze())
+            if np.log(abs(activ_layer[:,y,x].mean())) < -15:
+                if verbose and abs(r) > 0.1:
+                    s = "Extremely small layer values, pearson of {} can "+\
+                                      "not be trusted and is being set to 0"
+                    print(s.format(r))
+                r = 0
             correlations[y,x] = r if not np.isnan(r) and r < 1 and r > -1 else 0
     return correlations
 
-def max_correlation(mem_pot, model_layer, abs_val=False):
+def max_correlation(mem_pot, model_layer, abs_val=False, verbose=False):
     '''
     Takes a 1d membrane potential and computes the correlation with every tiled unit 
     in model_layer. Do not use abs_val for publishable analysis.
@@ -294,6 +307,12 @@ def max_correlation(mem_pot, model_layer, abs_val=False):
         for chan in range(model_layer.shape[1]):
             r,_ = pearsonr(mem_pot, model_layer[:,chan])
             r = r if not np.isnan(r) and r < 1 and r > -1 else 0
+            if np.log(abs(model_layer[:,chan].mean())) < -15:
+                if verbose and abs(r) > 0.1:
+                    s = "Extremely small layer values, pearson of {} can "+\
+                                      "not be trusted and is being set to 0"
+                    print(s.format(r))
+                r = 0
             pearsons.append(r)
         # Set nan and fishy values to zero
         pearsons = [r if not np.isnan(r) and r < 1 and r > -1 else 0 for r in pearsons]
@@ -301,10 +320,10 @@ def max_correlation(mem_pot, model_layer, abs_val=False):
             pearsons = [np.absolute(r) for r in pearsons]
         return np.max(pearsons)
 
-def sorted_correlation(mem_pot, model_layer):
+def sorted_correlation(mem_pot, model_layer, verbose=False):
     '''
-    Takes a 1d membrane potential and computes the maximum correlation with respect to each model celltype,
-    sorted from highest to lowest.
+    Takes a 1d membrane potential and computes the maximum correlation with respect to each 
+    model celltype, sorted from highest to lowest.
     
     Args:
         mem_pot: 1-d numpy array
@@ -318,12 +337,23 @@ def sorted_correlation(mem_pot, model_layer):
         #adjusted_layer = model_layer/(np.max(model_layer)+1e-40)
         #pearsons = [pearsonr(mem_pot, adjusted_layer)[0] for c in range(model_layer.shape[1])]
         pearsons = [pearsonr(mem_pot, model_layer[:,c])[0] for c in range(model_layer.shape[1])]
-        pearsons = [r if not np.isnan(r) and r < 1  and r > -1 else 0 for r in pearsons]
+        for i,r in enumerate(pearsons):
+            new_r = r if not np.isnan(r) and r < 1  and r > -1 else 0
+            if np.log(abs(layer.mean())) < -15:
+                if verbose and abs(r) > 0.1:
+                    s = "Extremely small layer values, pearson of {} can "+\
+                                      "not be trusted and is being set to 0"
+                    print(s.format(r))
+                new_r = 0
+            pearsons[i] = new_r
         return sorted(pearsons)
 
-def max_correlation_all_layers(mem_pot, model_response, layer_keys=['conv1', 'conv2'], abs_val=False):
+def max_correlation_all_layers(mem_pot, model_response, layer_keys=['conv1', 'conv2'], 
+                                                                        abs_val=False):
     '''
-    Takes a 1d membrane potential and computes the maximum correlation over the 2 conv layers within a model.
+    Takes a 1d membrane potential and computes the maximum correlation over the argued conv 
+    layers within a model.
+
     Args: 
         mem_pot: 1-d numpy array
         model_response: a dict of layer activities
@@ -333,7 +363,8 @@ def max_correlation_all_layers(mem_pot, model_response, layer_keys=['conv1', 'co
     max_cors = [max_correlation(mem_pot, model_response[k], abs_val=abs_val) for k in layer_keys]
     return max(max_cors)
 
-def argmax_correlation_recurse_helper(mem_pot, model_layer, shape, idx, abs_val=False):
+def argmax_correlation_recurse_helper(mem_pot, model_layer, shape, idx, abs_val=False,
+                                                                       verbose=False):
     """
     Recursively searches model_layer units to find the unit with the best pearsonr.
 
@@ -356,20 +387,26 @@ def argmax_correlation_recurse_helper(mem_pot, model_layer, shape, idx, abs_val=
         r, _ = pearsonr(mem_pot, layer)
         if abs_val:
             r = np.absolute(r)
-        if np.isnan(r) or r >= 1 or r <= -1: r = 0
+        if np.isnan(r) or np.isinf(r) or r >= 1 or r <= -1: r = 0
+        if np.log(abs(layer.mean())) < -15:
+            if verbose and abs(r) > 0.1:
+                s = "Extremely small layer values, pearson of {} can not be"+\
+                                               "trusted and is being set to 0"
+                print(s.format(r))
+            r = 0
         return r, idx
     else:
         max_r = -1
         best_idx = None
         for i in range(shape[0]):
-            args = (mem_pot, model_layer, shape[1:], (*idx, i), abs_val)
+            args = (mem_pot, model_layer, shape[1:], (*idx, i), abs_val, verbose)
             r, local_idx = argmax_correlation_recurse_helper(*args)
             if not np.isnan(r) and r < 1 and r > max_r:
                 max_r = r
                 best_idx = local_idx
         return max_r, best_idx
 
-def argmax_correlation(mem_pot, model_layer, ret_max_cor=False, abs_val=False):
+def argmax_correlation(mem_pot, model_layer, ret_max_cor=False, abs_val=False, verbose=False):
     '''
     Takes a 1d membrane potential and computes the correlation with every tiled unit 
     in model_layer.
@@ -387,18 +424,22 @@ def argmax_correlation(mem_pot, model_layer, ret_max_cor=False, abs_val=False):
     max_r = -1
     best_idx = None
     for i in range(model_layer.shape[1]):
-        r, idx = argmax_correlation_recurse_helper(mem_pot,model_layer,
-                                        model_layer.shape[2:],(i,), abs_val=abs_val)
+        r, idx = argmax_correlation_recurse_helper(mem_pot,model_layer, model_layer.shape[2:],
+                                                        (i,), abs_val=abs_val,verbose=verbose)
         if not np.isnan(r) and r < 1 and r > max_r:
             max_r = r
             best_idx = idx
     if ret_max_cor:
         return best_idx, max_r
-    return best_idx
+    return best_idx # (chan, row, col) of best correlated unit
 
 def get_intr_cors(model, stim_dict, mem_pot_dict, layers={"sequential.2", "sequential.8"}, 
                                                             batch_size=500, verbose=False):
     """
+    Takes a model and dicts of stimuli and membrane potentials to find the best correlations 
+    for each layer and each channel in the model. Returns a dict that can easily be converted
+    into a pandas data frame.
+
     model - torch Module
     stim_dict - dict of interneuron stimuli
         keys: str (interneuron data file name)
@@ -462,7 +503,8 @@ def get_intr_cors(model, stim_dict, mem_pot_dict, layers={"sequential.2", "seque
 
                     for chan in range(resp.shape[1]):
                         r, idx = argmax_correlation_recurse_helper(pots[cell_idx], resp,
-                                                       shape=resp.shape[2:], idx=(chan,))
+                                                       shape=resp.shape[2:], idx=(chan,),
+                                                       verbose=verbose)
                         _, row, col = idx
                         intr_cors['cell_file'].append(cell_file)
                         intr_cors['cell_idx'].append(cell_idx)
@@ -542,7 +584,8 @@ def get_cor_generalization(model, stim_dict, mem_pot_dict,layers={"sequential.2"
                     resp = responses[stim_type][layer]
                     for chan in range(resp.shape[1]):
                         r, idx = argmax_correlation_recurse_helper(pots[cell_idx], resp,
-                                                       shape=resp.shape[2:], idx=(chan,))
+                                                       shape=resp.shape[2:], idx=(chan,),
+                                                       verbose=verbose)
                         _, row, col = idx
                         table['cell_file'].append(cell_file)
                         table['cell_idx'].append(cell_idx)
@@ -559,6 +602,12 @@ def get_cor_generalization(model, stim_dict, mem_pot_dict,layers={"sequential.2"
                                 temp_resp = responses[stim_t][layer][:,chan,row,col]
                                 r,_ = pearsonr(temp_resp, pot)
                                 r = r if not np.isnan(r) and r < 1 and r > -1 else 0
+                                if np.log(abs(temp_resp.mean())) < -15:
+                                    if verbose and abs(r) > 0.1:
+                                        s = "Extremely small layer values, pearson of {} can "+\
+                                                          "not be trusted and is being set to 0"
+                                        print(s.format(r))
+                                    r = 0
                                 table['cell_file'].append(cell_file)
                                 table['cell_idx'].append(cell_idx)
                                 table['stim_type'].append(stim_t)
@@ -569,8 +618,8 @@ def get_cor_generalization(model, stim_dict, mem_pot_dict,layers={"sequential.2"
                                 table['col'].append(col)
     return table
 
-def get_correlation_stats(mem_pot, model_response, 
-                                layer_keys=['sequential.2', 'sequential.8'], abs_val=False):
+def get_correlation_stats(mem_pot, model_response, layer_keys=['sequential.2', 'sequential.8'],
+                                                                  abs_val=False,verbose=False):
     """
     Finds the unit of maximum correlation for each channel in each of the argued layers.
     i.e. will return a (row,col) coordinate for each channel in each layer in layer_keys.
@@ -599,13 +648,15 @@ def get_correlation_stats(mem_pot, model_response,
         for chan in range(model_layer.shape[1]):
             r, idx = argmax_correlation_recurse_helper(mem_pot,model_layer,
                                                         shape=model_layer.shape[2:],
-                                                        idx=(chan,), abs_val=abs_val)
+                                                        idx=(chan,), abs_val=abs_val,
+                                                        verbose=verbose)
             _, row, col = idx
             cor_stats[layer_key].append((row,col,r))
     return cor_stats
 
-def argmax_correlation_all_layers(mem_pot, model_response, 
-                    layer_keys=['conv1', 'conv2'], ret_max_cor_all_layers=False, abs_val=False):
+def argmax_correlation_all_layers(mem_pot, model_response, layer_keys=['conv1', 'conv2'], 
+                                            ret_max_cor_all_layers=False, abs_val=False,
+                                            verbose=False):
     '''
     Takes a 1d membrane potential and computes the maximum correlation over the 2 conv 
     layers within a model.
@@ -622,8 +673,8 @@ def argmax_correlation_all_layers(mem_pot, model_response,
     best_idx = None
     for key in layer_keys:
         response = model_response[key]
-        idxs, r = argmax_correlation(mem_pot, response, ret_max_cor=True, 
-                                                                    abs_val=abs_val)
+        idxs, r = argmax_correlation(mem_pot, response, ret_max_cor=True, abs_val=abs_val,
+                                                                          verbose=verbose)
         if not np.isnan(r) and r < 1 and r > max_r:
             max_r = r
             best_idx = (key, *idxs)
@@ -631,8 +682,8 @@ def argmax_correlation_all_layers(mem_pot, model_response,
         return best_idx, max_r
     return best_idx # (layer, chan, row, col)
 
-def classify(mem_pot, model_response, time, layer_keys=['conv1', 'conv2'], 
-                                                                        abs_val=False):
+def classify(mem_pot, model_response, time, layer_keys=['conv1', 'conv2'], abs_val=False,
+                                                                          verbose=False):
     '''
     Finds the most correlated cell in a model to a membrane potential.
 
@@ -646,7 +697,10 @@ def classify(mem_pot, model_response, time, layer_keys=['conv1', 'conv2'],
         a tuple with the layer, celltype, spatial indices, and the correlation value
     '''
     model_response_time = {k:model_response[k][:time] for k in layer_keys}
-    best_cell, max_cor_all_layers = argmax_correlation_all_layers(mem_pot[:time], model_response_time, layer_keys=layer_keys, ret_max_cor_all_layers=True, abs_val=abs_val)
+    best_cell, max_cor_all_layers = argmax_correlation_all_layers(mem_pot[:time], 
+                                        model_response_time, layer_keys=layer_keys, 
+                                        ret_max_cor_all_layers=True, abs_val=abs_val,
+                                        verbose=verbose)
     if len(best_cell) == 2:
         return best_cell[0], best_cell[1], max_cor_all_layers
     return best_cell[0], best_cell[1], (best_cell[2], best_cell[3]), max_cor_all_layers
