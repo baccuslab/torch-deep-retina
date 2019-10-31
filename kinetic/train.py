@@ -10,7 +10,7 @@ from models import *
 from data import *
 from evaluation import pearsonr_eval
 from utils import *
-from config import get_default_cfg
+from config import get_default_cfg, get_custom_cfg
 
 def train(cfg):
     
@@ -45,7 +45,7 @@ def train(cfg):
         start_epoch = checkpoint['epoch']
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     
-    train_dataset = TrainDataset(cfg.Data.data_path)
+    train_dataset = TrainDataset(cfg)
     batch_sampler = BatchRnnSampler(length=len(train_dataset), batch_size=cfg.Data.batch_size,
                                     seq_len=cfg.Model.recur_seq_len)
     train_data = DataLoader(dataset=train_dataset, batch_sampler=batch_sampler)
@@ -74,7 +74,7 @@ def train(cfg):
                 
         epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size
         
-        validation_data =  DataLoader(dataset=ValidationDataset(cfg.Data.data_path))
+        validation_data =  DataLoader(dataset=ValidationDataset(cfg))
         pearson = pearsonr_eval(model, validation_data, cfg.Model.n_units, device)
         
         print('epoch: {}, loss: {}, pearson correlation: {}'.format(epoch, epoch_loss, pearson))
@@ -95,5 +95,5 @@ def train(cfg):
                         'loss': epoch_loss}, save_path)
     
 if __name__ == "__main__":
-    cfg = get_default_cfg()
+    cfg = get_custom_cfg('channel')
     train(cfg)
