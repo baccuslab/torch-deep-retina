@@ -16,7 +16,15 @@ def train(cfg):
     
     device = torch.device('cuda:'+str(cfg.gpu))
     
-    model = KineticsChannelModel(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
+    if cfg.Model.name == 'KineticsChannelModel':
+        model = KineticsChannelModel(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
+                                  recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
+                                  noise=cfg.Model.noise, bias=cfg.Model.bias, 
+                                  linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
+                                  bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
+                                  img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
+    if cfg.Model.name == 'KineticsModel':
+        model = KineticsModel(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
                           recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
                           noise=cfg.Model.noise, bias=cfg.Model.bias, 
                           linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
@@ -80,7 +88,7 @@ def train(cfg):
             save_path = os.path.join(cfg.save_path, cfg.exp_id, 
                                      'epoch_{}_loss_{}_pearson_{}'
                                      .format(epoch, epoch_loss, pearson)+'.pth')
-            torch.save(model.state_dict(), save_path)
+
             torch.save({'epoch': epoch,
                         'model_state_dict': model.state_dict(),
                         'optimizer_state_dict': optimizer.state_dict(),

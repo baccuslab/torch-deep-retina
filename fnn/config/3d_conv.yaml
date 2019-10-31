@@ -1,0 +1,7 @@
+exp_id: '3dconv'
+img_shape: [80,50,50]
+gpu: 0
+Model:
+    name: 'BNCNN_3D'
+    ksizes: ([40,15,15],[3,11,11])
+    strides: ([5,1,1],[1,1,1])

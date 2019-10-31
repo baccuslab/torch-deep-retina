@@ -9,10 +9,11 @@ from torchdeepretina.datas import loadexpt
 
 class TrainDataset(Dataset):
     
-    def __init__(self, data_path='/home/salamander/experiments/data/', val_size=30000):
+    def __init__(self, cfg):
         super().__init__()
         data = loadexpt('15-10-07', [0,1,2,3,4], 'naturalscene', 'train',
-                        40, 0, data_path=data_path)
+                        cfg.img_shape[0], 0, data_path=cfg.Data.data_path)
+        val_size = cfg.Data.val_size
         self.X = data.X[:-val_size]
         self.y = data.y[:-val_size]
         self.centers = data.centers
@@ -28,10 +29,11 @@ class TrainDataset(Dataset):
     
 class ValidationDataset(Dataset):
     
-    def __init__(self, data_path='/home/salamander/experiments/data/', val_size=30000):
+    def __init__(self, cfg):
         super().__init__()
         data = loadexpt('15-10-07', [0,1,2,3,4], 'naturalscene', 'train',
-                        40, 0, data_path=data_path)
+                        cfg.img_shape[0], 0, data_path=cfg.Data.data_path)
+        val_size = cfg.Data.val_size
         self.X = data.X[-val_size:]
         self.y = data.y[-val_size:]
         self.centers = data.centers
