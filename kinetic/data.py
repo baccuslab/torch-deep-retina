@@ -8,17 +8,25 @@ from torchdeepretina.datas import loadexpt
 
 class BatchRnnSampler(Sampler):
     
-    def __init__(self, sampler, batch_size):
-        self.sampler = sampler
+    def __init__(self, length, batch_size, seq_len):
+        self.length = length
         self.batch_size = batch_size
+        self.seq_len = seq_len
 
     def __iter__(self):
-        for batch_idx in range(self.__len__()):
-            batch = [batch_idx + n * self.__len__() for n in range(self.batch_size)]
+        batch_idx = 0
+        count = 0
+        while batch_idx < self.length // self.batch_size:
+            batch = [batch_idx + n * self.length // self.batch_size for n in range(self.batch_size)]
             yield batch
+            batch_idx += 1
+            count += 1
+            if count == self.seq_len:
+                count = 0
+                batch_idx -= (self.seq_len - 1)
 
     def __len__(self):
-        return len(self.sampler) // self.batch_size
+        return (self.length // self.batch_size - self.seq_len + 1) * self.seq_len + self.seq_len -1
     
 class TrainDataset(Dataset):
     

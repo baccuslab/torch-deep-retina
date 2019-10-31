@@ -1144,6 +1144,50 @@ class RunningNorm1d(nn.Module):
     #def extra_repr(self):
     #    return 'n_units={}, momentum={}'.format(self.n_units, self.momentum)
 
+class Kinetics_channel(nn.Module):
+    def __init__(self, chan=8, dt=0.001):
+        super().__init__()
+        self.ka = nn.Parameter(torch.rand(chan, 1).abs()/10)
+        self.kfi = nn.Parameter(torch.rand(chan, 1).abs()/10)
+        self.kfr = nn.Parameter(torch.rand(chan, 1).abs()/10)
+        self.ksi = nn.Parameter(torch.rand(chan, 1).abs()/10)
+        self.ksr = nn.Parameter(torch.rand(chan, 1).abs()/10)
+        self.dt = 0.001
 
+    def extra_repr(self):
+        return "dt={}".format(self.dt)
+
+    def clamp_params(self, low, high):
+        self.ka.data  = torch.clamp(self.ka.data,  low, high)
+        self.kfi.data = torch.clamp(self.kfi.data, low, high)
+        self.kfr.data = torch.clamp(self.kfr.data, low, high)
+        self.ksi.data = torch.clamp(self.ksi.data, low, high)
+        self.ksr.data = torch.clamp(self.ksr.data, low, high)
+
+    def forward(self, rate, pop):
+        """
+        rate - FloatTensor (B, C, N)
+            firing rates
+        pop - FloatTensor (B, S, C, N)
+            populations should have 4 states for each neuron.
+            States should be:
+                0: R
+                1: A
+                2: I1
+                3: I2
+        """
+        self.clamp_params(-.99999, .99999)
+        dt = self.dt
+        ka  = self.ka.abs() * rate * pop[:, 0]
+        kfi = self.kfi.abs() * pop[:,1]
+        kfr = self.kfr.abs() * pop[:,2]
+        ksi = self.ksi.abs() * pop[:,2]
+        ksr = self.ksr.abs() * rate*pop[:, 3]
+        new_pop = torch.zeros_like(pop)
+        new_pop[:, 0] = pop[:, 0] + dt * (- ka + kfr)
+        new_pop[:, 1] = pop[:, 1] + dt * (- kfi + ka)
+        new_pop[:, 2] = pop[:, 2] + dt * (- kfr - ksi + kfi + ksr)
+        new_pop[:, 3] = pop[:, 3] + dt * (- ksr + ksi)
+        return new_pop[:, 1], new_pop
 
 
