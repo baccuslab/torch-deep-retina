@@ -968,6 +968,51 @@ def contrast_fig(model, contrasts, layer_name=None, unit_index=0, verbose=False,
     ax1.xaxis.set_minor_locator(minorLocator)
     return fig
 
+def nonlinearity_fig(model, contrast, layer_name=None, unit_index=0, verbose=False, 
+                                                         nonlinearity_type='bin'):
+    """
+    Creates figure 2D from "Deeplearning Models Reveal..." paper. Much of this code has 
+    been repurposed from Lane and Niru's notebooks.
+
+    model: torch module
+    contrast: int
+        contrast to calculate nonlinearity
+    layer_name: string
+        specifies the layer of interest, if None, the final layer is used
+    unit_index: int or sequence of length 3
+        specifies the unit of interest
+    nonlinearity_type: string
+        fits the nonlinearity to the specified type. allowed args are "bin" and "sigmoid".
+    """
+    if layer_name is None:
+        layer_name = "sequential." + str(len(model.sequential)-1)
+    if verbose:
+        print("Making Nonlinearity Fig for", layer_name, "unit:", unit_index)
+
+    tup = filter_and_nonlinearity(model, contrast, layer_name=layer_name,
+                                      unit_index=unit_index, verbose=verbose,
+                                      nonlinearity_type=nonlinearity_type)
+    resp_time, temporal_resp, resp_x, resp = tup
+
+    fig = plt.figure(figsize=(8, 2))
+    plt.plot(resp_x, len(resp_x) * [0], 'k--', alpha=0.4)
+    plt.plot(resp_x, resp, linewidth=3, color='b')
+    plt.xlabel('Filtered Input', fontsize=14)
+    plt.ylabel('Output (Hz)', fontsize=14)
+    ax1 = plt.gca()
+    ax1.spines['right'].set_visible(False)
+    ax1.spines['top'].set_visible(False)
+    ax1.xaxis.set_ticks_position('bottom')
+    ax1.yaxis.set_ticks_position('left')
+    majorLocator = MultipleLocator(1)
+    majorFormatter = FormatStrFormatter('%d')
+    minorLocator = MultipleLocator(0.5)
+    
+    ax1.xaxis.set_major_locator(majorLocator)
+    ax1.xaxis.set_major_formatter(majorFormatter)
+    ax1.xaxis.set_minor_locator(minorLocator)
+    return fig
+
 #########################################################################################################
 
 def retinal_phenomena_figs(model, verbose=True):
