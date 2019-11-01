@@ -337,7 +337,7 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, t
     else:
         return X.grad.data.cpu()
 
-def compute_sta(model, contrast, layer, cell_index, layer_shape=None, batch_size=500, 
+def compute_sta(model, layer, cell_index, layer_shape=None, batch_size=500, contrast=1, 
                                                          n_samples=10000,to_numpy=True, 
                                                          verbose=True):
     """
@@ -500,7 +500,7 @@ def revcor(X, y, batch_size=500, to_numpy=False, ret_norm_stats=False):
         return sta, xnorm_stats, ynorm_stats
     return sta
 
-def revcor_sta(model, layer, cell_index, layer_shape=None, n_samples=15000, batch_size=500,
+def revcor_sta(model, layer, cell_index, layer_shape=None, n_samples=25000, batch_size=500,
                                                  contrast=1, to_numpy=False, verbose=True):
     """
     Calculates the STA using the reverse correlation method.
@@ -509,7 +509,7 @@ def revcor_sta(model, layer, cell_index, layer_shape=None, n_samples=15000, batc
     layer: str
         name of layer in model
     cell_index: int or list-like (idx,) or (chan, row, col)
-    layer_shape: list-like
+    layer_shape: list-like (n_chan, n_row, n_col)
         desired shape of layer. useful when layer is flat, but desired shape is not
     n_samples: int
         number of whitenoise samples to use in calculation
@@ -527,7 +527,7 @@ def revcor_sta(model, layer, cell_index, layer_shape=None, n_samples=15000, batc
                                                                     to_numpy=False)
     resp = response[layer]
     if layer_shape is not None:
-        resp = resp.reshape(layer_shape)
+        resp = resp.reshape(-1,*layer_shape)
     if type(cell_index) == type(int()):
         resp = resp[:,cell_index]
     elif len(cell_index) == 2:
