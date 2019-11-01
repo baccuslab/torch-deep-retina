@@ -157,7 +157,7 @@ def extract_hypstxt(path):
                 hyps[splt[0]] = hyps[splt[0]] == "true"
             elif hyps[splt[0]] == "None":
                 hyps[splt[0]] = None
-            elif splt[0] in {"lr", "l1", 'l2', 'noise', 'bnorm_momentum'}:
+            elif splt[0] in {"lr", "l1", 'l2', 'noise', 'bn_moment', "bnorm_momentum"}:
                 hyps[splt[0]] = float(splt[1])
             elif splt[0] in {"n_epochs", "exp_num", 'batch_size'}:
                 hyps[splt[0]] = int(splt[1])
@@ -208,7 +208,13 @@ def load_model(folder, data=None, hyps=None, main_dir="../training_scripts/"):
         data = torch.load(folder, map_location=torch.device("cpu"))
     model = get_architecture(folder, data, hyps, main_dir)
     try:
-        model.load_state_dict(data['model_state_dict'])
+        try:
+            model.load_state_dict(data['model_state_dict'])
+        except:
+            sd = data['model_state_dict']
+            sd['sequential.4.sigma'] = sd['sequential.3.sigma']
+            del sd['sequential.3.sigma']
+            model.load_state_dict(sd)
     except KeyError as e:
         print("Failed to load state_dict. This chkpt does not contain a model state_dict!")
     model.norm_stats = data['norm_stats']
@@ -258,7 +264,13 @@ def read_model(folder, ret_metrics=False):
                 new_key = key.replace("cuda_param", "sigma")
                 data['model_state_dict'][new_key] = data['model_state_dict'][key]
                 del data['model_state_dict'][key]
-        model.load_state_dict(data['model_state_dict'])
+        try:
+            model.load_state_dict(data['model_state_dict'])
+        except:
+            sd = data['model_state_dict']
+            sd['sequential.4.sigma'] = sd['sequential.3.sigma']
+            del sd['sequential.3.sigma']
+            model.load_state_dict(sd)
     model = model.to(DEVICE)
     metrics['norm_stats'] = [data['norm_stats']['mean'], data['norm_stats']['std']]
     model.norm_stats = data['norm_stats']
@@ -289,7 +301,13 @@ def read_model_file(file_name, model_type=None, load_state_dict=True):
         model_type = data['model_type']
     model = globals()[model_type](**data['model_hyps'])
     if load_state_dict:
-        model.load_state_dict(data['model_state_dict'])
+        try:
+            model.load_state_dict(data['model_state_dict'])
+        except:
+            sd = data['model_state_dict']
+            sd['sequential.4.sigma'] = sd['sequential.3.sigma']
+            del sd['sequential.3.sigma']
+            model.load_state_dict(sd)
     model.norm_stats = data['norm_stats']
     return model
 
