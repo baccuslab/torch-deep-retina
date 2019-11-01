@@ -624,10 +624,10 @@ class LinearStackedConv2d(nn.Module):
             if drop_p > 0:
                 convs.append(nn.Dropout(drop_p))
             for i in range(n_filters-1):
-                pad = min(pad_inc,padding) if padding > 0 else 0
-                padding -= pad
-
                 if i < n_filters-2: 
+                    pad = min(pad_inc,padding) if padding > 0 else 0
+                    padding -= pad
+
                     convs.append(nn.Conv2d(self.stack_chan, self.stack_chan, self.stack_ksize, 
                                                                              bias=conv_bias,
                                                                              padding=pad))
@@ -727,6 +727,76 @@ class StackedConv2d(nn.Module):
 
     def forward(self, x):
         return self.convs(x)
+
+class ShakeShakeModule(nn.Module):
+    """
+    Employs the shake shake regularization described in Shake-Shake regularization 
+    (https://arxiv.org/abs/1705.07485)
+    """
+    def __init__(self, module, n_shakes=2, batch_size=1000):
+        super().__init__()
+        """
+        module: torch.nn.Module
+            The module should contain at least one Conv2d module
+        n_shakes: int
+            number of parallel shakes
+        """
+        assert n_shakes > 1, 'Number of shakes must be greater than 1'
+        self.n_shakes = n_shakes
+        self.modu_list = nn.ModuleList([module])
+        for i in range(n_shakes-1):
+            new_module = copy.deepcopy(self.modu_list[-1])
+            for name,modu in new_module.named_modules():
+                if isinstance(modu, nn.Conv2d) or isinstance(modu, nn.Linear):
+                    nn.init.xavier_uniform(modu.weight)
+            self.modu_list.append(new_module)
+        self.alphas = nn.Parameter(torch.zeros(batch_size, n_shakes),requires_grad=False)
+
+    def update_alphas(self, is_training, batch_size):
+        """
+        Updates the alphas to each be in range [0-1) and sum to about 1
+
+        is_training: bool
+            if true, alphas will be random values. If false, alphas will default to equal 
+            values (all summing to 1)
+        batch_size: int
+            number of samples in the batch
+        """
+        if is_training:
+            remainder = torch.ones(batch_size)
+            rands = torch.rand(batch_size, self.n_shakes)
+            if self.alphas.is_cuda:
+                self.alphas.data = torch.zeros(batch_size, self.n_shakes).to(DEVICE)
+                rands = rands.to(DEVICE)
+                remainder = remainder.to(DEVICE)
+            else:
+                self.alphas.data = torch.zeros(batch_size, self.n_shakes)
+
+            for i in range(self.n_shakes-1):
+                self.alphas.data[:,i] = rands[:,i]*remainder
+                remainder -= self.alphas.data[:,i]
+            self.alphas.data[:,-1] = remainder
+        else:
+            uniform = torch.ones(batch_size, self.n_shakes)/float(self.n_shakes)
+            if self.alphas.is_cuda:
+                uniform = uniform.to(DEVICE)
+            self.alphas.data = uniform
+        ones = torch.ones(batch_size)
+        if self.alphas.is_cuda:
+            ones = ones.to(DEVICE)
+        assert ((self.alphas.data.sum(-1)-ones)**2).mean() < 0.01
+
+    def forward(self, x):
+        self.update_alphas(is_training=self.train, batch_size=len(x))
+        fx = 0
+        einstring = "ij,i->ij" if len(x.shape) == 2 else "ijkl,i->ijkl"
+        for i in range(self.n_shakes):
+            output = self.modu_list[i](x)
+            output = torch.einsum(einstring, output, self.alphas[:,i])
+            fx += output
+        # Post update is used to randomize gradients
+        self.update_alphas(is_training=self.train, batch_size=len(x)) 
+        return fx
 
 class ConvRNNCell(nn.Module):
     def __init__(self, in_channels, out_channels, rnn_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
