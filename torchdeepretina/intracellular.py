@@ -50,7 +50,8 @@ def prepare_stim(stim, stim_type):
         print("Invalid stim type")
         assert False
 
-def load_interneuron_data(root_path, files=None, filter_length=40, stim_keys={"boxes"}, 
+def load_interneuron_data(root_path="~/interneuron_data/", files=None, filter_length=40,
+                                                                    stim_keys={"boxes"},
                                                                     join_stims=False,
                                                                     trunc_join=True):
     """ 
@@ -59,10 +60,19 @@ def load_interneuron_data(root_path, files=None, filter_length=40, stim_keys={"b
     mem_pots (membrane potentials) stores the membrane potential
     psst, you can find the "data" folder in /home/grantsrb on deepretina server if you need
 
+    root_path: str
+        path to folder that contains the interneuron h5 files
+    files: list
+        a list of the desired interneuron h5 file names
+    filter_length: int
+        length of first layer filters of model
+    stim_keys: set of str
+        the desired stimulus types
     join_stims: bool
        combines the stimuli listed in stim_keys
     trunc_join: bool
-       truncates the joined stimuli to be of equal length. Only applies if join_stims is true.
+       truncates the joined stimuli to be of equal length. 
+       Only applies if join_stims is true.
 
     returns:
     if using join_stims then no stim_type key exists
@@ -77,16 +87,16 @@ def load_interneuron_data(root_path, files=None, filter_length=40, stim_keys={"b
     if files is None:
         files = ['bipolars_late_2012.h5', 'bipolars_early_2012.h5', 'amacrines_early_2012.h5', 
                 'amacrines_late_2012.h5', 'horizontals_early_2012.h5', 'horizontals_late_2012.h5']
-    files = [os.path.expanduser(os.path.join(root_path, name)) for name in files]
+    full_files = [os.path.expanduser(os.path.join(root_path, name)) for name in files]
     file_ids = []
-    for f in files:
+    for f in full_files:
         file_ids.append(re.split('_|\.', f)[0])
     num_pots = []
     stims = dict()
     mem_pots = dict()
-    for fi in files:
-        stims[fi] = None if join_stims else dict()
-        mem_pots[fi] = None if join_stims else dict()
+    for fi,file_name in zip(full_files,files):
+        stims[file_name] = None if join_stims else dict()
+        mem_pots[file_name] = None if join_stims else dict()
         if join_stims:
             shapes = []
             mem_shapes = []
@@ -101,9 +111,9 @@ def load_interneuron_data(root_path, files=None, filter_length=40, stim_keys={"b
                     else:
                         try:
                             temp = np.asarray(f[k+'/stimuli'], dtype=np.float32)
-                            stims[fi][k] = prepare_stim(temp, k)
+                            stims[file_name][k] = prepare_stim(temp, k)
                             temp = np.asarray(f[k]['detrended_membrane_potential'])
-                            mem_pots[fi][k] = temp[:, filter_length:].astype(np.float32)
+                            mem_pots[file_name][k] = temp[:, filter_length:].astype(np.float32)
                             del temp
                         except Exception as e:
                             print(e)
@@ -119,11 +129,11 @@ def load_interneuron_data(root_path, files=None, filter_length=40, stim_keys={"b
                 one_dim = [s[1] for s in shapes]
                 two_dim = [s[2] for s in shapes]
                 shape = [np.sum(zero_dim), np.max(one_dim), np.max(two_dim)]
-                stims[fi] = np.empty(shape, dtype=np.float32)
+                stims[file_name] = np.empty(shape, dtype=np.float32)
 
                 zero_dim = [s[0] for s in mem_shapes] # Number of cells
                 mem_shape = [np.max(zero_dim), shape[0]-filter_length]
-                mem_pots[fi] = np.empty(mem_shape, dtype=np.float32)
+                mem_pots[file_name] = np.empty(mem_shape, dtype=np.float32)
 
                 startx = 0
                 mstartx = 0
@@ -132,22 +142,22 @@ def load_interneuron_data(root_path, files=None, filter_length=40, stim_keys={"b
                     if trunc_join:
                         prepped = prepped[:trunc_len]
                     # In case stim have varying spatial dimensions
-                    if not (prepped.shape[-2] == stims[fi].shape[-2] and 
-                                        prepped.shape[-1] == stims[fi].shape[-1]):
-                        prepped = tdrstim.spatial_pad(prepped,stims[fi].shape[-2],
-                                                                stims[fi].shape[-1])
+                    if not (prepped.shape[-2] == stims[file_name].shape[-2] and 
+                                        prepped.shape[-1] == stims[file_name].shape[-1]):
+                        prepped = tdrstim.spatial_pad(prepped,stims[file_name].shape[-2],
+                                                                stims[file_name].shape[-1])
                     endx = startx+len(prepped)
-                    stims[fi][startx:endx] = prepped
+                    stims[file_name][startx:endx] = prepped
                     mem_pot = np.asarray(f[k]['detrended_membrane_potential'])
                     if trunc_join:
                         mem_pot = mem_pot[:,:trunc_len]
                     if i == 0:
                         mem_pot = mem_pot[:,filter_length:]
                     mendx = mstartx+mem_pot.shape[1]
-                    mem_pots[fi][:,mstartx:mendx] = mem_pot
+                    mem_pots[file_name][:,mstartx:mendx] = mem_pot
                     startx = endx
                     mstartx = mendx
-    return stims, mem_pots, files
+    return stims, mem_pots, full_files
 
 # Functions for correlation maps and loading David's stimuli in deep retina models.
 def pad_to_edge(stim):
