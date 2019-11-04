@@ -321,6 +321,8 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, t
             hs = [h.data for h in hs]
         else:
             _ = model(x)
+        if layer_shape is not None:
+            hook_outs[layer] = hook_outs[layer].reshape(-1, *layer_shape)
         # Outs are the activations at the argued layer and cell idx accross the batch
         if type(cell_idx) == type(int()):
             fx = hook_outs[layer][:,cell_idx]
