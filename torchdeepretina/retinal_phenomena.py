@@ -106,7 +106,8 @@ def paired_flash(model, ifis=(2, 20), duration=1, intensity=-2.0, total=100, del
 
 def reversing_grating(model, size=5, phase=0., filt_depth=40):
     """A reversing grating stimulus"""
-    grating = tdrstim.grating(barsize=(size, 0), phase=(phase, 0.0), intensity=(1.0, 1.0), us_factor=1, blur=0)
+    grating = tdrstim.grating(barsize=(size, 0), phase=(phase, 0.0), intensity=(1.0, 1.0), 
+                                                                      us_factor=1, blur=0)
     X = tdrstim.concat(tdrstim.reverse(grating, halfperiod=50, nsamples=300), nh=filt_depth)
     X_torch = torch.from_numpy(X).to(DEVICE)
     with torch.no_grad():
@@ -123,19 +124,22 @@ def reversing_grating(model, size=5, phase=0., filt_depth=40):
     (fig, (ax0,ax1)) = figs
     return (fig, (ax0,ax1)), X, resp
 
-
-def contrast_adaptation(model, c0, c1, duration=50, delay=50, nsamples=140, nrepeats=10, filt_depth=40):
+def contrast_adaptation(model, c0, c1, tot_dur=150, resp_repeats=10, filt_depth=40):
     """Step change in contrast"""
 
     # the contrast envelope
-    envelope = tdrstim.flash(duration, delay, nsamples, intensity=(c1 - c0))
+    half_dur = int(tot_dur//2)
+    flicker_1 = tdrstim.repeat_white(half_dur, nx=50, contrast=c0, n_repeats=3)
+    flicker_2 = tdrstim.repeat_white(half_dur, nx=50, contrast=c1, n_repeats=3)
+    envelope = np.concatenate([flicker_1, flicker_2], axis=0)
     envelope += c0
 
     # generate a bunch of responses to random noise with the given contrast envelope
     responses = []
     with torch.no_grad():
-        for _ in trange(nrepeats):
-            x = torch.from_numpy(tdrstim.concat(np.random.randn(*envelope.shape) * envelope, nh=filt_depth)).to(DEVICE)
+        for _ in trange(resp_repeats):
+            x = torch.from_numpy(tdrstim.concat(np.random.randn(*envelope.shape) * envelope, 
+                                                                  nh=filt_depth)).to(DEVICE)
             if model.recurrent:
                 hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
                 resps = []
