@@ -851,7 +851,7 @@ def filter_and_nonlinearity(model, contrast, layer_name='sequential.0',
 
     if verbose:
         print("Normalizing filter and collecting linear response")
-    stimulus = repeat_white(9040, contrast)
+    stimulus = tdrstim.repeat_white(9040, nx=50, contrast=contrast,n_repeats=3)
     stimulus = tdrstim.rolling_window(stimulus, filt_depth)
     normed_sta, theta, error = normalize_filter(sta, stimulus, contrast, batch_size=batch_size)
     filtered_stim = tdrutils.linear_response(normed_sta, stimulus, batch_size=batch_size,

@@ -777,7 +777,6 @@ def concat(*args, nx=50, nh=40):
     concatenated = np.vstack(map(lambda s: spatialize(s, nx), args)).astype('float32')
     return rolling_window(concatenated, nh)
 
-
 def white(nt, nx=1, contrast=1.0):
     """Gaussian white noise with the given contrast
 
@@ -792,8 +791,26 @@ def white(nt, nx=1, contrast=1.0):
     contrast : float
         Scalar multiplied by the whole stimulus (default: 1.0)
     """
-    return contrast * np.random.randn(nt, nx, nx)
+    return spatialize(contrast * np.random.randn(nt, 1, 1), nx=nx)
 
+def repeat_white(n_samples, nx=50, contrast=1.0, n_repeats=3):
+    """
+    Creates and returns a stimulus in which the screen is uniform and changes randomly in
+    intensity every n_repeats.
+
+    n_samples: int
+        the length of the stimulus in samples 
+    nx: int
+        size of height and width of the stimulus
+    contrast: float
+        standard deviation of the flickering
+    n_repeats: int
+        the number of frames to repeat before switching to the next intensity
+    """
+    compressed_time = int(np.ceil(n_samples/n_repeats))
+    compressed_stim = white(compressed_time, nx=nx, contrast=contrast)
+    stimulus = np.repeat(compressed_stim, n_repeats, axis=0)
+    return stimulus[:n_samples]
 
 def contrast_steps(contrasts, lengths, nx=1):
     """Returns a random sequence with contrast step changes
