@@ -835,12 +835,12 @@ def spatialize(array, nx):
     return np.broadcast_to(array, (array.shape[0], nx, nx))
 
 
-def flash(duration, delay, nsamples, intensity=-1.):
+def flash(flash_dur, delay, nsamples, intensity=-1.):
     """Generates a 1D flash
 
     Parameters
     ----------
-    duration : int
+    flash_dur : int
         The duration (in samples) of the flash
 
     delay : int
@@ -859,10 +859,10 @@ def flash(duration, delay, nsamples, intensity=-1.):
     else:
         img = intensity.reshape(1, *intensity.shape)
 
-    assert nsamples >= (delay + duration), \
-        "The total number samples must be greater than the delay + duration"
+    assert nsamples >= (delay + flash_dur), \
+        "The total number samples must be greater than the delay + flash_dur"
     sequence = np.zeros((nsamples,))
-    sequence[delay:(delay + duration)] = 1.0
+    sequence[delay:(delay + flash_dur)] = 1.0
     return sequence.reshape(-1, 1, 1) * img
 
 
@@ -931,15 +931,15 @@ def cmask(center, radius, array):
     return x ** 2 + y ** 2 <= radius ** 2
 
 
-def paired_flashes(ifi, duration, intensity, total_length, delay):
+def paired_flashes(ifi, flash_dur, intensity, total_length, delay):
     """Paired flash stimulus"""
     # Convert numbers to tuples
-    duration = tuplify(duration, 2)
+    flash_dur = tuplify(flash_dur, 2)
     intensity = tuplify(intensity, 2)
 
     # generate the flashes
-    f0 = flash(duration[0], delay, total_length, intensity[0])
-    f1 = flash(duration[1], delay + duration[0] + ifi, total_length, intensity[1])
+    f0 = flash(flash_dur[0], delay, total_length, intensity[0])
+    f1 = flash(flash_dur[1], delay + flash_dur[0] + ifi, total_length, intensity[1])
 
     # return the concatenated pair
     return concat(f0 + f1)
