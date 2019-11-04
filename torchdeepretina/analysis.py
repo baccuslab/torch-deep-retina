@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import torchdeepretina.utils as tdrutils
 import torchdeepretina.intracellular as tdrintr
 from torchdeepretina.retinal_phenomena import retinal_phenomena_figs
+import torchdeepretina.stimuli as tdrstim
 import pyret.filtertools as ft
 import scipy
 import re
@@ -238,6 +239,7 @@ def read_model(folder, ret_metrics=False):
         assert False
     for i in range(len(fs)+100):
         f = os.path.join(folder.strip(),"test_epoch_{0}.pth".format(i))
+        f = os.path.expanduser(f)
         try:
             with open(f, "rb") as fd:
                 data = torch.load(fd, map_location=torch.device("cpu"))
@@ -296,6 +298,7 @@ def read_model_file(file_name, model_type=None, load_state_dict=True):
     load_state_dict: bool
         if true, the state dict is loaded into the model
     """
+    file_name = os.path.expanduser(file_name)
     data = torch.load(file_name, map_location="cpu")
     if model_type is None:
         model_type = data['model_type']
@@ -435,14 +438,112 @@ def test_model(model, hyps):
     cor = np.mean(cors)
     return loss, cor
 
+def get_intrneuron_rfs(stims, mem_pots, filt_len=40,verbose=False):
+    """
+    stims: dict
+        keys: string cell_file
+        vals: dict
+            keys: string stim_key
+            vals: ndarray (T,H,W)
+                the corresponding stimulus for each group of cells
+    mem_pots: dict
+        keys: string cell_file
+        vals: dict
+            keys: string stim_key
+            vals: ndarray (N,T)
+                the membrane potentials for each cell. N is number of cells. The
+                T dimension contains the potential response
+    filt_len: int
+        the length of the filter
+
+    Returns:
+        rfs: dict
+            keys: str cell_file
+            vals: dict
+                keys: str stim_type
+                vals: ndarray (N,C,H,W)
+                    the stas for each cell within the cell file
+    """
+    rfs = dict()
+    keys = list(mem_pots.keys())
+    if verbose:
+        print("Calculating Interneuron Receptive Fields")
+        keys = tqdm(keys)
+    for cell_file in keys:
+        rfs[cell_file] = dict()
+        for stim_key in mem_pots[cell_file].keys():
+            rfs[cell_file][stim_key] = []
+            mem_pot_arr = mem_pots[cell_file][stim_key]
+            stim = stims[cell_file][stim_key]
+            stim = scipy.stats.zscore(stim)
+            prepped_stim = tdrstim.rolling_window(stim, filt_len)
+            for ci,mem_pot in enumerate(mem_pots[cell_file][stim_key]):
+                # Get Cell Receptive Field
+                zscored_mem_pot = scipy.stats.zscore(mem_pot).squeeze()
+                sta = tdrutils.revcor(prepped_stim, zscored_mem_pot, to_numpy=True)
+                rfs[cell_file][stim_key].append(sta)
+        rfs[cell_file][stim_key] = np.asarray(rfs[cell_file][stim_key])
+    return rfs
+
+def get_model_rfs(model, data_frame,verbose=False):
+    """
+    Searches through each entry in the data frame and computes an STA for the model unit
+    in that entry. Returns a dict containing the STAs.
+
+    model: torch nn.Module
+    data_frame: pandas DataFrame
+        Necessary Columns: 
+            'layer',
+            'chan',
+            'row',
+            'col'
+
+    Returns:
+        rfs: dict
+            keys: tuple (layer,chan,row,col)
+            vals: ndarray (C,H,W)
+                the sta of the model unit
+    """
+    rfs = dict()
+    rng = range(len(data_frame))
+    if verbose:
+        print("Calculating Model Receptive Fields")
+        rng = tqdm(rng)
+    for i in rng:
+        layer, chan, row, col = data_frame.loc[:,['layer','chan','row','col']].iloc[i]
+        cell_idx = (chan,row,col)
+        unit_id = (layer,chan,row,col)
+        if unit_id in rfs:
+            continue
+        chans = model.chans
+        shapes = model.shapes
+        layer1 = {'sequential.'+str(i) for i in range(5)}
+        layer_shape = (chans[0],*shapes[0]) if layer in layer1 else (chans[1],*shapes[1])
+        sta = get_sta(model, layer=layer, cell_index=cell_idx, layer_shape=layer_shape,
+                                                                       n_samples=20000,
+                                                                       to_numpy=True)
+
+        rfs[unit_id] = sta
+    return rfs
+
+
 def get_intr_cors(model, layers=['sequential.0', 'sequential.6'], stim_keys={"boxes"},
-                                                             files=None,verbose=True):
+                                                             files=None,ret_rfs=False,
+                                                             verbose=True):
     """
     Gets and returns a DataFrame of the interneuron correlations with the model.
 
     model - torch Module
     layers - list of str
         names of layers to be correlated with interneurons
+    stim_keys - set of str
+        the stim types you would like to correlate with. 
+        Options are generally boxes and lines
+    files - list of str or None
+        the names of the files you would like to use
+    ret_rfs - bool
+        the sta of both the interneuron and the most correlated model unit
+        are returned if this is true
     """
     if verbose:
         print("Reading data for interneuron correlations...")
@@ -451,10 +552,19 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'], stim_keys={"bo
     interneuron_data = tdrdatas.load_interneuron_data(root_path="~/interneuron_data",
                                                   filter_length=filt_len,files=files)
     stim_dict, mem_pot_dict, _ = interneuron_data
+    if ret_rfs:
+        real_rfs = get_intrneuron_rfs(stim_dict, mem_pot_dict, filt_len=model.img_shape[0],
+                                                                           verbose=verbose)
 
     table = tdrintr.get_intr_cors(model, stim_dict, mem_pot_dict, layers=set(layers),
                                                        batch_size=500, verbose=verbose)
-    return pd.DataFrame(table)
+    df = pd.DataFrame(table)
+    if ret_rfs:
+        dups = ['cell_file', 'cell_idx', 'layer']
+        temp_df = df.sort_values(by='cor', ascending=False).drop_duplicates(dups)
+        model_rfs = get_model_rfs(model, temp_df, verbose=verbose)
+        return df, real_rfs, model_rfs
+    return df
 
 def get_analysis_figs(folder, model, metrics=None, verbose=True):
     if metrics is not None:
