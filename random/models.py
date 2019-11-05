@@ -110,7 +110,6 @@ class KineticsChannelModel(nn.Module):
         self.noise = noise 
         self.bn_moment = bn_moment 
         self.centers = centers
-        
         self.bnorm = bnorm
         self.drop_p = drop_p
         self.scale_kinet = scale_kinet

@@ -31,7 +31,7 @@ def train(cfg):
         model.load_state_dict(checkpoint['model_state_dict'])
         start_epoch = checkpoint['epoch'] + 1
         
-    model.train()
+    model.eval()
     
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.Optimize.lr, 
                                  weight_decay=cfg.Optimize.l2)
@@ -87,6 +87,6 @@ def train(cfg):
                         'loss': epoch_loss}, save_path)
     
 if __name__ == "__main__":
-    cfg = get_custom_cfg('channel2')
+    cfg = get_custom_cfg('channel')
     print(cfg)
     train(cfg)

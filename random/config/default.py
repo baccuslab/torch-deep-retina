@@ -18,6 +18,7 @@ _C.Model.scale_kinet = True
 _C.Model.recur_seq_len = 8
 _C.Model.n_units = 5
 _C.Model.bias = True
+_C.Model.noise = 0.05
 _C.Model.linear_bias = True
 _C.Model.chans = [8,8]
 _C.Model.bn_moment = 0.01
