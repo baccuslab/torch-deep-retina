@@ -1,12 +1,10 @@
 import os
-import json
 import torch
 import torch.nn as nn
 from torch.utils.data.dataloader import DataLoader
 import numpy as np
 from tqdm import tqdm
 from collections import deque
-from models import *
 from data import *
 from evaluation import pearsonr_eval
 from utils import *
@@ -22,27 +20,8 @@ def train(cfg):
     
     device = torch.device('cuda:'+str(cfg.gpu))
     
-    if cfg.Model.name == 'KineticsChannelModel':
-        model = KineticsChannelModel(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
-                                  recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
-                                  noise=cfg.Model.noise, bias=cfg.Model.bias, 
-                                  linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
-                                  bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
-                                  img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
-    if cfg.Model.name == 'KineticsChannelModel2':
-        model = KineticsChannelModel2(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
-                                  recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
-                                  noise=cfg.Model.noise, bias=cfg.Model.bias, 
-                                  linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
-                                  softplus=cfg.Model.softplus, img_shape=cfg.img_shape, 
-                                  ksizes=cfg.Model.ksizes).to(device)
-    if cfg.Model.name == 'KineticsModel':
-        model = KineticsModel(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
-                          recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
-                          noise=cfg.Model.noise, bias=cfg.Model.bias, 
-                          linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
-                          bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
-                          img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
+    model = select_model(cfg, device)
+    
     start_epoch = 0
         
     loss_fn = nn.PoissonNLLLoss(log_input=False).to(device)
@@ -95,15 +74,7 @@ def train(cfg):
         
         print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}'.format(epoch, epoch_loss, pearson))
         
-        eval_history_path = os.path.join(cfg.save_path, cfg.exp_id, 'eval.json')
-        if not os.path.exists(eval_history_path):
-            eval_history = []
-        else: 
-            with open(eval_history_path, 'r') as f:
-                eval_history = json.load(f)
-        eval_history.append({'epoch' : epoch, 'pearson': pearson, 'loss': epoch_loss})
-        with open(eval_history_path, 'w') as f:
-                json.dump(eval_history, f)
+        update_eval_history(cfg, epoch, pearson, epoch_loss)
         
         if epoch % cfg.save_intvl == 0:
             save_path = os.path.join(cfg.save_path, cfg.exp_id, 

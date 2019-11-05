@@ -1,5 +1,5 @@
 exp_id: 'channel2'
 epoch: 150
 Model:
-    name: 'KineticsChannelModel2'
+    name: 'KineticsChannelModelLayerNorm'
     checkpoint: ''
