@@ -1,8 +1,8 @@
 import os
+import json
 import torch
 import torch.nn as nn
 from torch.utils.data.dataloader import DataLoader
-from torch.utils.data.sampler import SequentialSampler
 import numpy as np
 from tqdm import tqdm
 from collections import deque
@@ -14,6 +14,12 @@ from config import get_default_cfg, get_custom_cfg
 
 def train(cfg):
     
+    if not os.path.exists(os.path.join(cfg.save_path, cfg.exp_id)):
+        os.mkdir(os.path.join(cfg.save_path, cfg.exp_id))
+        
+    with open(os.path.join(cfg.save_path, cfg.exp_id, 'cfg'), 'w') as f:
+        f.write(str(cfg))
+    
     device = torch.device('cuda:'+str(cfg.gpu))
     
     if cfg.Model.name == 'KineticsChannelModel':
@@ -23,6 +29,13 @@ def train(cfg):
                                   linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
                                   bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
                                   img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
+    if cfg.Model.name == 'KineticsChannelModel2':
+        model = KineticsChannelModel2(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
+                                  recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
+                                  noise=cfg.Model.noise, bias=cfg.Model.bias, 
+                                  linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
+                                  softplus=cfg.Model.softplus, img_shape=cfg.img_shape, 
+                                  ksizes=cfg.Model.ksizes).to(device)
     if cfg.Model.name == 'KineticsModel':
         model = KineticsModel(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
                           recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
@@ -32,23 +45,27 @@ def train(cfg):
                           img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
     start_epoch = 0
         
-    model.train()
-    
     loss_fn = nn.PoissonNLLLoss(log_input=False).to(device)
-    
-    optimizer = torch.optim.Adam(model.parameters(), lr=cfg.Optimize.lr, 
-                                 weight_decay=cfg.Optimize.l2)
     
     if cfg.Model.checkpoint != '':
         checkpoint = torch.load(cfg.Model.checkpoint, map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
-        start_epoch = checkpoint['epoch']
+        start_epoch = checkpoint['epoch'] + 1
+        
+    model.train()
+    
+    optimizer = torch.optim.Adam(model.parameters(), lr=cfg.Optimize.lr, 
+                                 weight_decay=cfg.Optimize.l2)
+    if cfg.Model.checkpoint != '':
+        checkpoint = torch.load(cfg.Model.checkpoint, map_location=device)
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     
     train_dataset = TrainDataset(cfg)
     batch_sampler = BatchRnnSampler(length=len(train_dataset), batch_size=cfg.Data.batch_size,
                                     seq_len=cfg.Model.recur_seq_len)
     train_data = DataLoader(dataset=train_dataset, batch_sampler=batch_sampler)
+    
+    validation_data =  DataLoader(dataset=ValidationDataset(cfg))
     
     for epoch in range(start_epoch, start_epoch + cfg.epoch):
         epoch_loss = 0
@@ -72,21 +89,25 @@ def train(cfg):
                 hs[0] = h_0[0].detach()
                 hs[1] = deque([h.detach() for h in h_0[1]], maxlen=model.seq_len)
                 
-        epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size
+        epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size / cfg.Model.recur_seq_len
         
-        validation_data =  DataLoader(dataset=ValidationDataset(cfg))
         pearson = pearsonr_eval(model, validation_data, cfg.Model.n_units, device)
         
-        print('epoch: {}, loss: {}, pearson correlation: {}'.format(epoch, epoch_loss, pearson))
+        print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}'.format(epoch, epoch_loss, pearson))
         
-        if epoch%cfg.save_intvl == 0:
-            try:
-                os.mkdir(os.path.join(cfg.save_path, cfg.exp_id))
-                print("Directory Created ") 
-            except FileExistsError:
-                pass
+        eval_history_path = os.path.join(cfg.save_path, cfg.exp_id, 'eval.json')
+        if not os.path.exists(eval_history_path):
+            eval_history = []
+        else: 
+            with open(eval_history_path, 'r') as f:
+                eval_history = json.load(f)
+        eval_history.append({'epoch' : epoch, 'pearson': pearson, 'loss': epoch_loss})
+        with open(eval_history_path, 'w') as f:
+                json.dump(eval_history, f)
+        
+        if epoch % cfg.save_intvl == 0:
             save_path = os.path.join(cfg.save_path, cfg.exp_id, 
-                                     'epoch_{}_loss_{}_pearson_{}'
+                                     'epoch_{:03d}_loss_{:.2f}_pearson_{:.4f}'
                                      .format(epoch, epoch_loss, pearson)+'.pth')
 
             torch.save({'epoch': epoch,
@@ -95,5 +116,6 @@ def train(cfg):
                         'loss': epoch_loss}, save_path)
     
 if __name__ == "__main__":
-    cfg = get_custom_cfg('channel')
+    cfg = get_custom_cfg('channel2')
+    print(cfg)
     train(cfg)

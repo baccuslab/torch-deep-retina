@@ -1,4 +1,5 @@
 exp_id: 'channel'
+epoch: 150
 Model:
     name: 'KineticsChannelModel'
-    checkpoint: '/home/xhding/saved_model/channel/epoch_45_loss_-23.87857483384013_pearson_0.3579518903352822.pth'
+    checkpoint: '/home/xhding/saved_model/channel/epoch_46.pth'

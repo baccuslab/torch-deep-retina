@@ -11,7 +11,7 @@ _C.save_intvl = 5
 _C.save_path = '/home/xhding/saved_model'
 
 _C.Model = CfgNode()
-_C.Model.name = 'KineticsModel'
+_C.Model.name = 'KineticsChannelModel'
 _C.Model.checkpoint = ''
 _C.Model.drop_p = 0.
 _C.Model.scale_kinet = True

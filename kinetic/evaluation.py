@@ -20,4 +20,5 @@ def pearsonr_eval(model, data, n_units, device):
         val_targ = np.stack(val_targ, axis=0)
         for cell in range(n_units):
             pearsons.append(pearsonr(val_pred[:,cell],val_targ[:,cell])[0])
+        model.train()
         return np.array(pearsons).mean()
