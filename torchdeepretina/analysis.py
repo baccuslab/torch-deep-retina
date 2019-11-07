@@ -485,7 +485,7 @@ def get_intrneuron_rfs(stims, mem_pots, filt_len=40,verbose=False):
         rfs[cell_file][stim_key] = np.asarray(rfs[cell_file][stim_key])
     return rfs
 
-def get_model_rfs(model, data_frame,verbose=False):
+def get_model_rfs(model, data_frame, verbose=False):
     """
     Searches through each entry in the data frame and computes an STA for the model unit
     in that entry. Returns a dict containing the STAs.
@@ -500,7 +500,8 @@ def get_model_rfs(model, data_frame,verbose=False):
 
     Returns:
         rfs: dict
-            keys: tuple (layer,chan,row,col)
+            keys: tuple (layer,chan)
+                layer is a str and chan is an int
             vals: ndarray (C,H,W)
                 the sta of the model unit
     """
@@ -512,23 +513,25 @@ def get_model_rfs(model, data_frame,verbose=False):
     for i in rng:
         layer, chan, row, col = data_frame.loc[:,['layer','chan','row','col']].iloc[i]
         cell_idx = (chan,row,col)
-        unit_id = (layer,chan,row,col)
+        unit_id = (layer,chan)
         if unit_id in rfs:
             continue
         chans = model.chans
         shapes = model.shapes
-        layer1 = {'sequential.'+str(i) for i in range(5)}
-        layer_shape = (chans[0],*shapes[0]) if layer in layer1 else (chans[1],*shapes[1])
-        sta = get_sta(model, layer=layer, cell_index=cell_idx, layer_shape=layer_shape,
-                                                                       n_samples=20000,
-                                                                       to_numpy=True)
+        layer1_names = {'sequential.'+str(i) for i in range(5)}
+        layer_shape = (chans[0],*shapes[0]) if layer in layer1_names else (chans[1],*shapes[1])
+        sta = compute_sta(model, layer=layer, cell_index=cell_idx, layer_shape=layer_shape,
+                                                                       n_samples=10000,
+                                                                       contrast=1,
+                                                                       to_numpy=True,
+                                                                       verbose=False)
 
         rfs[unit_id] = sta
     return rfs
 
-
 def get_intr_cors(model, layers=['sequential.0', 'sequential.6'], stim_keys={"boxes"},
-                                                             files=None,ret_rfs=False,
+                                                             files=None,ret_real_rfs=False, 
+                                                             ret_model_rfs=False,
                                                              verbose=True):
     """
     Gets and returns a DataFrame of the interneuron correlations with the model.
@@ -541,9 +544,10 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'], stim_keys={"bo
         Options are generally boxes and lines
     files - list of str or None
         the names of the files you would like to use
-    ret_rfs - bool
-        the sta of both the interneuron and the most correlated model unit
-        are returned if this is true
+    ret_real_rfs - bool
+        the sta of the interneuron are returned if this is true
+    ret_model_rfs - bool
+        the sta of the most correlated model unit are returned if this is true
     """
     if verbose:
         print("Reading data for interneuron correlations...")
@@ -552,18 +556,23 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'], stim_keys={"bo
     interneuron_data = tdrdatas.load_interneuron_data(root_path="~/interneuron_data",
                                                   filter_length=filt_len,files=files)
     stim_dict, mem_pot_dict, _ = interneuron_data
-    if ret_rfs:
+    if ret_real_rfs:
         real_rfs = get_intrneuron_rfs(stim_dict, mem_pot_dict, filt_len=model.img_shape[0],
                                                                            verbose=verbose)
 
     table = tdrintr.get_intr_cors(model, stim_dict, mem_pot_dict, layers=set(layers),
                                                        batch_size=500, verbose=verbose)
     df = pd.DataFrame(table)
-    if ret_rfs:
-        dups = ['cell_file', 'cell_idx', 'layer']
+    if ret_model_rfs:
+        dups = ['cell_file', 'cell_idx']
         temp_df = df.sort_values(by='cor', ascending=False).drop_duplicates(dups)
         model_rfs = get_model_rfs(model, temp_df, verbose=verbose)
+    if ret_real_rfs and ret_model_rfs:
         return df, real_rfs, model_rfs
+    elif ret_real_rfs:
+        return df, real_rfs
+    elif ret_model_rfs:
+        return df, model_rfs
     return df
 
 def get_analysis_figs(folder, model, metrics=None, verbose=True):
