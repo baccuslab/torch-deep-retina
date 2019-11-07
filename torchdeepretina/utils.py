@@ -292,6 +292,8 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, t
         print("layer:", layer)
     requires_grad(model, False)
     device = next(model.parameters()).get_device()
+    prev_grad_state = torch.is_grad_enabled() 
+    torch.set_grad_enabled(True)
 
     if model.recurrent:
         batch_size = 1
@@ -334,6 +336,7 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, t
         fx.backward()
     hook_handle.remove()
     requires_grad(model, True)
+    torch.set_grad_enabled(prev_grad_state) 
     if to_numpy:
         return X.grad.data.cpu().numpy()
     else:
@@ -341,7 +344,7 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, t
 
 def compute_sta(model, layer, cell_index, layer_shape=None, batch_size=500, contrast=1, 
                                                          n_samples=10000,to_numpy=True, 
-                                                         verbose=True):
+                                                         verbose=True, X=None):
     """
     Computes the STA using the average of instantaneous receptive 
     fields (gradient of output with respect to input)
@@ -352,8 +355,8 @@ def compute_sta(model, layer, cell_index, layer_shape=None, batch_size=500, cont
     layer
     """
     # generate some white noise
-    X = tdrstim.concat(tdrstim.white(n_samples, contrast=contrast))
-    #X = tdrstim.concat(contrast*np.random.randn(n_samples,50,50),nh=model.img_shape[0])
+    if X is None:
+        X = tdrstim.concat(contrast*np.random.randn(n_samples, *model.img_shape[1:]))
     X = torch.FloatTensor(X)
     X.requires_grad = True
 
