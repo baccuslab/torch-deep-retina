@@ -124,38 +124,35 @@ def reversing_grating(model, size=5, phase=0., filt_depth=40):
     (fig, (ax0,ax1)) = figs
     return (fig, (ax0,ax1)), X, resp
 
-def contrast_adaptation(model, c0, c1, tot_dur=150, resp_repeats=10, filt_depth=40):
+def contrast_adaptation(model, c0=0.7, c1=.1, tot_dur=300, filt_depth=40, nx=50):
     """Step change in contrast"""
 
     # the contrast envelope
-    half_dur = int(tot_dur//2)
-    flicker_1 = tdrstim.repeat_white(half_dur, nx=50, contrast=c0, n_repeats=3)
-    flicker_2 = tdrstim.repeat_white(half_dur, nx=50, contrast=c1, n_repeats=3)
-    envelope = np.concatenate([flicker_1, flicker_2], axis=0)
-    envelope += c0
+    qrtr_dur = int((tot_dur-filt_depth)//4)
+    remainder = (tot_dur-filt_depth)%4
+    flicker_1 = tdrstim.repeat_white(filt_depth+qrtr_dur, nx=nx, contrast=c0, n_repeats=3)
+    flicker_2 = tdrstim.repeat_white(qrtr_dur*2, nx=nx, contrast=c1, n_repeats=3)
+    flicker_3 = tdrstim.repeat_white(qrtr_dur+remainder, nx=nx, contrast=c0, n_repeats=3)
+    envelope = np.concatenate([flicker_1, flicker_2, flicker_3], axis=0)
 
     # generate a bunch of responses to random noise with the given contrast envelope
-    responses = []
     with torch.no_grad():
-        for _ in trange(resp_repeats):
-            x = torch.from_numpy(tdrstim.concat(np.random.randn(*envelope.shape) * envelope, 
+        x = torch.from_numpy(tdrstim.concat(np.random.randn(*envelope.shape) * envelope, 
                                                                   nh=filt_depth)).to(DEVICE)
-            if model.recurrent:
-                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
-                resps = []
-                for i in range(x.shape[0]):
-                    resp, hs = model(x[i:i+1], hs)
-                    resps.append(resp)
-                resp = torch.cat(resps, dim=0)
-            else:
-                resp = model(x)
-            responses.append(resp.cpu().detach().numpy())
-
-    responses = np.asarray(responses)
-    figs = viz.response1D(envelope[40:, 0, 0], responses.mean(axis=0))
+        if model.recurrent:
+            hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+            resps = []
+            for i in range(x.shape[0]):
+                resp, hs = model(x[i:i+1], hs)
+                resps.append(resp)
+            resp = torch.cat(resps, dim=0)
+        else:
+            resp = model(x)
+    response = resp.detach().cpu().numpy()
+    figs = viz.response1D(envelope[40:, 0, 0], response)
     (fig, (ax0,ax1)) = figs
 
-    return (fig, (ax0,ax1)), envelope, responses
+    return (fig, (ax0,ax1)), envelope, response
 
 def oms_random_differential(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=8, background_velocity=.3, foreground_velocity=.5, seed=None, bar_size=2, inner_bar_size=None, filt_depth=40):
     """
@@ -841,22 +838,24 @@ def filter_and_nonlinearity(model, contrast, layer_name='sequential.0',
                                                     nonlinearity_type='bin', 
                                                     filt_depth=40, sta=None, 
                                                     batch_size=2000,
+                                                    n_samples=10000,
                                                     verbose=False):
     # Computing STA
+    stimulus = tdrstim.repeat_white(n_samples,nx=model.img_shape[1],contrast=contrast,
+                                                                          n_repeats=3)
+    stimulus = tdrstim.rolling_window(stimulus, model.img_shape[0])
     if sta is None:
         if verbose:
             print("Calculating STA with contrast:", contrast)
         sta = tdrutils.compute_sta(model, contrast=contrast, layer=layer_name, 
-                                                              cell_index=unit_index, 
-                                                              n_samples=10000, 
-                                                              batch_size=batch_size,
-                                                              to_numpy=True, 
-                                                              verbose=verbose)
-
+                                                         cell_index=unit_index,
+                                                         n_samples=n_samples,
+                                                         X=stimulus,
+                                                         batch_size=batch_size,
+                                                         to_numpy=True,
+                                                         verbose=verbose)
     if verbose:
         print("Normalizing filter and collecting linear response")
-    stimulus = tdrstim.repeat_white(9040, nx=50, contrast=contrast,n_repeats=3)
-    stimulus = tdrstim.rolling_window(stimulus, filt_depth)
     normed_sta, theta, error = normalize_filter(sta, stimulus, contrast, batch_size=batch_size)
     filtered_stim = tdrutils.linear_response(normed_sta, stimulus, batch_size=batch_size,
                                                                       to_numpy=True)
@@ -890,13 +889,13 @@ def filter_and_nonlinearity(model, contrast, layer_name='sequential.0',
     _, temporal = ft.decompose(normed_sta)
     temporal /= 0.01  # Divide by dt for y-axis to be s^{-1}
 
-    x = np.linspace(np.min(filtered_stim), np.max(filtered_stim), 40)
+    x = np.linspace(np.min(filtered_stim), np.max(filtered_stim), )
     nonlinear_prediction = nonlinearity.predict(x)
 
-    return time, temporal, x, nonlinear_prediction
+    return time, temporal, x, nonlinear_prediction, nonlinearity
 
-def contrast_fig(model, contrasts, layer_name=None, unit_index=0, verbose=False, 
-                                                         nonlinearity_type='bin'):
+def contrast_fig(model, contrasts=[0.4,2.4], layer_name=None, unit_index=0, verbose=False,
+                                                                 nonlinearity_type='bin'):
     """
     Creates figure 3A from "Deeplearning Models Reveal..." paper. Much of this code has 
     been repurposed from Lane and Niru's notebooks. Significant chance of bugs...
@@ -920,12 +919,14 @@ def contrast_fig(model, contrasts, layer_name=None, unit_index=0, verbose=False,
     tup = filter_and_nonlinearity(model, low_contr, layer_name=layer_name,
                                       unit_index=unit_index, verbose=verbose,
                                       nonlinearity_type=nonlinearity_type)
-    low_time, low_temporal, low_x, low_nl = tup
+    low_time, low_temporal, low_x, low_nl, low_nonlinearity = tup
+    #low_x = np.linspace(np.min(low_x)-2, np.max(low_x), 50)
+    #low_nl = low_nonlinearity.predict(low_x)
 
     tup = filter_and_nonlinearity(model, high_contr, layer_name=layer_name,
                                       unit_index=unit_index, verbose=verbose,
                                       nonlinearity_type=nonlinearity_type)
-    high_time, high_temporal, high_x, high_nl = tup
+    high_time, high_temporal, high_x, high_nl, high_nonlinearity = tup
 
     # Assure correct sign of decomp
     mean_diff = ((high_temporal-low_temporal)**2).mean()
@@ -936,14 +937,19 @@ def contrast_fig(model, contrasts, layer_name=None, unit_index=0, verbose=False,
     # Plot the decomp
     fig = plt.figure(figsize=(8, 2))
     plt.subplot(1, 2, 1)
-    plt.plot(low_time, low_temporal, label='Contrast = %02d%%' %(0.35 * contrasts[0] * 100), 
-                                                                                    color='g')
-    plt.plot(high_time, high_temporal, label='Contrast = %02d%%' %(0.35 * contrasts[1] * 100), 
-                                                                                    color='b')
+    time = low_time[5:]
+    temporal = low_temporal[5:]
+    plt.plot(time,temporal,label='Contrast = %02d%%'%(contrasts[0]*100), color='g',
+                                                                       linewidth=3)
+    time = high_time[5:]
+    temporal = high_temporal[5:]
+    plt.plot(time, temporal, label='Contrast = %02d%%'%(contrasts[1]*100), color='b',
+                                                                         linewidth=3)
     plt.xlabel('Delay (s)', fontsize=14)
     plt.ylabel('Filter ($s^{-1}$)', fontsize=14)
     plt.text(0.2, -30, 'Low', color='g', fontsize=18)
     plt.text(0.2, -15, 'High', color='b', fontsize=18)
+    plt.xticks(ticks=[0.0,0.3])
     
     # plt.legend()
     ax1 = plt.gca()
@@ -953,26 +959,29 @@ def contrast_fig(model, contrasts, layer_name=None, unit_index=0, verbose=False,
     ax1.yaxis.set_ticks_position('left')
     
     plt.subplot(1, 2, 2)
+    plt.locator_params(axis='x', nbins=3)
     plt.plot(high_x, len(high_x) * [0], 'k--', alpha=0.4)
     plt.plot(high_x, high_nl, linewidth=3, color='b')
     plt.plot(low_x, low_nl, linewidth=3, color='g')
     plt.xlabel('Filtered Input', fontsize=14)
     plt.ylabel('Output (Hz)', fontsize=14)
+    plt.xticks(ticks=[-5, 5])
+    plt.xlim([-10, 10])
     ax1 = plt.gca()
     ax1.spines['right'].set_visible(False)
     ax1.spines['top'].set_visible(False)
     ax1.xaxis.set_ticks_position('bottom')
     ax1.yaxis.set_ticks_position('left')
-    majorLocator = MultipleLocator(1)
-    majorFormatter = FormatStrFormatter('%d')
-    minorLocator = MultipleLocator(0.5)
+    #majorLocator = MultipleLocator(1)
+    #majorFormatter = FormatStrFormatter('%d')
+    #minorLocator = MultipleLocator(0.5)
     
-    ax1.xaxis.set_major_locator(majorLocator)
-    ax1.xaxis.set_major_formatter(majorFormatter)
-    ax1.xaxis.set_minor_locator(minorLocator)
+    #ax1.xaxis.set_major_locator(majorLocator)
+    #ax1.xaxis.set_major_formatter(majorFormatter)
+    #ax1.xaxis.set_minor_locator(minorLocator)
     return fig
 
-def nonlinearity_fig(model, contrast, layer_name=None, unit_index=0, verbose=False, 
+def nonlinearity_fig(model, contrast=0.25, layer_name=None, unit_index=0, verbose=False, 
                                                          nonlinearity_type='bin'):
     """
     Creates figure 2D from "Deeplearning Models Reveal..." paper. Much of this code has 
@@ -996,25 +1005,20 @@ def nonlinearity_fig(model, contrast, layer_name=None, unit_index=0, verbose=Fal
     tup = filter_and_nonlinearity(model, contrast, layer_name=layer_name,
                                       unit_index=unit_index, verbose=verbose,
                                       nonlinearity_type=nonlinearity_type)
-    resp_time, temporal_resp, resp_x, resp = tup
+    resp_time, temporal_resp, resp_x, resp, nonlinearity = tup
 
     fig = plt.figure(figsize=(8, 2))
     plt.plot(resp_x, len(resp_x) * [0], 'k--', alpha=0.4)
-    plt.plot(resp_x, resp, linewidth=3, color='b')
+    plt.plot(resp_x, resp, linewidth=3, color='k')
     plt.xlabel('Filtered Input', fontsize=14)
     plt.ylabel('Output (Hz)', fontsize=14)
+    plt.xticks(ticks=[])
+    plt.yticks(ticks=[])
     ax1 = plt.gca()
     ax1.spines['right'].set_visible(False)
     ax1.spines['top'].set_visible(False)
-    ax1.xaxis.set_ticks_position('bottom')
-    ax1.yaxis.set_ticks_position('left')
-    majorLocator = MultipleLocator(1)
-    majorFormatter = FormatStrFormatter('%d')
-    minorLocator = MultipleLocator(0.5)
-    
-    ax1.xaxis.set_major_locator(majorLocator)
-    ax1.xaxis.set_major_formatter(majorFormatter)
-    ax1.xaxis.set_minor_locator(minorLocator)
+    ax1.spines['left'].set_visible(False)
+    ax1.spines['bottom'].set_visible(False)
     return fig
 
 #########################################################################################################
@@ -1040,12 +1044,12 @@ def retinal_phenomena_figs(model, verbose=True):
     fig_names.append("reversing_grating")
     metrics['reversing_grating'] = None
 
-    (fig, (_)), _, _ = contrast_adaptation(model, .35, .05, filt_depth=filt_depth)
+    contrasts = [0.1, 0.7]
+    (fig, (_)), _, _ = contrast_adaptation(model, contrasts[1], contrasts[0], filt_depth=filt_depth)
     figs.append(fig)
     fig_names.append("contrast_adaptation")
     metrics['contrast_adaptation'] = None
 
-    contrasts = [0.05, 0.35]
     fig = contrast_fig(model, contrasts, unit_index=0, nonlinearity_type="bin", verbose=verbose)
     figs.append(fig)
     fig_names.append("fast_contr_adaptation")
