@@ -422,3 +422,89 @@ def savemov(movies, subplots, filename, cmaps, T=None, clim=None, fps=15, figsiz
     animation = VideoClip(animate, duration=T * dt)
     # animation.write_gif(filename + '.gif', fps=fps)
     animation.write_videofile(filename + '.mp4', fps=fps)
+
+def plot_rf(sta, save_name):
+    """
+    Plots the temporal and spatial decomposition of the argued STA
+
+    sta: ndarray (C,H,W)
+    save_name: str
+        figure is saved to the current directory under the save name
+    """
+    spat, temp = ft.decompose(sta)
+    fig=plt.figure(figsize=(9,6), dpi= 80, facecolor='w', edgecolor='k')
+    plt.clf()
+    gridspec.GridSpec(6,1)
+
+    plt.subplot2grid((6,1),(5,0))
+    plt.plot(temp,'k',linewidth=5)
+    plt.plot(np.arange(len(temp)), np.zeros(len(temp)), 'k--',linewidth=1)
+    ax = plt.gca()
+    ax.set_xticks([])
+    ax.set_xticklabels([])
+    ax.set_yticks([])
+    ax.set_yticklabels([])
+    for k in ax.spines.keys():
+        ax.spines[k].set_visible(False)
+
+    plt.subplot2grid((6,1),(0,0),rowspan=5)
+    plt.imshow(spat.squeeze(), cmap = 'seismic', 
+                    clim=[-np.max(abs(spat)), np.max(abs(spat))])
+
+    plt.savefig(save_name)
+
+def plot_real_rfs(rfs, save_root="realrfs", save_ext=".png", ret_figs=False):
+    """
+    Plots the temporal and spatial decomposition of each sta contained in the rfs dict.
+    An rf dict with with the appropriate structure can be created using the get_real_rfs
+    function in the analysis.py package
+
+    rfs: dict
+        keys: str cell_file
+        vals: dict
+            keys: str stim_type
+            vals: ndarray (N, C, H, W)
+                the rfs should be a numpy array with neurons as the first dimension and the 
+                corresponding sta for the rest of the dimensions
+    """
+    figs = []
+    for cell_file in rfs.keys():
+        cell_file_name = cell_file.split("/")[-1].split(".")[0]
+        for stim_type in rfs[cell_file].keys():
+            for i,sta in enumerate(rfs[cell_file][stim_type]):
+                save_name = "{}_{}_{}_{}{}".format(save_root, cell_file_name, stim_type, i,
+                                                                                  save_ext)
+                fig = plot_rf(sta, save_name)
+                if ret_figs:
+                    figs.append(fig)
+    return figs
+
+def plot_model_rfs(rfs, save_root="modelrfs", save_ext=".png", ret_figs=False):
+    """
+    Plots the temporal and spatial decomposition of each sta contained in the rfs dict.
+    An rf dict with with the appropriate structure can be created using the get_model_rfs
+    function in the analysis.py package
+
+    rfs: dict
+        keys: str cell_file
+        vals: dict
+            keys: str stim_type
+            vals: ndarray (N, C, H, W)
+                the rfs should be a numpy array with neurons as the first dimension and the 
+                corresponding sta for the rest of the dimensions
+    """
+    figs = []
+    for tup in rfs.keys():
+        sta = rfs[tup]
+        layer,chan = tup
+        save_name = "{}_{}_{}{}".format(save_root, layer,chan, save_ext)
+        fig = plot_rf(sta, save_name)
+        if ret_figs:
+            figs.append(fig)
+    return figs
+
+
+
+
+
+
