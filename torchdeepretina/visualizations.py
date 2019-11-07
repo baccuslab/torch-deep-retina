@@ -496,8 +496,8 @@ def plot_model_rfs(rfs, save_root="modelrfs", save_ext=".png", ret_figs=False):
     figs = []
     for tup in rfs.keys():
         sta = rfs[tup]
-        layer,chan = tup
-        save_name = "{}_{}_{}{}".format(save_root, layer,chan, save_ext)
+        layer,chan,row,col = tup
+        save_name = "{}_{}_chan{}_row{}col{}{}".format(save_root, layer,chan,row,col, save_ext)
         fig = plot_rf(sta, save_name)
         if ret_figs:
             figs.append(fig)

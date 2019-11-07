@@ -506,6 +506,8 @@ def get_model_rfs(model, data_frame, verbose=False):
                 the sta of the model unit
     """
     rfs = dict()
+    layer1_dups = set() # Used to prevent duplicate calculations
+    layer1_names = {'sequential.'+str(i) for i in range(5)}
     rng = range(len(data_frame))
     if verbose:
         print("Calculating Model Receptive Fields")
@@ -513,12 +515,13 @@ def get_model_rfs(model, data_frame, verbose=False):
     for i in rng:
         layer, chan, row, col = data_frame.loc[:,['layer','chan','row','col']].iloc[i]
         cell_idx = (chan,row,col)
-        unit_id = (layer,chan)
-        if unit_id in rfs:
+        unit_id = (layer,chan,row,col)
+        if unit_id in rfs or (layer in layer1_names and (layer,chan) in layer1_dups):
             continue
+        elif layer in layer1_names:
+            layer1_dups.add((layer,chan))
         chans = model.chans
         shapes = model.shapes
-        layer1_names = {'sequential.'+str(i) for i in range(5)}
         layer_shape = (chans[0],*shapes[0]) if layer in layer1_names else (chans[1],*shapes[1])
         sta = compute_sta(model, layer=layer, cell_index=cell_idx, layer_shape=layer_shape,
                                                                        n_samples=10000,
