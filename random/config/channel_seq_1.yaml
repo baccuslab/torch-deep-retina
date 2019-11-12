@@ -1,0 +1,7 @@
+exp_id: 'channel_seq_1'
+gpu: 0
+epoch: 150
+Model:
+    name: 'KineticsChannelModel'
+    checkpoint: ''
+    recur_seq_len: 1

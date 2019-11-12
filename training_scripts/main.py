@@ -7,6 +7,7 @@ $ python3 general_training.py params=hyperparams.json ranges=hyperranges.json
 Defaults to hyperparams.json and hyperranges.json if no arguments are provided
 """
 import sys
+sys.path.insert(0, '/home/xhding/workspaces/torch-deep-retina/')
 import os
 import time
 import numpy as np
@@ -113,7 +114,7 @@ if __name__ == "__main__":
     hyper_search(hyps, hyp_ranges, keys, device)
     print("Total Execution Time:", time.time() - start_time)
     print("\n\nBeginning Analysis..")
-    dfs = analysis.analysis_pipeline(exp_folder, make_figs=True, verbose=True)
+    dfs = analysis_pipeline(exp_folder, make_figs=True, verbose=True)
     for k in dfs.keys():
         dfs[k].to_csv(os.path.join(exp_folder,k),sep="!",header=True,index=False)
 

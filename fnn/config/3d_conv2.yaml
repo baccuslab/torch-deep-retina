@@ -1,0 +1,11 @@
+exp_id: '3dconv2'
+img_shape: [50,50,50]
+gpu: 0
+Model:
+    name: 'BNCNN_3D'
+    ksizes: ([40,15,15],[1,11,11])
+    strides: ([1,1,1],[1,1,1])
+Data:
+    batch_size: 512
+Optimize:
+    trunc_intvl: 1

@@ -340,3 +340,82 @@ class KineticsChannelModelLayerNorm(nn.Module):
         fx = self.amacrine(fx)
         fx = self.ganglion(fx)
         return fx, [h0, h1]
+    
+class KineticsChannelModelInstanceNorm(nn.Module):
+    def __init__(self, drop_p=0, scale_kinet=True, recur_seq_len=8, n_units=5, 
+                 bias=True, linear_bias=True, chans=[8,8], softplus=True, 
+                 img_shape=(40,50,50), ksizes=(15,11), centers=None):
+        super(KineticsChannelModelInstanceNorm, self).__init__()
+        
+        self.n_units = n_units
+        self.chans = chans 
+        self.softplus = softplus 
+        self.bias = bias 
+        self.img_shape = img_shape 
+        self.ksizes = ksizes 
+        self.linear_bias = linear_bias 
+        self.centers = centers
+        self.drop_p = drop_p
+        self.scale_kinet = scale_kinet
+        self.seq_len = recur_seq_len
+        shape = self.img_shape[1:] # (H, W)
+        self.shapes = []
+        self.h_shapes = []
+
+        modules = []
+        modules.append(LinearStackedConv2d(self.img_shape[0],self.chans[0],
+                                           kernel_size=self.ksizes[0], abs_bnorm=False, 
+                                           bias=self.bias, drop_p=self.drop_p))
+        shape = update_shape(shape, self.ksizes[0])
+        self.shapes.append(tuple(shape))
+        n_states = 4
+        self.h_shapes.append((n_states, self.chans[0], shape[0]*shape[1]))
+        self.h_shapes.append((self.chans[0], shape[0]*shape[1]))
+        modules.append(nn.InstanceNorm2d(self.chans[0]))   
+        modules.append(nn.Softplus())
+        max_clamp = 10
+        modules.append(Clamp(0,max_clamp))
+        modules.append(Multiply(1/max_clamp))
+        modules.append(Reshape((-1, self.chans[0], shape[0] * shape[1])))
+        self.bipolar = nn.Sequential(*modules)
+
+        self.kinetics = Kinetics_channel(chan=self.chans[0])
+        
+        if scale_kinet:
+            self.kinet_scale = ScaleShift((self.seq_len*self.chans[0], shape[0]*shape[1]))
+
+        modules = []
+        modules.append(Reshape((-1,self.seq_len*self.chans[0], shape[0], shape[1])))
+        modules.append(LinearStackedConv2d(self.seq_len*self.chans[0],self.chans[1],
+                                           kernel_size=self.ksizes[1], abs_bnorm=False, 
+                                           bias=self.bias, drop_p=self.drop_p))
+        shape = update_shape(shape, self.ksizes[1])
+        self.shapes.append(tuple(shape))
+        modules.append(nn.InstanceNorm2d(self.chans[1]))  
+        modules.append(nn.ReLU())
+        self.amacrine = nn.Sequential(*modules)
+
+        modules = []
+        modules.append(Flatten())
+        modules.append(nn.Linear(self.chans[1]*shape[0]*shape[1], 
+                                 self.n_units, bias=self.linear_bias))
+        modules.append(nn.Softplus())
+        self.ganglion = nn.Sequential(*modules)
+
+    def forward(self, x, hs):
+        """
+        x - FloatTensor (B, C, H, W)
+        hs - list [(B,S,C,N),(D,B,C,N)]
+            First list element should be a torch FloatTensor of state population values.
+            Second element should be deque of activated population values over past D time steps
+        """
+        fx = self.bipolar(x)
+        fx, h0 = self.kinetics(fx, hs[0]) 
+        hs[1].append(fx)
+        h1 = hs[1]
+        fx = torch.cat(list(h1), dim=1) #(B,D*N)
+        if self.scale_kinet:
+            fx = self.kinet_scale(fx)
+        fx = self.amacrine(fx)
+        fx = self.ganglion(fx)
+        return fx, [h0, h1]

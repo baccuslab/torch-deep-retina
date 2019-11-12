@@ -30,6 +30,6 @@ _C.Data.batch_size = 512
 _C.Data.val_size = 30000
 
 _C.Optimize = CfgNode()
-_C.Optimize.trunc_intvl = 8
+_C.Optimize.trunc_intvl = 1
 _C.Optimize.lr = 1e-3
 _C.Optimize.l2 = 1e-4

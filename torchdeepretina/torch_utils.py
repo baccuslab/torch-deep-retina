@@ -1189,5 +1189,16 @@ class Kinetics_channel(nn.Module):
         new_pop[:, 2] = pop[:, 2] + dt * (- kfr - ksi + kfi + ksr)
         new_pop[:, 3] = pop[:, 3] + dt * (- ksr + ksi)
         return new_pop[:, 1], new_pop
+    
+class Temperal_Filter(nn.Module):
+    def __init__(self, tem_len, spatial):
+        super().__init__()
+        self.spatial = spatial
+        spatial_dims = np.ones(spatial).astype(np.int32).tolist()
+        self.filter = nn.Parameter(torch.rand(tem_len, *spatial_dims))
+
+    def forward(self, x):
+        out = (x * self.filter).sum(axis=-self.spatial-1)
+        return out
 
 

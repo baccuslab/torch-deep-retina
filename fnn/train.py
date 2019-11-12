@@ -22,15 +22,7 @@ def train(cfg):
     
     device = torch.device('cuda:'+str(cfg.gpu))
     
-    if cfg.Model.name == 'BN_CNN_Net':
-        model = BN_CNN_Net(n_units=cfg.Model.n_units, noise=cfg.Model.noise, chans=cfg.Model.chans, 
-                       bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
-                       img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
-    if cfg.Model.name == 'BNCNN_3D':
-        model = BNCNN_3D(n_units=cfg.Model.n_units, noise=cfg.Model.noise, chans=cfg.Model.chans, 
-                         bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
-                         img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes, 
-                         strides=cfg.Model.strides).to(device)
+    model = select_model(cfg, device)
         
     start_epoch = 0
     
@@ -73,15 +65,7 @@ def train(cfg):
         
         print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}'.format(epoch, epoch_loss, pearson))
         
-        eval_history_path = os.path.join(cfg.save_path, cfg.exp_id, 'eval.json')
-        if not os.path.exists(eval_history_path):
-            eval_history = []
-        else: 
-            with open(eval_history_path, 'r') as f:
-                eval_history = json.load(f)
-        eval_history.append({'epoch' : epoch, 'pearson': pearson, 'loss': epoch_loss})
-        with open(eval_history_path, 'w') as f:
-                json.dump(eval_history, f)
+        update_eval_history(cfg, epoch, pearson, epoch_loss)
         
         if epoch % cfg.save_intvl == 0:
             save_path = os.path.join(cfg.save_path, cfg.exp_id, 
@@ -94,6 +78,6 @@ def train(cfg):
                         'loss': epoch_loss}, save_path)
     
 if __name__ == "__main__":
-    cfg = get_custom_cfg('3d_conv')
+    cfg = get_custom_cfg('3d_conv2')
     print(cfg)
     train(cfg)

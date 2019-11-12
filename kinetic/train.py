@@ -87,6 +87,6 @@ def train(cfg):
                         'loss': epoch_loss}, save_path)
     
 if __name__ == "__main__":
-    cfg = get_custom_cfg('channel2')
+    cfg = get_custom_cfg('channel_instance')
     print(cfg)
     train(cfg)

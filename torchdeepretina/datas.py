@@ -47,8 +47,7 @@ class DataContainer():
         self.centers = data.centers
         self.stats = data.stats
 
-def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, cutout_width=None, 
-                                        norm_stats=None, data_path="~/experiments/data"):
+def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, cutout_width=None,                          norm_stats=None, data_path="/home/salamander/experiments/data"):
     """Loads an experiment from an h5 file on disk
 
     Parameters

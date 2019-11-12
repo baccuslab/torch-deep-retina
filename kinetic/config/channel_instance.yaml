@@ -1,0 +1,6 @@
+exp_id: 'channel_instance'
+gpu: 1
+epoch: 150
+Model:
+    name: 'KineticsChannelModelInstanceNorm'
+    checkpoint: ''

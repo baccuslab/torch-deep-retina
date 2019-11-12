@@ -34,6 +34,13 @@ def select_model(cfg, device):
                           bias=cfg.Model.bias, linear_bias=cfg.Model.linear_bias, 
                           chans=cfg.Model.chans, softplus=cfg.Model.softplus, 
                           img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
+    if cfg.Model.name == 'KineticsChannelModelInstanceNorm':
+        model = KineticsChannelModelInstanceNorm(
+                          drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
+                          recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
+                          bias=cfg.Model.bias, linear_bias=cfg.Model.linear_bias, 
+                          chans=cfg.Model.chans, softplus=cfg.Model.softplus, 
+                          img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
     if cfg.Model.name == 'KineticsModel':
         model = KineticsModel(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
                           recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
