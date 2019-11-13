@@ -6,6 +6,7 @@ import re
 import h5py
 import collections
 import pyret.filtertools as ft
+import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator, FormatStrFormatter
@@ -23,6 +24,11 @@ centers = {
                                 (17, 17), (25, 15)
                               ]
 }
+
+if torch.cuda.is_available():
+    DEVICE = torch.device('cuda:0')
+else:
+    DEVICE = torch.device('cpu')
 
 #If you want to use stimulus that isnt just boxes
 def prepare_stim(stim, stim_type):
@@ -442,6 +448,123 @@ def argmax_correlation(mem_pot, model_layer, ret_max_cor=False, abs_val=False, v
     if ret_max_cor:
         return best_idx, max_r
     return best_idx # (chan, row, col) of best correlated unit
+
+def model2model_cors(model1, model2, model1_layers={"sequential.2", "sequential.8"},
+                                          model2_layers={"sequential.2", "sequential.8"},
+                                          batch_size=500,  contrast=1.0, n_samples=5000, 
+                                          verbose=True):
+    """
+    Takes two models and compares the activations at each layer.  Returns a dict 
+    that can easily be converted into a pandas data frame.
+
+    model1 - torch Module
+    model2 - torch Module
+    model1_layers - set of strs
+        the layers of model 1 to be correlated
+    model2_layers - set of strs
+        the layers of model 2 to be correlated
+    batch_size: int
+        size of batches when performing computations on GPU
+    contrast: float
+        contrast of whitenoise stimulus for model input
+    n_samples: int
+        number of time points of stimulus for model input
+
+    returns:
+        intr_cors - dict
+                - mod1_layer: list
+                - mod1_chan: list
+                - mod1_row: list
+                - mod1_col: list
+                - mod2_layer: list
+                - mod2_chan: list
+                - mod2_row: list
+                - mod2_col: list
+                - contrast: list
+                - cor: list
+    """
+    intr_cors = {
+        "mod1_layer": [],
+        "mod1_chan": [],
+        "mod1_row": [],
+        "mod1_col": [],
+        "mod2_layer": [],
+        "mod2_chan": [],
+        "mod2_row": [],
+        "mod2_col": [],
+        "contrast": [],
+        "cor": [],
+    }
+    model1_cuda = next(model1.parameters()).is_cuda
+    model2_cuda = next(model2.parameters()).is_cuda
+    model2.cpu()
+
+    nx = min(model1.img_shape[1], model2.img_shape[1])
+    whitenoise = tdrstim.repeat_white(n_samples, nx=nx, contrast=contrast, n_repeats=3)
+
+    if verbose:
+        print("Collecting model1 response")
+    stim = tdrstim.spatial_pad(whitenoise, model1.img_shape[1])
+    stim = tdrstim.rolling_window(stim, model1.img_shape[0])
+    model1.to(DEVICE)
+    response1 = tdrutils.inspect(model1, stim, batch_size=batch_size, insp_keys=model1_layers,
+                                                               to_numpy=True, verbose=verbose)
+    model1.cpu()
+
+    if verbose:
+        print("Collecting model2 response")
+    stim = tdrstim.spatial_pad(whitenoise, model2.img_shape[1])
+    stim = tdrstim.rolling_window(stim, model2.img_shape[0])
+    model2.to(DEVICE)
+    response2 = tdrutils.inspect(model2, stim, batch_size=batch_size, insp_keys=model2_layers,
+                                                               to_numpy=True, verbose=verbose)
+    model2.cpu()
+
+    layer1_layers = {"sequential."+str(i) for i in range(6)}
+    layer2_layers = {"sequential."+str(i) for i in range(6,10)}
+    for mod1_layer in model1_layers:
+        if verbose:
+            print("Calculating Correlations for Model1 layer {}".format(mod1_layer))
+        mod1_resp = response1[mod1_layer]
+        if mod1_layer in layer1_layers:
+            mod1_resp = mod1_resp.reshape(-1, model1.chans[0], *model1.shapes[0])
+        elif mod1_layer in layer2_layers:
+            mod1_resp = mod1_resp.reshape(-1, model1.chans[1], *model1.shapes[1])
+        else:
+            mod1_resp = mod1_resp.reshape(-1,mod1_resp.shape[1],1,1) # GCs as (t,n_units,1,1)
+        for mod1_chan in range(mod1_resp.shape[1]):
+            mod1_row_range = range(mod1_resp.shape[2])
+            if verbose:
+                print("Channel {}/{}".format(mod1_chan, mod1_resp.shape[1]))
+                mod1_row_range = tqdm(mod1_row_range)
+            for mod1_row in mod1_row_range:
+                for mod1_col in range(mod1_resp.shape[3]):
+                    mem_pot = mod1_resp[:,mod1_chan, mod1_row, mod1_col]
+                    for mod2_layer in model2_layers:
+                        mod2_resp = response2[mod2_layer]
+                        if mod2_layer in layer1_layers:
+                            mod2_resp = mod2_resp.reshape(-1, model1.chans[0], *model1.shapes[0])
+                        elif mod2_layer in layer2_layers:
+                            mod2_resp = mod2_resp.reshape(-1, model1.chans[1], *model1.shapes[1])
+                        else:
+                            mod2_resp = mod2_resp.reshape(-1,mod2_resp.shape[1],1,1) # GCs
+                        for mod2_chan in range(mod2_resp.shape[1]):
+                            r, idx = argmax_correlation_recurse_helper(mem_pot, mod2_resp,
+                                                                shape=mod2_resp.shape[2:],
+                                                                idx=(mod2_chan,),
+                                                                verbose=verbose)
+                            _, mod2_row, mod2_col = idx
+                            intr_cors["mod1_layer"].append(mod1_layer)
+                            intr_cors["mod1_chan"].append(mod1_chan)
+                            intr_cors["mod1_row"].append(mod1_row)
+                            intr_cors["mod1_col"].append(mod1_col)
+                            intr_cors["mod2_layer"].append(mod2_layer)
+                            intr_cors["mod2_chan"].append(mod2_chan)
+                            intr_cors["mod2_row"].append(mod2_row)
+                            intr_cors["mod2_col"].append(mod2_col)
+                            intr_cors["contrast"].append(contrast)
+                            intr_cors["cor"].append(r)
+    return intr_cors
 
 def get_intr_cors(model, stim_dict, mem_pot_dict, layers={"sequential.2", "sequential.8"}, 
                                                             batch_size=500, verbose=False):
