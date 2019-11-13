@@ -532,6 +532,35 @@ def get_model_rfs(model, data_frame, verbose=False):
         rfs[unit_id] = sta
     return rfs
 
+def get_model2model_cors(model1, model2, model1_layers={"sequential.0", "sequential.6"},
+                                          model2_layers={"sequential.0", "sequential.6"},
+                                          contrast=1, n_samples=5000,
+                                          ret_model1_rfs=False,
+                                          ret_model2_rfs=False,
+                                          verbose=True):
+    """
+    Gets and returns a DataFrame of the best activation correlations between the two models.
+
+    model1 - torch Module
+    model2 - torch Module
+    layers - set of str
+        names of layers to be correlated with interneurons
+    ret_model_rfs - bool
+        the sta of the model are returned if this is true
+    """
+    model1.eval()
+    model2.eval()
+    table = tdrintr.model2model_cors(model1,model2, model1_layers=model1_layers, 
+                                                        model2_layers=model2_layers,
+                                                        batch_size=500, contrast=contrast,
+                                                        n_samples=n_samples,verbose=verbose)
+    df = pd.DataFrame(table)
+    if ret_model1_rfs:
+        print("Receptive Field Calculations not implemented yet...")
+    if ret_model2_rfs:
+        print("Receptive Field Calculations not implemented yet...")
+    return df
+
 def get_intr_cors(model, layers=['sequential.0', 'sequential.6'], stim_keys={"boxes"},
                                                              files=None,ret_real_rfs=False, 
                                                              ret_model_rfs=False,
