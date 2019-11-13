@@ -255,6 +255,10 @@ class Trainer:
             stats_string = 'Epoch ' + str(epoch) + " -- " + hyps['save_folder'] + "\n"
             starttime = time.time()
 
+            if 'chan_drop_layer' in hyps and hyps['chan_drop_layer'] is not None:
+                print("Dropping channels from layer", hyps['chan_drop_layer'])
+                model = tdr.chan_drop.drop_chans(model, hyps, data_distr, verbose=True)
+
             # Train Loop
             for i,(x,label) in enumerate(data_distr.train_sample()):
                 optimizer.zero_grad()
@@ -385,7 +389,8 @@ class Trainer:
             for k in hyps.keys():
                 if k not in save_dict:
                     save_dict[k] = hyps[k]
-            tdrutils.save_checkpoint(save_dict, hyps['save_folder'], 'test', del_prev=True)
+            del_prev = not hyps['save_every_epoch']
+            tdrutils.save_checkpoint(save_dict, hyps['save_folder'], 'test', del_prev=del_prev)
 
             # Print Epoch Stats
             gc.collect()
