@@ -144,7 +144,140 @@ def linear_response(filt, stim, batch_size=1000, to_numpy=True):
         resp = resp.detach().numpy()
     return resp
 
-def inspect(model, X, insp_keys={}, batch_size=None, to_numpy=True, verbose=False):
+#def integrated_gradient(model, X, layer='sequential.2', gc_idx=None, alpha_steps=5,
+#                                                    batch_size=500, verbose=False):
+#    """
+#    Inputs:
+#        model: PyTorch Deep Retina models
+#        X: Input stimuli ndarray or torch FloatTensor (T,D,H,W)
+#        layer: str layer name
+#        gc_idx: ganglion cell of interest
+#            if None, uses all cells
+#        alpha_steps: int, integration steps
+#        batch_size: step size when performing computations on GPU
+#    Outputs:
+#        intg_grad: Integrated Gradients (avg_grad*activs)
+#        avg_grad: Averaged Gradients
+#        activs: Activation of the argued layer
+#        gc_activs: Activation of the final layer
+#    """
+#    requires_grad(model, False) # Model gradient unnecessary for integrated gradient
+#    layer1_layers = {"sequential."+str(i) for i in range(6)}
+#    layer_idx = 0 if layer in layer1_layers else 1
+#    avg_grad = torch.zeros(len(X), model.chans[layer_idx], *model.shapes[layer_idx])
+#    activs = torch.zeros_like(avg_grad)
+#    gc_activs = None
+#    model.to(DEVICE)
+#    X = torch.FloatTensor(X)
+#    X.requires_grad = True
+#    idxs = torch.arange(len(X)).long()
+#    delta_alpha = 1/(alpha_steps-1)
+#    for alpha in torch.linspace(0,1,alpha_steps):
+#        x = alpha*X
+#        batch_range = range(0, len(x), batch_size)
+#        if verbose:
+#            print("Calculating for alpha",alpha.item())
+#            batch_range = tqdm(batch_range)
+#        for batch in batch_range:
+#            idx = idxs[batch:batch+batch_size]
+#            # Response is dict of activations. response[layer] has shape avg_grad.shape
+#            response = inspect(model, x[idx], insp_keys=[layer], batch_size=None,
+#                                                    to_numpy=False, to_cpu=False,
+#                                                    verbose=False)
+#            ins = response[layer]
+#            outs = response['outputs'][:,gc_idx]
+#            grad = torch.autograd.grad(outs.sum(), ins)[0]
+#            avg_grad[idx] += grad.detach().cpu().reshape(len(grad), *avg_grad.shape[1:])
+#            if alpha == 1:
+#                act = response[layer].detach().cpu().reshape(len(grad), *activs.shape[1:])
+#                activs[idx] = act
+#                if gc_activs is None:
+#                    if isinstance(gc_idx, int):
+#                        gc_activs = torch.zeros(len(activs))
+#                    else:
+#                        gc_activs = torch.zeros(len(activs), len(gc_idx))
+#                gc_activs[idx] = response['outputs'][:,gc_idx].detach().cpu()
+#    del response
+#    del grad
+#    avg_grad = avg_grad/alpha_steps
+#    intg_grad = (activs*avg_grad).detach()
+#    if len(gc_activs.shape) == 1:
+#        gc_activs = gc_activs.unsqueeze(1) # Create new axis
+#    requires_grad(model, True)
+#    return intg_grad, avg_grad, activs, gc_activs
+
+def integrated_gradient(model, X, layer='sequential.2', gc_idx=None, alpha_steps=5,
+                                                    batch_size=500, y=None, lossfxn=None,
+                                                    verbose=False):
+    """
+    Inputs:
+        model: PyTorch Deep Retina models
+        X: Input stimuli ndarray or torch FloatTensor (T,D,H,W)
+        layer: str layer name
+        gc_idx: ganglion cell of interest
+            if None, uses all cells
+        alpha_steps: int, integration steps
+        batch_size: step size when performing computations on GPU
+        y: torch FloatTensor or ndarray (T,N)
+            if None, ignored
+        lossfxn: some differentiable function
+            if None, ignored
+    Outputs:
+        intg_grad: Integrated Gradients (avg_grad*activs)
+        avg_grad: Averaged Gradients
+        activs: Activation of the argued layer
+        gc_activs: Activation of the final layer
+    """
+    requires_grad(model, False) # Model gradient unnecessary for integrated gradient
+    layer1_layers = {"sequential."+str(i) for i in range(6)}
+    layer_idx = 0 if layer in layer1_layers else 1
+    intg_grad = torch.zeros(len(X), model.chans[layer_idx], *model.shapes[layer_idx])
+    gc_activs = None
+    model.to(DEVICE)
+    if gc_idx is None:
+        gc_idx = list(range(model.n_units))
+    X = torch.FloatTensor(X)
+    X.requires_grad = True
+    idxs = torch.arange(len(X)).long()
+    prev_response = None
+    for batch in range(0, len(X), batch_size):
+        linspace = torch.linspace(0,1,alpha_steps)
+        if verbose:
+            print("Calculating for batch {}/{}".format(batch, len(X)))
+            linspace = tqdm(linspace)
+        idx = idxs[batch:batch+batch_size]
+        for alpha in linspace:
+            x = alpha*X[idx]
+            # Response is dict of activations. response[layer] has shape intg_grad.shape
+            response = inspect(model, x, insp_keys=[layer], batch_size=None,
+                                                    to_numpy=False, to_cpu=False,
+                                                    verbose=False)
+            if prev_response is not None:
+                ins = response[layer]
+                outs = response['outputs'][:,gc_idx]
+                if lossfxn is not None and y is not None:
+                    truth = y[idx,gc_idx]
+                    outs = lossfxn(outs,truth)
+                grad = torch.autograd.grad(outs.sum(), ins)[0]
+                grad = grad.detach().cpu().reshape(len(grad), *intg_grad.shape[1:])
+                act = (response[layer].data.cpu()-prev_response[layer])
+                intg_grad[idx] += grad*act.reshape(grad.shape)
+                if alpha == 1:
+                    if gc_activs is None:
+                        if isinstance(gc_idx, int):
+                            gc_activs = torch.zeros(len(X))
+                        else:
+                            gc_activs = torch.zeros(len(X), len(gc_idx))
+                    gc_activs[idx] = response['outputs'][:,gc_idx].detach().cpu()
+            prev_response = {k:v.data.cpu() for k,v in response.items()}
+    del response
+    del grad
+    if len(gc_activs.shape) == 1:
+        gc_activs = gc_activs.unsqueeze(1) # Create new axis
+    requires_grad(model, True)
+    return intg_grad, gc_activs
+
+def inspect(model, X, insp_keys={}, batch_size=500, to_numpy=True, to_cpu=True, verbose=False):
     """
     Get the response from the argued layers in the model as np arrays. If model is on cpu,
     operations are performed on cpu. Put model on gpu if you desire operations to be
@@ -167,13 +300,13 @@ def inspect(model, X, insp_keys={}, batch_size=None, to_numpy=True, verbose=Fals
     if "all" in insp_keys:
         for i in range(len(model.sequential)):
             key = "sequential."+str(i)
-            hook = get_hook(layer_outs, key, to_numpy=to_numpy, to_cpu=True)
+            hook = get_hook(layer_outs, key, to_numpy=to_numpy, to_cpu=to_cpu)
             handle = model.sequential[i].register_forward_hook(hook)
             handles.append(handle)
     else:
         for key, mod in model.named_modules():
             if key in insp_keys:
-                hook = get_hook(layer_outs, key, to_numpy=to_numpy, to_cpu=True)
+                hook = get_hook(layer_outs, key, to_numpy=to_numpy, to_cpu=to_cpu)
                 handle = mod.register_forward_hook(hook)
                 handles.append(handle)
     X = torch.FloatTensor(X)
@@ -287,6 +420,18 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, t
     """
     Gets the gradient of the model output at the specified layer and cell idx with respect
     to the inputs (X). Returns a gradient array with the same shape as X.
+
+    model: nn.Module
+    X: torch FloatTensor
+    layer: str
+    cell_idx: int or tuple (chan, row, col)
+        idx of cell of interest
+    batch_size: int
+        size of batching for calculations
+    layer_shape: tuple
+        changes the shape of the argued layer to this shape if tuple
+    to_numpy: bool
+        returns the gradient vector as a numpy array if true
     """
     if verbose:
         print("layer:", layer)
@@ -342,8 +487,8 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, t
     else:
         return X.grad.data.cpu()
 
-def compute_sta(model, layer, cell_index, layer_shape=None, batch_size=500, contrast=1, 
-                                                         n_samples=10000,to_numpy=True, 
+def compute_sta(model, layer, cell_index, layer_shape=None, batch_size=500, contrast=1,
+                                                         n_samples=10000,to_numpy=True,
                                                          verbose=True, X=None):
     """
     Computes the STA using the average of instantaneous receptive 
@@ -352,7 +497,15 @@ def compute_sta(model, layer, cell_index, layer_shape=None, batch_size=500, cont
     model: torch Module
     contrast: float
         contrast of whitenoise to calculate the sta
-    layer
+    layer: str
+    cell_index: int or tuple (chan, row, col)
+        idx of cell of interest
+    batch_size: int
+        size of batching for calculations
+    contrast: int
+        the std of the noise used for the stimulus
+    n_samples: int
+        length of the stimulus
     """
     # generate some white noise
     if X is None:
