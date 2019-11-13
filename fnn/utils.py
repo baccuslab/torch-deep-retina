@@ -28,15 +28,21 @@ def select_model(cfg, device):
                          bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
                          img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes, 
                          strides=cfg.Model.strides).to(device)
+    if cfg.Model.name == 'BNCNN_3D2_Stack':
+        model = BNCNN_3D2_Stack(n_units=cfg.Model.n_units, 
+                                noise=cfg.Model.noise, chans=cfg.Model.chans, 
+                                bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
+                                img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes, 
+                                strides=cfg.Model.strides).to(device)
     return model
 
-def update_eval_history(cfg, epoch, pearson, epoch_loss):
+def update_eval_history(cfg, epoch, pearson, epoch_loss, eval_loss):
     eval_history_path = os.path.join(cfg.save_path, cfg.exp_id, 'eval.json')
     if not os.path.exists(eval_history_path):
         eval_history = []
     else: 
         with open(eval_history_path, 'r') as f:
             eval_history = json.load(f)
-    eval_history.append({'epoch' : epoch, 'pearson': pearson, 'loss': epoch_loss})
+    eval_history.append({'epoch' : epoch, 'pearson': pearson, 'loss': epoch_loss, 'eval_loss': eval_loss})
     with open(eval_history_path, 'w') as f:
             json.dump(eval_history, f)

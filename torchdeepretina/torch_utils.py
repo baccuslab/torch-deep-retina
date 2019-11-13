@@ -1201,4 +1201,34 @@ class Temperal_Filter(nn.Module):
         out = (x * self.filter).sum(axis=-self.spatial-1)
         return out
 
+class LinearStackedConv3d(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stack_ksize=3, stack_chan=None, 
+                 conv_bias=True, drop_p=0):
+        super(LinearStackedConv3d, self).__init__()
+        assert kernel_size[1] % 2 == 1 # kernel must be odd
+        assert kernel_size[1] > 1 # kernel must be greater than 1
+        self.ksize = kernel_size
+        self.stack_ksize = stack_ksize
+        self.conv_bias = conv_bias
+        self.drop_p = drop_p
+        self.stack_chan = out_channels if stack_chan is None else stack_chan
 
+        n_filters = (kernel_size[1]-self.stack_ksize)/(self.stack_ksize-1)+1
+        assert n_filters == int(n_filters)
+        n_filters = int(n_filters)
+
+        convs = [nn.Conv3d(in_channels, self.stack_chan, 
+                           [kernel_size[0], self.stack_ksize, self.stack_ksize], 
+                           bias=self.conv_bias)]
+        if drop_p > 0:
+            convs.append(nn.Dropout(drop_p))
+        for i in range(n_filters-1):
+            convs.append(nn.Conv3d(self.stack_chan, self.stack_chan, 
+                                   [1, self.stack_ksize, self.stack_ksize], bias=self.conv_bias))
+            if drop_p > 0:
+                convs.append(nn.Dropout(drop_p))
+                
+        self.convs = nn.Sequential(*convs)
+
+    def forward(self, x):
+        return self.convs(x)

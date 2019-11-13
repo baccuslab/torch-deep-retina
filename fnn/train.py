@@ -8,7 +8,7 @@ from tqdm import tqdm
 from collections import deque
 from models import *
 from data import *
-from evaluation import pearsonr_eval
+from evaluation import *
 from utils import *
 from config import get_default_cfg, get_custom_cfg
 
@@ -40,7 +40,7 @@ def train(cfg):
     train_dataset = TrainDataset(cfg)
     train_data = DataLoader(dataset=train_dataset, batch_size=cfg.Data.batch_size, shuffle=True)
     
-    validation_data =  DataLoader(dataset=ValidationDataset(cfg))
+    validation_data =  DataLoader(dataset=ValidationDataset(cfg), batch_size=cfg.Data.batch_size)
     
     model.train()
     
@@ -61,16 +61,16 @@ def train(cfg):
                 
         epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size
         
-        pearson = pearsonr_eval(model, validation_data, cfg.Model.n_units, device)
+        pearson, eval_loss = pearsonr_batch_eval(model, validation_data, cfg.Model.n_units, device, cfg)
         
-        print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}'.format(epoch, epoch_loss, pearson))
+        print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}, evaluation loss: {:.2f}'.format(epoch, epoch_loss, pearson, eval_loss))
         
-        update_eval_history(cfg, epoch, pearson, epoch_loss)
+        update_eval_history(cfg, epoch, pearson, epoch_loss, eval_loss)
         
         if epoch % cfg.save_intvl == 0:
             save_path = os.path.join(cfg.save_path, cfg.exp_id, 
-                                     'epoch_{:03d}_loss_{:.2f}_pearson_{:.4f}'
-                                     .format(epoch, epoch_loss, pearson)+'.pth')
+                                     'epoch_{:03d}_loss_{:.2f}_pearson_{:.4f}_eval_loss_{:.2f}'
+                                     .format(epoch, epoch_loss, pearson, eval_loss)+'.pth')
             
             torch.save({'epoch': epoch,
                         'model_state_dict': model.state_dict(),
@@ -78,6 +78,6 @@ def train(cfg):
                         'loss': epoch_loss}, save_path)
     
 if __name__ == "__main__":
-    cfg = get_custom_cfg('3d_conv2')
+    cfg = get_custom_cfg('3d_conv2_stack')
     print(cfg)
     train(cfg)

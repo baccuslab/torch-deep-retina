@@ -1,8 +1,8 @@
-exp_id: '3dconv2'
+exp_id: '3d_conv2_stack'
 img_shape: [50,50,50]
 gpu: 1
 Model:
-    name: 'BNCNN_3D2'
+    name: 'BNCNN_3D2_Stack'
     ksizes: ([40,15,15],[1,11,11])
     strides: ([1,1,1],[1,1,1])
     checkpoint: ''
