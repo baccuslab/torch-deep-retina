@@ -208,8 +208,10 @@ def linear_response(filt, stim, batch_size=1000, to_numpy=True):
 
 def integrated_gradient(model, X, layer='sequential.2', gc_idx=None, alpha_steps=5,
                                                     batch_size=500, y=None, lossfxn=None,
-                                                    verbose=False):
+                                                    to_numpy=False, verbose=False):
     """
+    Returns the integrated gradient for a particular stimulus at the arged layer.
+
     Inputs:
         model: PyTorch Deep Retina models
         X: Input stimuli ndarray or torch FloatTensor (T,D,H,W)
@@ -223,24 +225,32 @@ def integrated_gradient(model, X, layer='sequential.2', gc_idx=None, alpha_steps
         lossfxn: some differentiable function
             if None, ignored
     Outputs:
-        intg_grad: Integrated Gradients (avg_grad*activs)
-        avg_grad: Averaged Gradients
-        activs: Activation of the argued layer
-        gc_activs: Activation of the final layer
+        intg_grad: Integrated Gradients ndarray or FloatTensor (T, C, H1, W1)
+        gc_activs: Activation of the final layer ndarray or FloatTensor (T,N)
     """
+    # Handle Gradient Settings
     requires_grad(model, False) # Model gradient unnecessary for integrated gradient
-    layer1_layers = {"sequential."+str(i) for i in range(6)}
-    layer_idx = 0 if layer in layer1_layers else 1
+    prev_grad_state = torch.is_grad_enabled() # Save current grad calculation state
+    torch.set_grad_enabled(True) # Enable grad calculations
+
+    layer_idx = 0
+    for i,seq in enumerate(model.sequential):
+        if layer == "sequential."+str(i):
+            break
+        if isinstance(seq, nn.ReLU):
+            layer_idx += 1
     intg_grad = torch.zeros(len(X), model.chans[layer_idx], *model.shapes[layer_idx])
     gc_activs = None
     model.to(DEVICE)
     if gc_idx is None:
         gc_idx = list(range(model.n_units))
+    if batch_size is None:
+        batch_size = len(X)
     X = torch.FloatTensor(X)
     X.requires_grad = True
     idxs = torch.arange(len(X)).long()
-    prev_response = None
     for batch in range(0, len(X), batch_size):
+        prev_response = None
         linspace = torch.linspace(0,1,alpha_steps)
         if verbose:
             print("Calculating for batch {}/{}".format(batch, len(X)))
@@ -260,8 +270,8 @@ def integrated_gradient(model, X, layer='sequential.2', gc_idx=None, alpha_steps
                     outs = lossfxn(outs,truth)
                 grad = torch.autograd.grad(outs.sum(), ins)[0]
                 grad = grad.detach().cpu().reshape(len(grad), *intg_grad.shape[1:])
-                act = (response[layer].data.cpu()-prev_response[layer])
-                intg_grad[idx] += grad*act.reshape(grad.shape)
+                act = (response[layer].data.cpu()-prev_response[layer]).reshape(grad.shape)
+                intg_grad[idx] += grad*act
                 if alpha == 1:
                     if gc_activs is None:
                         if isinstance(gc_idx, int):
@@ -274,7 +284,12 @@ def integrated_gradient(model, X, layer='sequential.2', gc_idx=None, alpha_steps
     del grad
     if len(gc_activs.shape) == 1:
         gc_activs = gc_activs.unsqueeze(1) # Create new axis
+
+    # Return to previous gradient calculation state
     requires_grad(model, True)
+    torch.set_grad_enabled(prev_grad_state) # return to previous grad calculation state
+    if to_numpy:
+        return intg_grad.data.cpu().numpy(), gc_activs.data.cpu().numpy()
     return intg_grad, gc_activs
 
 def inspect(model, X, insp_keys={}, batch_size=500, to_numpy=True, to_cpu=True, verbose=False):
@@ -318,7 +333,7 @@ def inspect(model, X, insp_keys={}, batch_size=500, to_numpy=True, to_cpu=True, 
         # graph is inaccessible, as such we do not need to calculate it.
         torch.set_grad_enabled(False)
 
-    if batch_size is None:
+    if batch_size is None or batch_size > len(X):
         if next(model.parameters()).is_cuda:
             X = X.to(DEVICE)
         preds = model(X)
