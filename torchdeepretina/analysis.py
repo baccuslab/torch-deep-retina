@@ -13,6 +13,7 @@ import torchdeepretina.utils as tdrutils
 import torchdeepretina.intracellular as tdrintr
 from torchdeepretina.retinal_phenomena import retinal_phenomena_figs
 import torchdeepretina.stimuli as tdrstim
+import torchdeepretina.visualizations as tdrvis
 import pyret.filtertools as ft
 import scipy
 import re
@@ -390,6 +391,23 @@ def stream_folder(folder,main_dir=""):
             pass
     return data
 
+def get_checkpts(model_folder):
+    """
+    Returns a list of checkpoint file paths that can be used with read_model_file
+
+    model_folder: str
+    """
+    checkpts = []
+    for d,_,files in os.walk(model_folder):
+        for f in files:
+            if ".pt" in f:
+                path = os.path.join(d,f)
+                path = os.path.expanduser(path)
+                checkpts.append(path)
+        break
+    checkpts = sorted(checkpts, key=lambda x: int(x.split(".")[-2].split("_")[-1]))
+    return checkpts
+
 def get_model_folders(main_folder):
     """
     Returns a list of paths to the model folders contained within the argued main_folder
@@ -485,6 +503,50 @@ def get_intrneuron_rfs(stims, mem_pots, filt_len=40,verbose=False):
         rfs[cell_file][stim_key] = np.asarray(rfs[cell_file][stim_key])
     return rfs
 
+def sample_model_rfs(model, layers=['sequential.0','sequential.6'], verbose=False):
+    """
+    Returns a receptive field of the central unit of each channel in each layer of the model.
+
+    model: torch Module
+    layers: list of str
+        names of desired layers to sample from. The layers must be in layers 1 or 2 of the model.
+    """
+    table = {
+        "layer":[],
+        "chan":[],
+        "row":[],
+        "col":[]
+    }
+
+    layer_names = []
+    prev_i = 0
+
+    # Determine what layers exist in the model
+    for i,(name,modu) in enumerate(model.named_modules()):
+        if isinstance(modu,nn.ReLU):
+            l_names = {'sequential.'+str(l) for l in range(prev_i,i)}
+            layer_names.append(l_names)
+
+    # Loop to create data frame
+    for layer in layers:
+        # Determines what layer the layer name falls under
+        for chan_idx,l_names in enumerate(layer_names):
+            if layer in l_names:
+                break
+        n_chans = model.chans[chan_idx]
+        shape = model.shapes[chan_idx]
+        row = shape[0]//2
+        col = shape[1]//2
+        for chan in range(n_chans):
+            table['layer'].append(layer)
+            table['chan'].append(chan)
+            table['row'].append(row)
+            table['col'].append(col)
+    df = pd.DataFrame(table)
+
+    rfs = get_model_rfs(model, df, verbose=verbose)
+    return rfs
+
 def get_model_rfs(model, data_frame, verbose=False):
     """
     Searches through each entry in the data frame and computes an STA for the model unit
@@ -534,10 +596,9 @@ def get_model_rfs(model, data_frame, verbose=False):
 
 def get_model2model_cors(model1, model2, model1_layers={"sequential.0", "sequential.6"},
                                           model2_layers={"sequential.0", "sequential.6"},
-                                          contrast=1, n_samples=5000,
-                                          ret_model1_rfs=False,
-                                          ret_model2_rfs=False,
-                                          verbose=True):
+                                          contrast=1, n_samples=5000, use_ig=False,
+                                          ret_model1_rfs=False, ret_model2_rfs=False, 
+                                          row_stride=1, col_stride=1, verbose=True):
     """
     Gets and returns a DataFrame of the best activation correlations between the two models.
 
@@ -547,13 +608,21 @@ def get_model2model_cors(model1, model2, model1_layers={"sequential.0", "sequent
         names of layers to be correlated with interneurons
     ret_model_rfs - bool
         the sta of the model are returned if this is true
+    use_ig: bool
+        if true, correlations are completed using the integrated gradient
+    row_stride: int
+        the number of rows to skip in model1 when doing correlations
+    col_stride: int
+        the number of cols to skip in model1 when doing correlations
     """
     model1.eval()
     model2.eval()
-    table = tdrintr.model2model_cors(model1,model2, model1_layers=model1_layers, 
+    table = tdrintr.model2model_cors(model1,model2, model1_layers=model1_layers, use_ig=use_ig,
                                                         model2_layers=model2_layers,
                                                         batch_size=500, contrast=contrast,
-                                                        n_samples=n_samples,verbose=verbose)
+                                                        n_samples=n_samples, 
+                                                        row_stride=row_stride, 
+                                                        col_stride=col_stride, verbose=verbose)
     df = pd.DataFrame(table)
     if ret_model1_rfs:
         print("Receptive Field Calculations not implemented yet...")
@@ -634,12 +703,16 @@ def get_analysis_figs(folder, model, metrics=None, verbose=True):
         save_name = name + ".png"
         fig.savefig(os.path.join(folder, save_name))
 
-def analyze_model(folder, make_figs=True, verbose=True):
+def analyze_model(folder, make_figs=True, make_model_rfs=False, verbose=True):
     """
     Calculates model performance on the testset and calculates interneuron correlations.
 
     folder: str
         the folder full of checkpoints
+    make_figs: bool
+    make_model_rfs: bool
+        returns a dict of model receptive fields if set to true. Can be used with 
+        plot_model_rfs from the visualizations package
     """
     hyps = get_hyps(folder)
     table = get_analysis_table(folder, hyps=hyps)
@@ -661,14 +734,12 @@ def analyze_model(folder, make_figs=True, verbose=True):
         print("GC Cor:", gc_cor,"  Loss:", gc_loss)
 
     layers = ["sequential.2", 'sequential.8']
-    # TODO: Make this if statement easy to turn on and off
-    #if "convs" in dir(model.sequential[0]):
-    #    temp = ["sequential.0.convs." + str(i) for i in range(7)]
-    #    layers = layers + temp
-    #    temp = ["sequential.6.convs." + str(i) for i in range(5)]
-    #    layers = layers + temp
     intr_df = get_intr_cors(model, layers=layers, verbose=verbose)
     intr_df['save_folder'] = folder
+    if make_model_rfs:
+        rfs = sample_model_rfs(model, layers=layers, verbose=verbose)
+        save_name = os.path.join(folder, "model_rf")
+        tdrvis.plot_model_rfs(rfs, save_name)
 
     # Drop duplicates and average over celll type
     bests = intr_df.sort_values(by='cor',ascending=False)
@@ -683,7 +754,7 @@ def analyze_model(folder, make_figs=True, verbose=True):
 
     return df, intr_df
 
-def analysis_pipeline(main_folder, make_figs=True, verbose=True):
+def analysis_pipeline(main_folder, make_figs=True, make_model_rfs=True, verbose=True):
     """
     Evaluates model on test set, calculates interneuron correlations, 
     and creates figures.
@@ -711,7 +782,9 @@ def analysis_pipeline(main_folder, make_figs=True, verbose=True):
         if verbose:
             print("\n\nAnalyzing", folder)
         
-        df, intr_df = analyze_model(save_folder, make_figs=make_figs, verbose=verbose)
+        df, intr_df = analyze_model(save_folder, make_figs=make_figs, 
+                                        make_model_rfs=make_model_rfs, 
+                                        verbose=verbose)
         if not("save_folder" in dfs[csvs[0]] and folder in set(dfs[csvs[0]]['save_folder'])):
             if 'empty' in dfs[csvs[0]]:
                 dfs[csvs[0]] = df
