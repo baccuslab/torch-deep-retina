@@ -30,6 +30,9 @@ if torch.cuda.is_available():
 else:
     DEVICE = torch.device('cpu')
 
+STD_CUTOFF = -12
+ABS_MEAN_CUTOFF = -15
+
 #If you want to use stimulus that isnt just boxes
 def prepare_stim(stim, stim_type):
     """
@@ -264,8 +267,8 @@ def all_correlation_maps(mem_pot, model_response, layer_keys=['sequential.2', 's
             cors = []
             for i in range(resp.shape[1]):
                 r,_ = pearsonr(mem_pot.squeeze(), resp[:,i])
-                r = r if not np.isnan(r) and r < 1 and r > -1 else 0
-                if np.log(abs(resp[:,i].mean())) < -15:
+                r = r if not np.isnan(r) and r > -1 else 0
+                if np.log(np.abs(resp[:,i]).mean()) < ABS_MEAN_CUTOFF or np.log(resp[:,i].std()) < STD_CUTOFF:
                     if verbose and abs(r) > 0.1:
                         s = "Extremely small layer values, pearson of {} can "+\
                                           "not be trusted and is being set to 0"
@@ -293,13 +296,14 @@ def correlation_map(mem_pot, activ_layer, verbose=False):
             #adjusted_layer = activ_layer[:,y,x]/(np.max(activ_layer[:,y,x])+1e-40)
             #r,_ = pearsonr(mem_pot, adjusted_layer)
             r,_ = pearsonr(mem_pot.squeeze(),activ_layer[:,y,x].squeeze())
-            if np.log(abs(activ_layer[:,y,x].mean())) < -15:
+            if np.log(np.abs(activ_layer[:,y,x]).mean()) < ABS_MEAN_CUTOFF or\
+                                        np.log(activ_layer[:,y,x].std()) < STD_CUTOFF:
                 if verbose and abs(r) > 0.1:
                     s = "Extremely small layer values, pearson of {} can "+\
                                       "not be trusted and is being set to 0"
                     print(s.format(r))
                 r = 0
-            correlations[y,x] = r if not np.isnan(r) and r < 1 and r > -1 else 0
+            correlations[y,x] = r if not np.isnan(r) and r > -1 else 0
     return correlations
 
 def max_correlation(mem_pot, model_layer, abs_val=False, verbose=False):
@@ -322,8 +326,9 @@ def max_correlation(mem_pot, model_layer, abs_val=False, verbose=False):
         pearsons = []
         for chan in range(model_layer.shape[1]):
             r,_ = pearsonr(mem_pot, model_layer[:,chan])
-            r = r if not np.isnan(r) and r < 1 and r > -1 else 0
-            if np.log(abs(model_layer[:,chan].mean())) < -15:
+            r = r if not np.isnan(r) and r > -1 else 0
+            if np.log(np.abs(model_layer[:,chan]).mean()) < ABS_MEAN_CUTOFF or\
+                                        np.log(model_layer[:,chan].std()) < STD_CUTOFF:
                 if verbose and abs(r) > 0.1:
                     s = "Extremely small layer values, pearson of {} can "+\
                                       "not be trusted and is being set to 0"
@@ -331,7 +336,7 @@ def max_correlation(mem_pot, model_layer, abs_val=False, verbose=False):
                 r = 0
             pearsons.append(r)
         # Set nan and fishy values to zero
-        pearsons = [r if not np.isnan(r) and r < 1 and r > -1 else 0 for r in pearsons]
+        pearsons = [r if not np.isnan(r) and r > -1 else 0 for r in pearsons]
         if abs_val:
             pearsons = [np.absolute(r) for r in pearsons]
         return np.max(pearsons)
@@ -354,8 +359,9 @@ def sorted_correlation(mem_pot, model_layer, verbose=False):
         #pearsons = [pearsonr(mem_pot, adjusted_layer)[0] for c in range(model_layer.shape[1])]
         pearsons = [pearsonr(mem_pot, model_layer[:,c])[0] for c in range(model_layer.shape[1])]
         for i,r in enumerate(pearsons):
-            new_r = r if not np.isnan(r) and r < 1  and r > -1 else 0
-            if np.log(abs(layer.mean())) < -15:
+            new_r = r if not np.isnan(r) and r > -1 else 0
+            if np.log(np.abs(layer).mean()) < ABS_MEAN_CUTOFF or\
+                                        np.log(layer.std()) < STD_CUTOFF:
                 if verbose and abs(r) > 0.1:
                     s = "Extremely small layer values, pearson of {} can "+\
                                       "not be trusted and is being set to 0"
@@ -403,8 +409,9 @@ def argmax_correlation_recurse_helper(mem_pot, model_layer, shape, idx, abs_val=
         r, _ = pearsonr(mem_pot, layer)
         if abs_val:
             r = np.absolute(r)
-        if np.isnan(r) or np.isinf(r) or r >= 1 or r <= -1: r = 0
-        if np.log(abs(layer.mean())) < -15:
+        if np.isnan(r) or np.isinf(r) or r <= -1: r = 0
+        if np.log(np.abs(layer).mean()) < ABS_MEAN_CUTOFF or\
+                                        np.log(layer.std()) < STD_CUTOFF:
             if verbose and abs(r) > 0.1:
                 s = "Extremely small layer values, pearson of {} can not be"+\
                                                "trusted and is being set to 0"
@@ -417,7 +424,7 @@ def argmax_correlation_recurse_helper(mem_pot, model_layer, shape, idx, abs_val=
         for i in range(shape[0]):
             args = (mem_pot, model_layer, shape[1:], (*idx, i), abs_val, verbose)
             r, local_idx = argmax_correlation_recurse_helper(*args)
-            if not np.isnan(r) and r < 1 and r > max_r:
+            if not np.isnan(r) and r > max_r:
                 max_r = r
                 best_idx = local_idx
         return max_r, best_idx
@@ -442,7 +449,7 @@ def argmax_correlation(mem_pot, model_layer, ret_max_cor=False, abs_val=False, v
     for i in range(model_layer.shape[1]):
         r, idx = argmax_correlation_recurse_helper(mem_pot,model_layer, model_layer.shape[2:],
                                                         (i,), abs_val=abs_val,verbose=verbose)
-        if not np.isnan(r) and r < 1 and r > max_r:
+        if not np.isnan(r) and r > max_r:
             max_r = r
             best_idx = idx
     if ret_max_cor:
@@ -452,6 +459,7 @@ def argmax_correlation(mem_pot, model_layer, ret_max_cor=False, abs_val=False, v
 def model2model_cors(model1, model2, model1_layers={"sequential.2", "sequential.8"},
                                           model2_layers={"sequential.2", "sequential.8"},
                                           batch_size=500,  contrast=1.0, n_samples=5000, 
+                                          row_stride=1, col_stride=1, use_ig=True, 
                                           verbose=True):
     """
     Takes two models and compares the activations at each layer.  Returns a dict 
@@ -469,6 +477,13 @@ def model2model_cors(model1, model2, model1_layers={"sequential.2", "sequential.
         contrast of whitenoise stimulus for model input
     n_samples: int
         number of time points of stimulus for model input
+    row_stride: int
+        the number of rows to skip in model1 when doing correlations
+    col_stride: int
+        the number of cols to skip in model1 when doing correlations
+    use_ig: bool
+        if true, uses integrated gradient rather than activations for model correlations.
+        if the specified layer is outputs, then use_ig is ignored
 
     returns:
         intr_cors - dict
@@ -501,23 +516,77 @@ def model2model_cors(model1, model2, model1_layers={"sequential.2", "sequential.
 
     nx = min(model1.img_shape[1], model2.img_shape[1])
     whitenoise = tdrstim.repeat_white(n_samples, nx=nx, contrast=contrast, n_repeats=3)
+    filt_depth = max(model1.img_shape[0], model2.img_shape[0])
 
     if verbose:
-        print("Collecting model1 response")
+        if use_ig:
+            print("Collecting model1 integrated gradient")
+        else:
+            print("Collecting model1 response")
     stim = tdrstim.spatial_pad(whitenoise, model1.img_shape[1])
-    stim = tdrstim.rolling_window(stim, model1.img_shape[0])
+    stim = tdrstim.rolling_window(stim, filt_depth)
+    if model1.img_shape[0] < filt_depth:
+        stim = stim[:,:model1.img_shape[0]]
     model1.to(DEVICE)
-    response1 = tdrutils.inspect(model1, stim, batch_size=batch_size, insp_keys=model1_layers,
-                                                               to_numpy=True, verbose=verbose)
+    if use_ig:
+        response1 = dict()
+        gc_resps = None
+        for layer in model1_layers:
+            if layer == "outputs":
+                continue
+            intg_grad, gc_resps = tdrutils.integrated_gradient(model1, stim,
+                                                      batch_size=batch_size,
+                                                      layer=layer, to_numpy=True, 
+                                                      verbose=verbose)
+            response1[layer] = intg_grad
+        if "outputs" in model1_layers:
+            if gc_resps is None:
+                temp = tdrutils.inspect(model1, stim, batch_size=batch_size,
+                                                 insp_keys={},
+                                                 to_numpy=True, verbose=verbose)
+                gc_resps = temp['outputs']
+            response1['outputs'] = gc_resps
+
+    else:
+        response1 = tdrutils.inspect(model1, stim, batch_size=batch_size,
+                                                 insp_keys=model1_layers,
+                                                 to_numpy=True, verbose=verbose)
     model1.cpu()
 
     if verbose:
-        print("Collecting model2 response")
+        if use_ig:
+            print("Collecting model2 integrated gradient")
+        else:
+            print("Collecting model2 response")
     stim = tdrstim.spatial_pad(whitenoise, model2.img_shape[1])
-    stim = tdrstim.rolling_window(stim, model2.img_shape[0])
+
+    stim = tdrstim.rolling_window(stim, filt_depth)
+    if model2.img_shape[0] < filt_depth:
+        stim = stim[:,:model2.img_shape[0]]
+    print("2:", stim.shape)
     model2.to(DEVICE)
-    response2 = tdrutils.inspect(model2, stim, batch_size=batch_size, insp_keys=model2_layers,
-                                                               to_numpy=True, verbose=verbose)
+    if use_ig:
+        response2 = dict()
+        gc_resps = None
+        for layer in model2_layers:
+            if layer == "outputs":
+                continue
+            intg_grad, gc_resps = tdrutils.integrated_gradient(model2, stim,
+                                                      batch_size=batch_size,
+                                                      layer=layer, to_numpy=True,
+                                                      verbose=verbose)
+            response2[layer] = intg_grad
+        if "outputs" in model2_layers:
+            if gc_resps is None:
+                temp = tdrutils.inspect(model1, stim, batch_size=batch_size,
+                                                 insp_keys={},
+                                                 to_numpy=True, verbose=verbose)
+                gc_resps = temp['outputs']
+            response2['outputs'] = gc_resps
+    else:
+        response2 = tdrutils.inspect(model2, stim, batch_size=batch_size,
+                                                  insp_keys=model2_layers,
+                                                  to_numpy=True, verbose=verbose)
     model2.cpu()
 
     layer1_layers = {"sequential."+str(i) for i in range(6)}
@@ -533,19 +602,23 @@ def model2model_cors(model1, model2, model1_layers={"sequential.2", "sequential.
         else:
             mod1_resp = mod1_resp.reshape(-1,mod1_resp.shape[1],1,1) # GCs as (t,n_units,1,1)
         for mod1_chan in range(mod1_resp.shape[1]):
-            mod1_row_range = range(mod1_resp.shape[2])
+            mod1_row_range = range(0, mod1_resp.shape[2], row_stride)
             if verbose:
                 print("Channel {}/{}".format(mod1_chan, mod1_resp.shape[1]))
                 mod1_row_range = tqdm(mod1_row_range)
+            channel_cors = []
             for mod1_row in mod1_row_range:
-                for mod1_col in range(mod1_resp.shape[3]):
+                for mod1_col in range(0, mod1_resp.shape[3], col_stride):
                     mem_pot = mod1_resp[:,mod1_chan, mod1_row, mod1_col]
+                    best_cor = -1
                     for mod2_layer in model2_layers:
                         mod2_resp = response2[mod2_layer]
                         if mod2_layer in layer1_layers:
-                            mod2_resp = mod2_resp.reshape(-1, model1.chans[0], *model1.shapes[0])
+                            mod2_resp = mod2_resp.reshape(-1, model1.chans[0],
+                                                            *model1.shapes[0])
                         elif mod2_layer in layer2_layers:
-                            mod2_resp = mod2_resp.reshape(-1, model1.chans[1], *model1.shapes[1])
+                            mod2_resp = mod2_resp.reshape(-1, model1.chans[1],
+                                                            *model1.shapes[1])
                         else:
                             mod2_resp = mod2_resp.reshape(-1,mod2_resp.shape[1],1,1) # GCs
                         for mod2_chan in range(mod2_resp.shape[1]):
@@ -564,6 +637,15 @@ def model2model_cors(model1, model2, model1_layers={"sequential.2", "sequential.
                             intr_cors["mod2_col"].append(mod2_col)
                             intr_cors["contrast"].append(contrast)
                             intr_cors["cor"].append(r)
+                            if r > best_cor:
+                                best_cor = r
+                    channel_cors.append(best_cor)
+            if verbose:
+                print("Channel",mod1_chan,"Avg Best Cor:", np.mean(channel_cors))
+    if model1_cuda:
+        model1.to(DEVICE)
+    if model2_cuda:
+        model2.to(DEVICE)
     return intr_cors
 
 def get_intr_cors(model, stim_dict, mem_pot_dict, layers={"sequential.2", "sequential.8"}, 
@@ -734,8 +816,9 @@ def get_cor_generalization(model, stim_dict, mem_pot_dict,layers={"sequential.2"
                                 pot = mem_pot_dict[cell_file][stim_t][cell_idx]
                                 temp_resp = responses[stim_t][layer][:,chan,row,col]
                                 r,_ = pearsonr(temp_resp, pot)
-                                r = r if not np.isnan(r) and r < 1 and r > -1 else 0
-                                if np.log(abs(temp_resp.mean())) < -15:
+                                r = r if not np.isnan(r) and r > -1 else 0
+                                if np.log(np.abs(temp_resp).mean()) < ABS_MEAN_CUTOFF or\
+                                                        np.log(temp_resp.std()) < STD_CUTOFF:
                                     if verbose and abs(r) > 0.1:
                                         s = "Extremely small layer values, pearson of {} can "+\
                                                           "not be trusted and is being set to 0"
@@ -808,7 +891,7 @@ def argmax_correlation_all_layers(mem_pot, model_response, layer_keys=['conv1', 
         response = model_response[key]
         idxs, r = argmax_correlation(mem_pot, response, ret_max_cor=True, abs_val=abs_val,
                                                                           verbose=verbose)
-        if not np.isnan(r) and r < 1 and r > max_r:
+        if not np.isnan(r) and r > max_r:
             max_r = r
             best_idx = (key, *idxs)
     if ret_max_cor_all_layers:
