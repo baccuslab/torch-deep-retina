@@ -23,6 +23,7 @@ _C.Model.chans = [8,8]
 _C.Model.bn_moment = 0.01
 _C.Model.softplus = True
 _C.Model.ksizes = (15,11)
+_C.Model.noise = 0.05
 
 _C.Data = CfgNode()
 _C.Data.data_path = '/home/salamander/experiments/data/'

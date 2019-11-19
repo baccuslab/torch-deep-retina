@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from scipy.stats import pearsonr
-from utils import *
+from kinetic.utils import *
 
 def pearsonr_eval(model, data, n_units, device):
     hs = get_hs(model, 1, device)

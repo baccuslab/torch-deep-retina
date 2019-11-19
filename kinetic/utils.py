@@ -2,7 +2,7 @@ import os
 import json
 import torch
 from collections import deque
-from models import *
+from kinetic.models import *
 
 def get_hs(model, batch_size, device):
     hs = []

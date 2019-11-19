@@ -1,6 +1,4 @@
 import numpy as np
-import sys
-sys.path.insert(0, '/home/xhding/workspaces/torch-deep-retina/')
 import torch
 import torch.nn as nn
 from torchdeepretina.torch_utils import *

@@ -5,10 +5,10 @@ from torch.utils.data.dataloader import DataLoader
 import numpy as np
 from tqdm import tqdm
 from collections import deque
-from data import *
-from evaluation import pearsonr_eval
-from utils import *
-from config import get_default_cfg, get_custom_cfg
+from kinetic.data import *
+from kinetic.evaluation import pearsonr_eval
+from kinetic.utils import *
+from kinetic.config import get_default_cfg, get_custom_cfg
 
 def train(cfg):
     
