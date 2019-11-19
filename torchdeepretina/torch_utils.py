@@ -1200,6 +1200,17 @@ class Temperal_Filter(nn.Module):
     def forward(self, x):
         out = (x * self.filter).sum(axis=-self.spatial-1)
         return out
+    
+class Chan_Temperal_Filter(nn.Module):
+    def __init__(self, chan, tem_len, spatial):
+        super().__init__()
+        self.spatial = spatial
+        spatial_dims = np.ones(spatial).astype(np.int32).tolist()
+        self.filter = nn.Parameter(torch.rand(chan, tem_len, *spatial_dims))
+
+    def forward(self, x):
+        out = (x * self.filter).sum(axis=-self.spatial-1)
+        return out
 
 class LinearStackedConv3d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stack_ksize=3, stack_chan=None, 
@@ -1232,3 +1243,49 @@ class LinearStackedConv3d(nn.Module):
 
     def forward(self, x):
         return self.convs(x)
+    
+class OuterProduct3DFilter(nn.Module):
+    def __init__(self, shape, chan, n_units):
+        super().__init__()
+        modules = []
+        modules.append(Reshape((-1, chan, shape[0], shape[1], shape[2])))
+        modules.append(Temperal_Filter(shape[0], 2))
+        modules.append(Flatten())
+        modules.append(nn.Linear(chan*shape[1]*shape[2], 
+                                 n_units, bias=True))
+        self.sequential = nn.Sequential(*modules)
+        
+    def forward(self, x):
+        return self.sequential(x)
+    
+class MultiOuterProduct3DFilter(nn.Module):
+    def __init__(self, shape, chan, n_units, n_filters):
+        super().__init__()
+        assert n_filters == 2 or n_filters == 3
+        self.n_filters = n_filters
+        self.filter1 = OuterProduct3DFilter(shape, chan, n_units)
+        self.filter2 = OuterProduct3DFilter(shape, chan, n_units)
+        if self.n_filters == 3:
+            self.filter3 = OuterProduct3DFilter(shape, chan, n_units)
+            
+    def forward(self, x):
+        out = self.filter1(x)
+        out = out + self.filter2(x)
+        if self.n_filters == 3:
+            out = out + self.filter3(x)
+        return out
+    
+class OuterProduct3DFilterEachChannel(nn.Module):
+    def __init__(self, shape, chan, n_units):
+        super().__init__()
+        modules = []
+        modules.append(Reshape((-1, chan, shape[0], shape[1], shape[2])))
+        modules.append(Chan_Temperal_Filter(chan, shape[0], 2))
+        modules.append(Flatten())
+        modules.append(nn.Linear(chan*shape[1]*shape[2], 
+                                 n_units, bias=True))
+        self.sequential = nn.Sequential(*modules)
+        
+    def forward(self, x):
+        return self.sequential(x)
+                                  

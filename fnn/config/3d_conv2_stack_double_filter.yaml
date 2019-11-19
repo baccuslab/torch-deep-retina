@@ -1,4 +1,4 @@
-exp_id: '3d_conv2_stack'
+exp_id: '3d_conv2_stack_double_filter'
 img_shape: [50,50,50]
 save_intvl: 1
 epoch: 25
@@ -8,6 +8,7 @@ Model:
     ksizes: ([40,15,15],[1,11,11])
     strides: ([1,1,1],[1,1,1])
     checkpoint: ''
+    filter_mod: 'double'
 Data:
     batch_size: 512
 Optimize:

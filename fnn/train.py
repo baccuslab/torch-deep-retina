@@ -31,7 +31,7 @@ def train(cfg):
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.Optimize.lr, 
                                  weight_decay=cfg.Optimize.l2)
     
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer)
+    #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer)
     
     if cfg.Model.checkpoint != '':
         checkpoint = torch.load(cfg.Model.checkpoint, map_location=device)
@@ -66,7 +66,7 @@ def train(cfg):
         
         pearson, eval_loss = pearsonr_batch_eval(model, validation_data, cfg.Model.n_units, device, cfg)
         
-        scheduler.step(eval_loss)
+        #scheduler.step(eval_loss)
         
         print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}, evaluation loss: {:.2f}'.format(epoch, epoch_loss, pearson, eval_loss))
         
@@ -83,6 +83,6 @@ def train(cfg):
                         'loss': epoch_loss}, save_path)
     
 if __name__ == "__main__":
-    cfg = get_custom_cfg('3d_conv2_stack')
+    cfg = get_custom_cfg('3d_conv2_stack_triple_filter')
     print(cfg)
     train(cfg)

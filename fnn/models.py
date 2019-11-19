@@ -159,7 +159,8 @@ class BNCNN_3D2(nn.Module):
     
 class BNCNN_3D2_Stack(nn.Module):
     def __init__(self, n_units=5, noise=.05, chans=[8,8], bn_moment=0.01, softplus=True, 
-                 img_shape=[50,50,50], ksizes=([40,15,15],[1,11,11]), strides=([1,1,1],[1,1,1])):
+                 img_shape=[50,50,50], ksizes=([40,15,15],[1,11,11]), strides=([1,1,1],[1,1,1]), 
+                 filter_mod='single'):
         super(BNCNN_3D2_Stack, self).__init__()
         self.n_units = n_units
         self.noise = noise
@@ -196,14 +197,20 @@ class BNCNN_3D2_Stack(nn.Module):
         self.amacrine = nn.Sequential(*modules)
         
         modules = []
-        modules.append(Reshape((-1, self.chans[1], shape[0], shape[1], shape[2])))
-        modules.append(Temperal_Filter(shape[0], 2))
-        modules.append(Flatten())
-        modules.append(nn.Linear(self.chans[1]*shape[1]*shape[2], 
-                                 self.n_units, bias=True))
+        if filter_mod == 'single':
+            modules.append(OuterProduct3DFilter(shape, self.chans[1], self.n_units))
+        elif filter_mod == 'double':
+            modules.append(MultiOuterProduct3DFilter(shape, self.chans[1], self.n_units, 2))
+        elif filter_mod == 'triple':
+            modules.append(MultiOuterProduct3DFilter(shape, self.chans[1], self.n_units, 3))
+        elif filter_mod == 'channel':
+            modules.append(OuterProduct3DFilterEachChannel(shape, self.chans[1], self.n_units))
+        else:
+            raise Exception("Wrong filter mod!")
         modules.append(nn.BatchNorm1d(self.n_units))
         modules.append(nn.Softplus())
         self.ganglion = nn.Sequential(*modules)
+            
         
     def forward(self, x):
         out = self.bipolar(x)

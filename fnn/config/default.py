@@ -23,6 +23,7 @@ _C.Model.bn_moment = 0.01
 _C.Model.softplus = True
 _C.Model.ksizes = (15,11)
 _C.Model.strides = (1,1)
+_C.Model.filter_mod = 'single'
 
 _C.Data = CfgNode()
 _C.Data.data_path = '/home/salamander/experiments/data/'

@@ -37,7 +37,7 @@ def select_model(cfg, device):
                                 noise=cfg.Model.noise, chans=cfg.Model.chans, 
                                 bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
                                 img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes, 
-                                strides=cfg.Model.strides).to(device)
+                                strides=cfg.Model.strides, filter_mod=cfg.Model.filter_mod).to(device)
     return model
 
 def update_eval_history(cfg, epoch, pearson, epoch_loss, eval_loss):
