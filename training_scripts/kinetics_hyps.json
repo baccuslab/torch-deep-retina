@@ -1,5 +1,5 @@
 {
-    "exp_name":"test",
+    "exp_name":"train",
     "model_type":"KineticsModel",
     "dataset":"15-10-07",
     "cells":"all",

@@ -1,16 +1,13 @@
-exp_id: '3d_conv2_stack'
+exp_id: '3d_conv2_stack_noise_0.1'
 img_shape: [50,50,50]
-save_intvl: 1
-epoch: 25
 gpu: 1
 Model:
     name: 'BNCNN_3D2_Stack'
     ksizes: ([40,15,15],[1,11,11])
     strides: ([1,1,1],[1,1,1])
     checkpoint: ''
+    noise: 0.1
 Data:
     batch_size: 512
 Optimize:
     trunc_intvl: 1
-    l2: 1e-4
-    l1: 0

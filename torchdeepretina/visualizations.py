@@ -184,7 +184,7 @@ def plot_traces_grid(weights, tax=None, color='k', lw=3):
     return fig
 
 
-def plot_filters(weights, cmap='seismic', normalize=True):
+def plot_filters(weights, cmap='seismic'):
     """Plots an array of spatiotemporal filters
     Parameters
     ----------
@@ -211,20 +211,22 @@ def plot_filters(weights, cmap='seismic', normalize=True):
 
     # build the grid for all of the filters
     outer_grid = gridspec.GridSpec(nrows, ncols)
-
-    # normalize to the maximum weight in the array
-    if normalize:
-        max_val = np.max(abs(weights.ravel()))
-        vmin, vmax = -max_val, max_val
-    else:
-        vmin = np.min(weights.ravel())
-        vmax = np.max(weights.ravel())
-
+    
+    filters = []
+    bounds = []
     # loop over each convolutional filter
-    for w, og in zip(weights, outer_grid):
-
+    for w in weights:
+        
         # get the spatial and temporal frame
         spatial, temporal = ft.decompose(w)
+        filters.append((spatial, temporal))
+        bounds.append(np.abs(np.max(spatial)))
+        bounds.append(np.abs(np.min(spatial)))
+        
+    vmin = - max(bounds)
+    vmax = + max(bounds)
+    
+    for (spatial, temporal), og in zip(filters, outer_grid):
 
         # build the gridspec (spatial and temporal subplots) for this filter
         inner_grid = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=og, height_ratios=(4, 1), hspace=0.0)
@@ -243,7 +245,6 @@ def plot_filters(weights, cmap='seismic', normalize=True):
         plt.axis('off')
 
     plt.show()
-    plt.draw()
     return fig
 
 

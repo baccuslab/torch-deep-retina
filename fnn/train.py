@@ -6,11 +6,11 @@ from torch.utils.data.dataloader import DataLoader
 import numpy as np
 from tqdm import tqdm
 from collections import deque
-from models import *
-from data import *
-from evaluation import *
-from utils import *
-from config import get_default_cfg, get_custom_cfg
+from fnn.models import *
+from fnn.data import *
+from fnn.evaluation import *
+from fnn.utils import *
+from fnn.config import get_default_cfg, get_custom_cfg
 
 def train(cfg):
     
@@ -30,6 +30,8 @@ def train(cfg):
     
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.Optimize.lr, 
                                  weight_decay=cfg.Optimize.l2)
+    
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer)
     
     if cfg.Model.checkpoint != '':
         checkpoint = torch.load(cfg.Model.checkpoint, map_location=device)
@@ -52,6 +54,7 @@ def train(cfg):
             y = y.double().to(device)
             out = model(x)
             loss += loss_fn(out.double(), y)
+            loss += cfg.Optimize.l1 * torch.norm(y, 1).float().mean()
             if idx%cfg.Optimize.trunc_intvl == 0:
                 optimizer.zero_grad()
                 loss.backward()
@@ -62,6 +65,8 @@ def train(cfg):
         epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size
         
         pearson, eval_loss = pearsonr_batch_eval(model, validation_data, cfg.Model.n_units, device, cfg)
+        
+        scheduler.step(eval_loss)
         
         print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}, evaluation loss: {:.2f}'.format(epoch, epoch_loss, pearson, eval_loss))
         

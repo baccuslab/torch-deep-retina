@@ -1,4 +1,5 @@
 import numpy as np
+import scipy
 import copy
 import torch
 import torch.nn as nn
@@ -8,6 +9,7 @@ import os
 import torchdeepretina.stimuli as tdrstim
 from torchdeepretina.physiology import Physio
 from tqdm import tqdm
+import pyret.filtertools as ft
 
 DEVICE = torch.device("cuda:0")
 
@@ -112,6 +114,129 @@ def get_hook(layer_dict, key, to_numpy=True, to_cpu=False):
         def hook(module, inp, out):
             layer_dict[key] = out
     return hook
+
+def integrated_gradient(model, X, layer='sequential.2', gc_idx=None, alpha_steps=5,
+                                                    batch_size=500, y=None, lossfxn=None,
+                                                    to_numpy=False, verbose=False):
+    """
+    Returns the integrated gradient for a particular stimulus at the arged layer.
+    Inputs:
+        model: PyTorch Deep Retina models
+        X: Input stimuli ndarray or torch FloatTensor (T,D,H,W)
+        layer: str layer name
+        gc_idx: ganglion cell of interest
+            if None, uses all cells
+        alpha_steps: int, integration steps
+        batch_size: step size when performing computations on GPU
+        y: torch FloatTensor or ndarray (T,N)
+            if None, ignored
+        lossfxn: some differentiable function
+            if None, ignored
+    Outputs:
+        intg_grad: Integrated Gradients ndarray or FloatTensor (T, C, H1, W1)
+        gc_activs: Activation of the final layer ndarray or FloatTensor (T,N)
+    """
+    # Handle Gradient Settings
+    requires_grad(model, False) # Model gradient unnecessary for integrated gradient
+    prev_grad_state = torch.is_grad_enabled() # Save current grad calculation state
+    torch.set_grad_enabled(True) # Enable grad calculations
+
+    layer_idx = 0
+    for i,seq in enumerate(model.sequential):
+        if layer == "sequential."+str(i):
+            break
+        if isinstance(seq, nn.ReLU):
+            layer_idx += 1
+    intg_grad = torch.zeros(len(X), model.chans[layer_idx], *model.shapes[layer_idx])
+    gc_activs = None
+    model.to(DEVICE)
+    if gc_idx is None:
+        gc_idx = list(range(model.n_units))
+    if batch_size is None:
+        batch_size = len(X)
+    X = torch.FloatTensor(X)
+    X.requires_grad = True
+    idxs = torch.arange(len(X)).long()
+    for batch in range(0, len(X), batch_size):
+        prev_response = None
+        linspace = torch.linspace(0,1,alpha_steps)
+        if verbose:
+            print("Calculating for batch {}/{}".format(batch, len(X)))
+            linspace = tqdm(linspace)
+        idx = idxs[batch:batch+batch_size]
+        for alpha in linspace:
+            x = alpha*X[idx]
+            # Response is dict of activations. response[layer] has shape intg_grad.shape
+            response = inspect(model, x, insp_keys=[layer], batch_size=None,
+                                                    to_numpy=False, to_cpu=False,
+                                                    verbose=False)
+            if prev_response is not None:
+                ins = response[layer]
+                outs = response['outputs'][:,gc_idx]
+                if lossfxn is not None and y is not None:
+                    truth = y[idx,gc_idx]
+                    outs = lossfxn(outs,truth)
+                grad = torch.autograd.grad(outs.sum(), ins)[0]
+                grad = grad.detach().cpu().reshape(len(grad), *intg_grad.shape[1:])
+                act = (response[layer].data.cpu()-prev_response[layer]).reshape(grad.shape)
+                intg_grad[idx] += grad*act
+                if alpha == 1:
+                    if gc_activs is None:
+                        if isinstance(gc_idx, int):
+                            gc_activs = torch.zeros(len(X))
+                        else:
+                            gc_activs = torch.zeros(len(X), len(gc_idx))
+                    gc_activs[idx] = response['outputs'][:,gc_idx].detach().cpu()
+            prev_response = {k:v.data.cpu() for k,v in response.items()}
+    del response
+    del grad
+    if len(gc_activs.shape) == 1:
+        gc_activs = gc_activs.unsqueeze(1) # Create new axis
+
+    # Return to previous gradient calculation state
+    requires_grad(model, True)
+    torch.set_grad_enabled(prev_grad_state) # return to previous grad calculation state
+    if to_numpy:
+        return intg_grad.data.cpu().numpy(), gc_activs.data.cpu().numpy()
+    return intg_grad, gc_activs
+
+def stimulus_importance(model, X, gc_idx=None, alpha_steps=5, batch_size=500, 
+                        to_numpy=False, verbose=False):
+    # Handle Gradient Settings
+    requires_grad(model, False) # Model gradient unnecessary for integrated gradient
+    prev_grad_state = torch.is_grad_enabled() # Save current grad calculation state
+    torch.set_grad_enabled(True) # Enable grad calculations
+
+    intg_grad = torch.zeros(len(X), *model.image_shape)
+    if gc_idx is None:
+        gc_idx = list(range(model.n_units))
+    if batch_size is None:
+        batch_size = len(X)
+    X = torch.FloatTensor(X)
+    X.requires_grad = True
+    idxs = torch.arange(len(X)).long()
+    for batch in range(0, len(X), batch_size):
+        linspace = torch.linspace(0,1,alpha_steps)
+        if verbose:
+            print("Calculating for batch {}/{}".format(batch, len(X)))
+            linspace = tqdm(linspace)
+        idx = idxs[batch:batch+batch_size]
+        for alpha in linspace:
+            x = alpha*X[idx]
+            response = inspect(model, x, insp_keys=[], batch_size=None, to_numpy=False)
+            outs = response['outputs'][:,gc_idx]
+            grad = torch.autograd.grad(outs.sum(), x)[0]
+            grad = grad.detach().cpu().reshape(len(grad), *intg_grad.shape[1:])
+            act = X[idx].detach().cpu()
+            intg_grad[idx] += grad*act
+    del response
+    del grad
+
+    requires_grad(model, True)
+    torch.set_grad_enabled(prev_grad_state) # return to previous grad calculation state
+    if to_numpy:
+        return intg_grad.data.cpu().numpy()
+    return intg_grad
 
 def inspect(model, X, insp_keys={}, batch_size=None, to_numpy=True):
     """
@@ -317,7 +442,10 @@ def revcor_sta(model, layers=['sequential.0','sequential.6'], chans=[8,8], verbo
             vals: lists of stas for each channel in the layer
     """
     noise = np.random.randn(10000,50,50)
-    filter_size = model.img_shape[0]
+    try:
+        filter_size = model.img_shape[0]
+    except:
+        filter_size = model.image_shape[0]
     X = tdrstim.concat(noise, nh=filter_size)
     noise = noise[filter_size:]
     response = inspect(model, X, insp_keys=set(layers), batch_size=500, to_numpy=True)
@@ -329,11 +457,14 @@ def revcor_sta(model, layers=['sequential.0','sequential.6'], chans=[8,8], verbo
                 resp = resp.reshape(len(resp), len(chan), *model.shapes[0])
             else:
                 resp = resp.reshape(len(resp), len(chan), *model.shapes[1])
-        center = resp.shape[-1]//2
-        chan = tqdm(chan) if verbose else chan
+        centers = np.array(resp.shape[2:])//2
         for c in range(chan):
-            sta,_ = ft.revcorr(noise, scipy.stats.zscore(resp[:,c,center,center]),
-                                                             0,model.img_shape[0])
+            if len(centers) == 2:
+                sta,_ = ft.revcorr(noise, scipy.stats.zscore(resp[:, c, centers[0], centers[1]]),
+                                                             0, filter_size)
+            if len(centers) == 3:
+                sta,_ = ft.revcorr(noise, scipy.stats.zscore(resp[:, c, centers[0], centers[1], centers[2]]),
+                                                             0, filter_size)
             stas[layer].append(sta)
     return stas
 

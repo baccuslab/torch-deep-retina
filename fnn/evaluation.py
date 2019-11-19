@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from scipy.stats import pearsonr
-from utils import *
+from fnn.utils import *
 
 def pearsonr_batch_eval(model, data, n_units, device, cfg):
     model = model.to(device)

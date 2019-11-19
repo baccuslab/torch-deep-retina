@@ -2,7 +2,7 @@ import os
 import json
 import torch
 from collections import deque
-from models import *
+from fnn.models import *
 
 def get_hs(model, batch_size, device):
     hs = []
@@ -16,6 +16,10 @@ def get_hs(model, batch_size, device):
 def select_model(cfg, device):
     if cfg.Model.name == 'BN_CNN_Net':
         model = BN_CNN_Net(n_units=cfg.Model.n_units, noise=cfg.Model.noise, chans=cfg.Model.chans, 
+                       bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
+                       img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
+    if cfg.Model.name == 'BN_CNN_Stack':
+        model = BN_CNN_Stack(n_units=cfg.Model.n_units, noise=cfg.Model.noise, chans=cfg.Model.chans, 
                        bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
                        img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
     if cfg.Model.name == 'BNCNN_3D':

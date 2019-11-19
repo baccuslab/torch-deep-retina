@@ -33,3 +33,4 @@ _C.Optimize = CfgNode()
 _C.Optimize.trunc_intvl = 1
 _C.Optimize.lr = 1e-3
 _C.Optimize.l2 = 1e-4
+_C.Optimize.l1 = 0.

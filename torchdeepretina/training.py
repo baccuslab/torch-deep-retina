@@ -257,7 +257,7 @@ class Trainer:
 
                 # Backwards Pass
                 loss = error + activity_l1 + grade
-                loss.backward()
+                loss.backward(retain_graph=True)
                 optimizer.step()
 
                 epoch_loss += loss.item()

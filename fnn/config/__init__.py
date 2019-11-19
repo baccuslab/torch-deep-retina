@@ -1,5 +1,5 @@
 import os
-from config.default import _C
+from fnn.config.default import _C
 
 dir_path = os.path.dirname(os.path.abspath(__file__))
 
