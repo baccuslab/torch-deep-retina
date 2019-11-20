@@ -458,6 +458,136 @@ def argmax_correlation(mem_pot, model_layer, ret_max_cor=False, abs_val=False, v
         return best_idx, max_r
     return best_idx # (chan, row, col) of best correlated unit
 
+def model2model_cor_mtxs(model1, model2, model1_layers={"sequential.0", "sequential.6"},
+                                          model2_layers={"sequential.0", "sequential.6"},
+                                          batch_size=500,  contrast=1.0, n_samples=5000, 
+                                          use_ig=True, verbose=True):
+    """
+    Takes two models and correlates the activations at each layer. Returns a dict 
+    of correlation marices.
+
+    model1 - torch Module
+    model2 - torch Module
+    model1_layers - set of strs
+        the layers of model 1 to be correlated
+    model2_layers - set of strs
+        the layers of model 2 to be correlated
+    batch_size: int
+        size of batches when performing computations on GPU
+    contrast: float
+        contrast of whitenoise stimulus for model input
+    n_samples: int
+        number of time points of stimulus for model input
+    use_ig: bool
+        if true, uses integrated gradient rather than activations for model correlations.
+        if the specified layer is outputs, then use_ig is ignored
+
+    returns:
+        intr_cors - dict
+                - keys: str
+                    model1 layer names
+                    val: dict
+                        - keys: str
+                            model2 layer names
+                            val: ndarray (M1, M2)
+                                where M1 is the flattened activations in model1 at that 
+                                layer and M2 are the flattened activations for model2 
+                                at that layer
+    """
+    model1_cuda = next(model1.parameters()).is_cuda
+    model2_cuda = next(model2.parameters()).is_cuda
+    model2.cpu()
+
+    nx = min(model1.img_shape[1], model2.img_shape[1])
+    whitenoise = tdrstim.repeat_white(n_samples, nx=nx, contrast=contrast, n_repeats=3)
+    filt_depth = max(model1.img_shape[0], model2.img_shape[0])
+
+    if verbose:
+        if use_ig:
+            print("Collecting model1 integrated gradient")
+        else:
+            print("Collecting model1 response")
+    stim = tdrstim.spatial_pad(whitenoise, model1.img_shape[1])
+    stim = tdrstim.rolling_window(stim, filt_depth)
+    if model1.img_shape[0] < filt_depth:
+        stim = stim[:,:model1.img_shape[0]]
+    model1.to(DEVICE)
+    if use_ig:
+        response1 = dict()
+        gc_resps = None
+        for layer in model1_layers:
+            if layer == "outputs":
+                continue
+            intg_grad, gc_resps = tdrutils.integrated_gradient(model1, stim,
+                                                      batch_size=batch_size,
+                                                      layer=layer, to_numpy=False, 
+                                                      verbose=verbose)
+            response1[layer] = intg_grad
+        if "outputs" in model1_layers:
+            if gc_resps is None:
+                temp = tdrutils.inspect(model1, stim, batch_size=batch_size,
+                                                 insp_keys={},
+                                                 to_numpy=False, verbose=verbose)
+                gc_resps = temp['outputs']
+            response1['outputs'] = gc_resps
+
+    else:
+        response1 = tdrutils.inspect(model1, stim, batch_size=batch_size,
+                                                 insp_keys=model1_layers,
+                                                 to_numpy=False, verbose=verbose)
+    model1.cpu()
+
+    if verbose:
+        if use_ig:
+            print("Collecting model2 integrated gradient")
+        else:
+            print("Collecting model2 response")
+    stim = tdrstim.spatial_pad(whitenoise, model2.img_shape[1])
+
+    stim = tdrstim.rolling_window(stim, filt_depth)
+    if model2.img_shape[0] < filt_depth:
+        stim = stim[:,:model2.img_shape[0]]
+    model2.to(DEVICE)
+    if use_ig:
+        response2 = dict()
+        gc_resps = None
+        for layer in model2_layers:
+            if layer == "outputs":
+                continue
+            intg_grad, gc_resps = tdrutils.integrated_gradient(model2, stim,
+                                                      batch_size=batch_size,
+                                                      layer=layer, to_numpy=False,
+                                                      verbose=verbose)
+            response2[layer] = intg_grad
+        if "outputs" in model2_layers:
+            if gc_resps is None:
+                temp = tdrutils.inspect(model1, stim, batch_size=batch_size,
+                                                 insp_keys={},
+                                                 to_numpy=False, verbose=verbose)
+                gc_resps = temp['outputs']
+            response2['outputs'] = gc_resps
+    else:
+        response2 = tdrutils.inspect(model2, stim, batch_size=batch_size,
+                                                  insp_keys=model2_layers,
+                                                  to_numpy=False, verbose=verbose)
+    model2.cpu()
+
+    intr_cors = {m1_layer:{m2_layer:None for m2_layer in model2_layers} for m1_layer in model1_layers}
+
+    for mod1_layer in intr_cors.keys():
+        resp1 = response1[mod1_layer]
+        resp1 = resp1.reshape(len(resp1), -1)
+        for mod2_layer in intr_cors[mod1_layer].keys():
+            resp2 = response2[mod2_layer]
+            resp2 = resp2.reshape(len(resp2),-1)
+            cor_mtx = tdrutils.mtx_cor(resp1,resp2,batch_size=batch_size)
+            intr_cors[mod1_layer][mod2_layer] = cor_mtx
+    if model1_cuda:
+        model1.to(DEVICE)
+    if model2_cuda:
+        model2.to(DEVICE)
+    return intr_cors
+
 def model2model_cors(model1, model2, model1_layers={"sequential.2", "sequential.8"},
                                           model2_layers={"sequential.2", "sequential.8"},
                                           batch_size=500,  contrast=1.0, n_samples=5000, 
