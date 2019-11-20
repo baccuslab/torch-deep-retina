@@ -287,6 +287,8 @@ def correlation_map(mem_pot, activ_layer, verbose=False):
     Args:
         mem_pot: 1-d numpy array
         activ_layer: (time, space, space) layer of activities
+    Returns:
+        correlations: ndarray (space, space)
     '''
     height = activ_layer.shape[-2]
     width = activ_layer.shape[-1]
@@ -460,7 +462,7 @@ def model2model_cors(model1, model2, model1_layers={"sequential.2", "sequential.
                                           model2_layers={"sequential.2", "sequential.8"},
                                           batch_size=500,  contrast=1.0, n_samples=5000, 
                                           row_stride=1, col_stride=1, use_ig=True, 
-                                          verbose=True):
+                                          only_max=False, verbose=True):
     """
     Takes two models and compares the activations at each layer.  Returns a dict 
     that can easily be converted into a pandas data frame.
@@ -484,6 +486,9 @@ def model2model_cors(model1, model2, model1_layers={"sequential.2", "sequential.
     use_ig: bool
         if true, uses integrated gradient rather than activations for model correlations.
         if the specified layer is outputs, then use_ig is ignored
+    only_max: bool
+        if true, returns only the maximum correlation calculations. If false, all
+        correlation combinations are calculated.
 
     returns:
         intr_cors - dict
@@ -563,7 +568,6 @@ def model2model_cors(model1, model2, model1_layers={"sequential.2", "sequential.
     stim = tdrstim.rolling_window(stim, filt_depth)
     if model2.img_shape[0] < filt_depth:
         stim = stim[:,:model2.img_shape[0]]
-    print("2:", stim.shape)
     model2.to(DEVICE)
     if use_ig:
         response2 = dict()
@@ -589,6 +593,7 @@ def model2model_cors(model1, model2, model1_layers={"sequential.2", "sequential.
                                                   to_numpy=True, verbose=verbose)
     model2.cpu()
 
+    # TODO: Make generalizable!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
     layer1_layers = {"sequential."+str(i) for i in range(6)}
     layer2_layers = {"sequential."+str(i) for i in range(6,10)}
     for mod1_layer in model1_layers:
@@ -622,23 +627,41 @@ def model2model_cors(model1, model2, model1_layers={"sequential.2", "sequential.
                         else:
                             mod2_resp = mod2_resp.reshape(-1,mod2_resp.shape[1],1,1) # GCs
                         for mod2_chan in range(mod2_resp.shape[1]):
-                            r, idx = argmax_correlation_recurse_helper(mem_pot, mod2_resp,
+                            if only_max:
+                                r, idx = argmax_correlation_recurse_helper(mem_pot, mod2_resp,
                                                                 shape=mod2_resp.shape[2:],
                                                                 idx=(mod2_chan,),
                                                                 verbose=verbose)
-                            _, mod2_row, mod2_col = idx
-                            intr_cors["mod1_layer"].append(mod1_layer)
-                            intr_cors["mod1_chan"].append(mod1_chan)
-                            intr_cors["mod1_row"].append(mod1_row)
-                            intr_cors["mod1_col"].append(mod1_col)
-                            intr_cors["mod2_layer"].append(mod2_layer)
-                            intr_cors["mod2_chan"].append(mod2_chan)
-                            intr_cors["mod2_row"].append(mod2_row)
-                            intr_cors["mod2_col"].append(mod2_col)
-                            intr_cors["contrast"].append(contrast)
-                            intr_cors["cor"].append(r)
-                            if r > best_cor:
-                                best_cor = r
+                                _, mod2_row, mod2_col = idx
+                                intr_cors["mod1_layer"].append(mod1_layer)
+                                intr_cors["mod1_chan"].append(mod1_chan)
+                                intr_cors["mod1_row"].append(mod1_row)
+                                intr_cors["mod1_col"].append(mod1_col)
+                                intr_cors["mod2_layer"].append(mod2_layer)
+                                intr_cors["mod2_chan"].append(mod2_chan)
+                                intr_cors["mod2_row"].append(mod2_row)
+                                intr_cors["mod2_col"].append(mod2_col)
+                                intr_cors["contrast"].append(contrast)
+                                intr_cors["cor"].append(r)
+                                if r > best_cor:
+                                    best_cor = r
+                            else:
+                                cor_map = correlation_map(mem_pot, mod2_resp[:,mod2_chan])
+                                for mod2_row in range(cor_map.shape[0]):
+                                    for mod2_col in range(cor_map.shape[1]):
+                                        r = cor_map[mod2_row,mod2_col]
+                                        intr_cors["mod1_layer"].append(mod1_layer)
+                                        intr_cors["mod1_chan"].append(mod1_chan)
+                                        intr_cors["mod1_row"].append(mod1_row)
+                                        intr_cors["mod1_col"].append(mod1_col)
+                                        intr_cors["mod2_layer"].append(mod2_layer)
+                                        intr_cors["mod2_chan"].append(mod2_chan)
+                                        intr_cors["mod2_row"].append(mod2_row)
+                                        intr_cors["mod2_col"].append(mod2_col)
+                                        intr_cors["contrast"].append(contrast)
+                                        intr_cors["cor"].append(r)
+                                        if r > best_cor:
+                                            best_cor = r
                     channel_cors.append(best_cor)
             if verbose:
                 print("Channel",mod1_chan,"Avg Best Cor:", np.mean(channel_cors))

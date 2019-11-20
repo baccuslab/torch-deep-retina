@@ -597,8 +597,9 @@ def get_model_rfs(model, data_frame, verbose=False):
 def get_model2model_cors(model1, model2, model1_layers={"sequential.0", "sequential.6"},
                                           model2_layers={"sequential.0", "sequential.6"},
                                           contrast=1, n_samples=5000, use_ig=False,
-                                          ret_model1_rfs=False, ret_model2_rfs=False, 
-                                          row_stride=1, col_stride=1, verbose=True):
+                                          ret_model1_rfs=False, ret_model2_rfs=False,
+                                          row_stride=1, col_stride=1, only_max=False,
+                                          verbose=True):
     """
     Gets and returns a DataFrame of the best activation correlations between the two models.
 
@@ -614,13 +615,16 @@ def get_model2model_cors(model1, model2, model1_layers={"sequential.0", "sequent
         the number of rows to skip in model1 when doing correlations
     col_stride: int
         the number of cols to skip in model1 when doing correlations
+    only_max: bool
+        if true, returns only the maximum correlation calculations. If false, all
+        correlation combinations are calculated.
     """
     model1.eval()
     model2.eval()
     table = tdrintr.model2model_cors(model1,model2, model1_layers=model1_layers, use_ig=use_ig,
                                                         model2_layers=model2_layers,
                                                         batch_size=500, contrast=contrast,
-                                                        n_samples=n_samples, 
+                                                        n_samples=n_samples, only_max=only_max,
                                                         row_stride=row_stride, 
                                                         col_stride=col_stride, verbose=verbose)
     df = pd.DataFrame(table)
