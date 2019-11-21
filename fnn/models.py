@@ -217,6 +217,61 @@ class BNCNN_3D2_Stack(nn.Module):
         out = self.amacrine(out)
         out = self.ganglion(out)
         return out
+
+    
+class BNCNN_3D2_Stack_Old(nn.Module):
+    def __init__(self, n_units=5, noise=.05, chans=[8,8], bn_moment=0.01, softplus=True, 
+                 img_shape=[50,50,50], ksizes=([40,15,15],[1,11,11]), strides=([1,1,1],[1,1,1])):
+        super(BNCNN_3D2_Stack_Old, self).__init__()
+        self.n_units = n_units
+        self.noise = noise
+        self.chans = chans
+        self.bn_moment = bn_moment
+        self.softplus = softplus
+        self.image_shape = img_shape
+        self.ksizes = [np.array(ksize) for ksize in ksizes]
+        self.strides = [np.array(stride) for stride in strides]
+        
+        shape = np.array(self.image_shape)
+        
+        modules = []
+        modules.append(Reshape((-1, 1, self.image_shape[0], 
+                                self.image_shape[1], self.image_shape[2])))
+        modules.append(LinearStackedConv3d(in_channels=1, out_channels=self.chans[0], 
+                                           kernel_size=tuple(self.ksizes[0])))
+        shape = update_shape(shape, self.ksizes[0], np.zeros(3), self.strides[0])
+        modules.append(Flatten())
+        modules.append(nn.BatchNorm1d(self.chans[0]*shape[0]*shape[1]*shape[2]))
+        modules.append(GaussianNoise(std=self.noise))
+        modules.append(nn.ReLU())
+        self.bipolar = nn.Sequential(*modules)
+        
+        modules = []
+        modules.append(Reshape((-1, self.chans[0], shape[0], shape[1], shape[2])))
+        modules.append(LinearStackedConv3d(in_channels=self.chans[0], out_channels=self.chans[1], 
+                                           kernel_size=tuple(self.ksizes[1])))
+        shape = update_shape(shape, self.ksizes[1], np.zeros(3), self.strides[1])
+        modules.append(Flatten())
+        modules.append(nn.BatchNorm1d(self.chans[1]*shape[0]*shape[1]*shape[2]))
+        modules.append(GaussianNoise(std=self.noise))
+        modules.append(nn.ReLU())
+        self.amacrine = nn.Sequential(*modules)
+        
+        modules = []
+        modules.append(Reshape((-1, chans[1], shape[0], shape[1], shape[2])))
+        modules.append(Temperal_Filter(shape[0], 2))
+        modules.append(Flatten())
+        modules.append(nn.Linear(chans[1]*shape[1]*shape[2], n_units, bias=True))
+        modules.append(nn.BatchNorm1d(self.n_units))
+        modules.append(nn.Softplus())
+        self.ganglion = nn.Sequential(*modules)
+            
+        
+    def forward(self, x):
+        out = self.bipolar(x)
+        out = self.amacrine(out)
+        out = self.ganglion(out)
+        return out
     
 class BN_CNN_Stack(nn.Module):
     def __init__(self, n_units=5, noise=.05, chans=[8,8], bn_moment=0.01, softplus=True, 

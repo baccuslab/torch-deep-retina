@@ -83,6 +83,6 @@ def train(cfg):
                         'loss': epoch_loss}, save_path)
     
 if __name__ == "__main__":
-    cfg = get_custom_cfg('3d_conv2_stack_triple_filter')
+    cfg = get_custom_cfg('3d_conv2_stack_chan_filter')
     print(cfg)
     train(cfg)

@@ -201,7 +201,7 @@ def integrated_gradient(model, X, layer='sequential.2', gc_idx=None, alpha_steps
     return intg_grad, gc_activs
 
 def stimulus_importance(model, X, gc_idx=None, alpha_steps=5, batch_size=500, 
-                        to_numpy=False, verbose=False):
+                        to_numpy=False, verbose=False, device=torch.device('cuda:1')):
     # Handle Gradient Settings
     requires_grad(model, False) # Model gradient unnecessary for integrated gradient
     prev_grad_state = torch.is_grad_enabled() # Save current grad calculation state
@@ -223,7 +223,7 @@ def stimulus_importance(model, X, gc_idx=None, alpha_steps=5, batch_size=500,
         idx = idxs[batch:batch+batch_size]
         for alpha in linspace:
             x = alpha*X[idx]
-            response = inspect(model, x, insp_keys=[], batch_size=None, to_numpy=False)
+            response = inspect(model, x, insp_keys=[], batch_size=None, to_numpy=False, device=device)
             outs = response['outputs'][:,gc_idx]
             grad = torch.autograd.grad(outs.sum(), x)[0]
             grad = grad.detach().cpu().reshape(len(grad), *intg_grad.shape[1:])
@@ -238,7 +238,7 @@ def stimulus_importance(model, X, gc_idx=None, alpha_steps=5, batch_size=500,
         return intg_grad.data.cpu().numpy()
     return intg_grad
 
-def inspect(model, X, insp_keys={}, batch_size=None, to_numpy=True):
+def inspect(model, X, insp_keys={}, batch_size=None, to_numpy=True, device=torch.device('cuda:1')):
     """
     Get the response from the argued layers in the model as np arrays. If model is on cpu,
     operations are performed on cpu. Put model on gpu if you desire operations to be
@@ -273,7 +273,7 @@ def inspect(model, X, insp_keys={}, batch_size=None, to_numpy=True):
     X = torch.FloatTensor(X)
     if batch_size is None:
         if next(model.parameters()).is_cuda:
-            X = X.cuda()
+            X = X.to(device)
         preds = model(X)
         if to_numpy:
             layer_outs['outputs'] = preds.detach().cpu().numpy()
@@ -286,7 +286,7 @@ def inspect(model, X, insp_keys={}, batch_size=None, to_numpy=True):
         for batch in range(0,len(X), batch_size):
             x = X[batch:batch+batch_size]
             if use_cuda:
-                x = x.cuda()
+                x = x.to(device)
             preds = model(x).cpu()
             if to_numpy:
                 preds = preds.detach().numpy()
@@ -430,7 +430,7 @@ def compute_sta(model, contrast, layer, cell_index, layer_shape=None, verbose=Tr
     del X
     return sta
 
-def revcor_sta(model, layers=['sequential.0','sequential.6'], chans=[8,8], verbose=True):
+def revcor_sta(model, layers=['sequential.0','sequential.6'], chans=[8,8], verbose=True, device=torch.device('cuda:1')):
     """
     Computes the sta using reverse correlation. Uses the central unit for computation
 
@@ -448,7 +448,7 @@ def revcor_sta(model, layers=['sequential.0','sequential.6'], chans=[8,8], verbo
         filter_size = model.image_shape[0]
     X = tdrstim.concat(noise, nh=filter_size)
     noise = noise[filter_size:]
-    response = inspect(model, X, insp_keys=set(layers), batch_size=500, to_numpy=True)
+    response = inspect(model, X, insp_keys=set(layers), batch_size=500, to_numpy=True, device=device)
     stas = {layer:[] for layer in layers}
     for layer,chan in zip(layers,chans):
         resp = response[layer]

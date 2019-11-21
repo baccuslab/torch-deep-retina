@@ -184,7 +184,7 @@ def plot_traces_grid(weights, tax=None, color='k', lw=3):
     return fig
 
 
-def plot_filters(weights, cmap='seismic'):
+def plot_filters(weights, size, cmap='seismic'):
     """Plots an array of spatiotemporal filters
     Parameters
     ----------
@@ -227,6 +227,11 @@ def plot_filters(weights, cmap='seismic'):
     vmax = + max(bounds)
     
     for (spatial, temporal), og in zip(filters, outer_grid):
+        
+        spatial, temporal = flip_filter(spatial, temporal)
+        
+        margin = (spatial.shape[0] - size) // 2
+        spatial = spatial[margin:-margin, margin:-margin]
 
         # build the gridspec (spatial and temporal subplots) for this filter
         inner_grid = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=og, height_ratios=(4, 1), hspace=0.0)
@@ -246,6 +251,21 @@ def plot_filters(weights, cmap='seismic'):
 
     plt.show()
     return fig
+
+def flip_filter(spatial ,temperal):
+    sp_sign = (spatial.max() >= abs(spatial.min()))
+    t_sign = (temperal.max() >= 0.8*abs(temperal.min()) and temperal.argmax() > temperal.argmin())\
+             or temperal.max() >= 1.25*abs(temperal.min())
+    if sp_sign == t_sign:
+        if not sp_sign:
+            spatial = -spatial
+            temperal = -temperal
+    else:
+        if sp_sign:
+            spatial = -spatial
+        else:
+            temperal = -temperal
+    return spatial, temperal
 
 
 def reshape_affine(weights, num_conv_filters):

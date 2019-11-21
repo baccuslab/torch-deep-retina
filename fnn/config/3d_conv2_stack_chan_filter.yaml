@@ -13,5 +13,5 @@ Data:
     batch_size: 512
 Optimize:
     trunc_intvl: 1
-    l2: 1e-4
+    l2: 1e-3
     l1: 0.
