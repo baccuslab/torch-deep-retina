@@ -25,7 +25,7 @@ def pearsonr_batch_eval(model, data, n_units, device, cfg):
             pearsons.append(pearsonr(val_pred[:,cell],val_targ[:,cell])[0])
         model.train()
         loss = loss / cfg.Data.val_size * cfg.Data.batch_size
-        return np.array(pearsons).mean(), loss.item()
+        return np.array(pearsons).mean(), loss.item(), val_pred, val_targ
     
 def pearsonr_batch_eval_cut_tail(model, data, n_units, device):
     model = model.to(device)

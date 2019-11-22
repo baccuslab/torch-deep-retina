@@ -290,7 +290,7 @@ class BN_CNN_Stack(nn.Module):
         
         modules = []
         modules.append(LinearStackedConv2d(self.img_shape[0], self.chans[0],
-                                           kernel_size=self.ksizes[0], conv_bias=True))
+                                           kernel_size=self.ksizes[0], conv_bias=False))
         shape = update_shape(shape, self.ksizes[0])
         modules.append(Flatten())
         modules.append(nn.BatchNorm1d(self.chans[0]*shape[0]*shape[1], momentum=self.bn_moment))
@@ -301,7 +301,7 @@ class BN_CNN_Stack(nn.Module):
         modules = []
         modules.append(Reshape((-1, self.chans[0], shape[0], shape[1])))
         modules.append(LinearStackedConv2d(self.chans[0], self.chans[1],
-                                           kernel_size=self.ksizes[1], conv_bias=True))
+                                           kernel_size=self.ksizes[1], conv_bias=False))
         shape = update_shape(shape, self.ksizes[1])
         modules.append(Flatten())
         modules.append(nn.BatchNorm1d(self.chans[1]*shape[0]*shape[1], momentum=self.bn_moment))
