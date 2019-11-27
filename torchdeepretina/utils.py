@@ -144,6 +144,45 @@ def linear_response(filt, stim, batch_size=1000, to_numpy=True):
         resp = resp.detach().numpy()
     return resp
 
+def get_layer_names(model, delimeters=[nn.ReLU,nn.Softplus]):
+    """
+    Finds the module names for each layer. Delineates layers based on the argued layer. 
+    Defaults delimeter to Conv2d.
+
+    model: torch nn Module object
+    delimeters: list of classes to delineate the start of a new layer
+    """
+    layer_names = []
+    layer_set = set()
+    for i,(name,modu) in enumerate(model.named_modules()):
+        layer_set.add(name)
+        if i > 0:
+            for delim in delimeters:
+                if isinstance(modu, delim):
+                    layer_names.append(layer_set)
+                    layer_set = set()
+                    break
+    if len(layer_set) > 0:
+        layer_names.append(layer_set)
+    return layer_names
+
+def get_layer_idx(model, layer, delimeters=[nn.ReLU, nn.Softplus]):
+    """
+    Finds the layer index of the layer name. Returns -1 if the layer does not
+    exist in the argued model.
+
+    model: torch nn Module object
+    layer: str
+        name of the layer in question
+    delimeters: list of classes 
+        used to delineate the start of a new layer
+    """
+    layer_names = get_layer_names(model, delimeters=delimeters)
+    for i,lnames in enumerate(layer_names):
+        if layer in lnames:
+            return i
+    return -1
+
 #def integrated_gradient(model, X, layer='sequential.2', gc_idx=None, alpha_steps=5,
 #                                                    batch_size=500, verbose=False):
 #    """
@@ -233,12 +272,7 @@ def integrated_gradient(model, X, layer='sequential.2', gc_idx=None, alpha_steps
     prev_grad_state = torch.is_grad_enabled() # Save current grad calculation state
     torch.set_grad_enabled(True) # Enable grad calculations
 
-    layer_idx = 0
-    for i,seq in enumerate(model.sequential):
-        if layer == "sequential."+str(i):
-            break
-        if isinstance(seq, nn.ReLU):
-            layer_idx += 1
+    layer_idx = get_layer_idx(model, layer=layer)
     intg_grad = torch.zeros(len(X), model.chans[layer_idx], *model.shapes[layer_idx])
     gc_activs = None
     model.to(DEVICE)
@@ -627,7 +661,7 @@ class poly1d:
     def __call__(self, x):
         return self.poly(x)
 
-def mtx_cor(X,Y, batch_size=500, to_numpy=False):
+def mtx_cor(X, Y, batch_size=500, to_numpy=False):
     """
     Creates a correlation matrix for X and Y using the GPU
 
@@ -650,10 +684,8 @@ def mtx_cor(X,Y, batch_size=500, to_numpy=False):
     Y = torch.FloatTensor(Y)
     xmean = X.mean(0)
     xstd = torch.sqrt(((X-xmean)**2).mean(0))
-    #xstd = (X**2).mean(0)-xmean**2
     ymean = Y.mean(0)
     ystd = torch.sqrt(((Y-ymean)**2).mean(0))
-    #ystd = (Y**2).mean(0)-ymean**2
     X = ((X-xmean)/(xstd+1e-5)).permute(1,0)
     Y = (Y-ymean)/(ystd+1e-5)
 
@@ -962,21 +994,20 @@ def stackedconv2d_to_conv2d(stackedconv2d):
         print("Bias transfer failed..")
     return conv2d
 
-def get_grad(model, X, layer_idx=None, cell_idxs=None):
+def get_grad(model, X, cell_idxs=None):
     """
     Gets the gradient of the model output with respect to the stimulus X
 
     model - torch module
     X - numpy array or torch float tensor (B,C,H,W)
     layer_idx - None or int
-        model layer to use for grads with respec
+        model layer to use for grads with respect
     cell_idxs - None or list-like (N)
     """
     tensor = torch.FloatTensor(X)
     tensor.requires_grad = True
     back_to_train = model.training
-    if back_to_train:
-        model.eval()
+    model.eval()
     back_to_cpu = next(model.parameters()).is_cuda
     model.to(DEVICE)
     outs = model(tensor.to(DEVICE))

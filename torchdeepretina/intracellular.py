@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 import torchdeepretina.utils as tdrutils
 import torchdeepretina.stimuli as tdrstim
+import torch.nn as nn
 
 centers = {
         "bipolars_late_2012":[  (19, 22), (18, 20), (20, 21), (18, 19)],
@@ -287,26 +288,18 @@ def correlation_map(mem_pot, activ_layer, verbose=False):
     Args:
         mem_pot: 1-d numpy array
         activ_layer: (time, space, space) layer of activities
+
     Returns:
         correlations: ndarray (space, space)
     '''
-    height = activ_layer.shape[-2]
-    width = activ_layer.shape[-1]
-    correlations = np.zeros((height, width))
-    for y in range(height):
-        for x in range(width):
-            #adjusted_layer = activ_layer[:,y,x]/(np.max(activ_layer[:,y,x])+1e-40)
-            #r,_ = pearsonr(mem_pot, adjusted_layer)
-            r,_ = pearsonr(mem_pot.squeeze(),activ_layer[:,y,x].squeeze())
-            if np.log(np.abs(activ_layer[:,y,x]).mean()) < ABS_MEAN_CUTOFF or\
-                                        np.log(activ_layer[:,y,x].std()) < STD_CUTOFF:
-                if verbose and abs(r) > 0.1:
-                    s = "Extremely small layer values, pearson of {} can "+\
-                                      "not be trusted and is being set to 0"
-                    print(s.format(r))
-                r = 0
-            correlations[y,x] = r if not np.isnan(r) and r > -1 else 0
-    return correlations
+    shape = activ_layer.shape
+    if len(shape) == 2:
+        shape = (shape[0], 1, shape[1])
+    activs = activ_layer.reshape(len(activ_layer), -1)
+    mem_pot = mem_pot.squeeze()[:,None]
+    cor_mtx = tdrutils.mtx_cor(mem_pot, activ_layer, to_numpy=True)
+    cor_mtx = cor_mtx.reshape(*shape[1:])
+    return cor_mtx
 
 def max_correlation(mem_pot, model_layer, abs_val=False, verbose=False):
     '''
@@ -318,62 +311,17 @@ def max_correlation(mem_pot, model_layer, abs_val=False, verbose=False):
         model_layer: (time, celltype, space, space) layer of activities
         abs_val: take absolute value of correlation
     '''
-    n_chans = model_layer.shape[1]
-    if len(model_layer.shape) > 2:
-        cor_maps = [correlation_map(mem_pot,model_layer[:,c]) for c in range(n_chans)]
-        if abs_val:
-            cor_maps = [np.absolute(m) for m in cor_maps]
-        return np.max([np.max(m) for m in cor_maps])
-    else:
-        pearsons = []
-        for chan in range(model_layer.shape[1]):
-            r,_ = pearsonr(mem_pot, model_layer[:,chan])
-            r = r if not np.isnan(r) and r > -1 else 0
-            if np.log(np.abs(model_layer[:,chan]).mean()) < ABS_MEAN_CUTOFF or\
-                                        np.log(model_layer[:,chan].std()) < STD_CUTOFF:
-                if verbose and abs(r) > 0.1:
-                    s = "Extremely small layer values, pearson of {} can "+\
-                                      "not be trusted and is being set to 0"
-                    print(s.format(r))
-                r = 0
-            pearsons.append(r)
-        # Set nan and fishy values to zero
-        pearsons = [r if not np.isnan(r) and r > -1 else 0 for r in pearsons]
-        if abs_val:
-            pearsons = [np.absolute(r) for r in pearsons]
-        return np.max(pearsons)
+    if len(model_layer.shape) == 2:
+        shape = (len(model_layer), 1, model_layer.shape[1])
+        model_layer = model_layer.reshape(shape)
+    cor_maps = [correlation_map(mem_pot,model_layer[:,c]) 
+                                    for c in range(model_layer.shape[1])]
+    if abs_val:
+        cor_maps = [np.absolute(m) for m in cor_maps]
+    return np.max([np.max(m) for m in cor_maps])
 
-def sorted_correlation(mem_pot, model_layer, verbose=False):
-    '''
-    Takes a 1d membrane potential and computes the maximum correlation with respect to each 
-    model celltype, sorted from highest to lowest.
-    
-    Args:
-        mem_pot: 1-d numpy array
-        model_layer: (time, celltype, space, space) layer of activities
-    '''
-    if len(model_layer.shape) > 2:
-        n_chans = model_layer.shape[1]
-        return sorted(
-            [np.max(correlation_map(mem_pot, model_layer[:,c])) for c in range(n_chans)])
-    else:
-        #adjusted_layer = model_layer/(np.max(model_layer)+1e-40)
-        #pearsons = [pearsonr(mem_pot, adjusted_layer)[0] for c in range(model_layer.shape[1])]
-        pearsons = [pearsonr(mem_pot, model_layer[:,c])[0] for c in range(model_layer.shape[1])]
-        for i,r in enumerate(pearsons):
-            new_r = r if not np.isnan(r) and r > -1 else 0
-            if np.log(np.abs(layer).mean()) < ABS_MEAN_CUTOFF or\
-                                        np.log(layer.std()) < STD_CUTOFF:
-                if verbose and abs(r) > 0.1:
-                    s = "Extremely small layer values, pearson of {} can "+\
-                                      "not be trusted and is being set to 0"
-                    print(s.format(r))
-                new_r = 0
-            pearsons[i] = new_r
-        return sorted(pearsons)
-
-def max_correlation_all_layers(mem_pot, model_response, layer_keys=['conv1', 'conv2'], 
-                                                                        abs_val=False):
+def max_correlation_all_layers(mem_pot, model_response, layer_keys=['conv1', 'conv2'],
+                                                                       abs_val=False):
     '''
     Takes a 1d membrane potential and computes the maximum correlation over the argued conv 
     layers within a model.
@@ -385,7 +333,7 @@ def max_correlation_all_layers(mem_pot, model_response, layer_keys=['conv1', 'co
         abs_val: use absolute value of correlations
     '''
     max_cors = [max_correlation(mem_pot, model_response[k], abs_val=abs_val) for k in layer_keys]
-    return max(max_cors)
+    return np.max(max_cors)
 
 def argmax_correlation_recurse_helper(mem_pot, model_layer, shape, idx, abs_val=False,
                                                                        verbose=False):
@@ -714,7 +662,7 @@ def model2model_cors(model1, model2, model1_layers={"sequential.2", "sequential.
             response2[layer] = intg_grad
         if "outputs" in model2_layers:
             if gc_resps is None:
-                temp = tdrutils.inspect(model1, stim, batch_size=batch_size,
+                temp = tdrutils.inspect(model2, stim, batch_size=batch_size,
                                                  insp_keys={},
                                                  to_numpy=True, verbose=verbose)
                 gc_resps = temp['outputs']
@@ -725,19 +673,16 @@ def model2model_cors(model1, model2, model1_layers={"sequential.2", "sequential.
                                                   to_numpy=True, verbose=verbose)
     model2.cpu()
 
-    # TODO: Make generalizable!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
-    layer1_layers = {"sequential."+str(i) for i in range(6)}
-    layer2_layers = {"sequential."+str(i) for i in range(6,10)}
     for mod1_layer in model1_layers:
         if verbose:
             print("Calculating Correlations for Model1 layer {}".format(mod1_layer))
         mod1_resp = response1[mod1_layer]
-        if mod1_layer in layer1_layers:
-            mod1_resp = mod1_resp.reshape(-1, model1.chans[0], *model1.shapes[0])
-        elif mod1_layer in layer2_layers:
-            mod1_resp = mod1_resp.reshape(-1, model1.chans[1], *model1.shapes[1])
+        layer_idx = tdrutils.get_layer_idx(model1, layer=mod1_layer)
+        if layer_idx >= 0 and layer_idx < len(model1.chans):
+            shape = (-1, model1.chans[layer_idx], *model1.shapes[layer_idx])
         else:
-            mod1_resp = mod1_resp.reshape(-1,mod1_resp.shape[1],1,1) # GCs as (t,n_units,1,1)
+            shape = (-1,mod1_resp.shape[1],1,1)
+        mod1_resp = mod1_resp.reshape(shape)
         for mod1_chan in range(mod1_resp.shape[1]):
             mod1_row_range = range(0, mod1_resp.shape[2], row_stride)
             if verbose:
@@ -750,14 +695,12 @@ def model2model_cors(model1, model2, model1_layers={"sequential.2", "sequential.
                     best_cor = -1
                     for mod2_layer in model2_layers:
                         mod2_resp = response2[mod2_layer]
-                        if mod2_layer in layer1_layers:
-                            mod2_resp = mod2_resp.reshape(-1, model1.chans[0],
-                                                            *model1.shapes[0])
-                        elif mod2_layer in layer2_layers:
-                            mod2_resp = mod2_resp.reshape(-1, model1.chans[1],
-                                                            *model1.shapes[1])
+                        layer_idx = tdrutils.get_layer_idx(model2, layer=mod2_layer)
+                        if layer_idx >= 0 and layer_idx < len(model2.chans):
+                            shape = (-1, model2.chans[layer_idx], *model2.shapes[layer_idx])
                         else:
-                            mod2_resp = mod2_resp.reshape(-1,mod2_resp.shape[1],1,1) # GCs
+                            shape = (-1,mod2_resp.shape[1],1,1)
+                        mod2_resp = mod2_resp.reshape(shape)
                         for mod2_chan in range(mod2_resp.shape[1]):
                             if only_max:
                                 r, idx = argmax_correlation_recurse_helper(mem_pot, mod2_resp,
@@ -935,7 +878,6 @@ def get_intr_cors(model, stim_dict, mem_pot_dict, layers={"sequential.2", "seque
         "col":[],
         "cor":[]
     }
-    layer_names = get_layer_names(model)
     layers = sorted(list(layers))
     for cell_file in stim_dict.keys():
         for stim_type in stim_dict[cell_file].keys():
@@ -951,10 +893,9 @@ def get_intr_cors(model, stim_dict, mem_pot_dict, layers={"sequential.2", "seque
 
             for layer in layers:
                 shape = None
-                for i in range(len(layer_names)):
-                    if layer in layer_names[i]:
-                        shape = (model.chans[i],*model.shapes[i])
-                assert shape is None, "layer {} does not exist!!!".format(layer)
+                layer_idx = tdrutils.get_layer_idx(model, layer=layer)
+                assert layer_idx >= 0, "layer {} does not exist!!!".format(layer)
+                shape = (model.chans[layer_idx],*model.shapes[layer_idx])
                 resp = response[layer]
                 resp = resp.reshape(len(resp),-1)
                 # Retrns ndarray (Model Neurons, Potentials)
@@ -1018,10 +959,11 @@ def get_cor_generalization(model, stim_dict, mem_pot_dict,layers={"sequential.2"
             stim = tdrstim.rolling_window(stim, model.img_shape[0])
             response = tdrutils.inspect(model, stim, insp_keys=layers, batch_size=batch_size)
             # Fix response shapes
-            for l,layer in enumerate(layers):
+            for layer in layers:
                 resp = response[layer]
-                if len(resp.shape) <= 2:
-                    resp = resp.reshape(-1, model.chans[l], *model.shapes[l])
+                if layer != "outputs" and len(resp.shape) <= 2:
+                    layer_idx = tdrutils.get_layer_idx(model, layer=layer)
+                    resp = resp.reshape(len(resp), model.chans[layer_idx], *model.shapes[layer_idx])
                 response[layer] = resp
             responses[stim_type] = response
         for stim_type in stim_dict[cell_file].keys():
