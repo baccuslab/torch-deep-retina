@@ -520,12 +520,12 @@ def sample_model_rfs(model, layers=['sequential.0','sequential.6'], verbose=Fals
 
     layer_names = []
     prev_i = 0
-
     # Determine what layers exist in the model
-    for i,(name,modu) in enumerate(model.named_modules()):
+    for i, (name,modu) in enumerate(model.named_modules()):
         if isinstance(modu,nn.ReLU):
-            l_names = {'sequential.'+str(l) for l in range(prev_i,i)}
+            l_names = {'sequential.'+str(l) for l in range(prev_i,i+1)}
             layer_names.append(l_names)
+            prev_i = i+1
 
     # Loop to create data frame
     for layer in layers:
@@ -569,7 +569,7 @@ def get_model_rfs(model, data_frame, verbose=False):
     """
     rfs = dict()
     layer1_dups = set() # Used to prevent duplicate calculations
-    layer1_names = {'sequential.'+str(i) for i in range(5)}
+    layer1_names = {'sequential.'+str(i) for i in range(6)}
     rng = range(len(data_frame))
     if verbose:
         print("Calculating Model Receptive Fields")

@@ -554,7 +554,7 @@ def get_mean(x, axis=None, batch_size=1000):
     else:
         for i in range(0,len(x), batch_size):
             cumu_sum = cumu_sum + x[i:i+batch_size].sum(axis)
-        return cumu_sum/len(x)
+        return cumu_sum/x.shape[axis]
 
 def get_std(x, axis=None, batch_size=1000, mean=None):
     """
@@ -578,8 +578,7 @@ def get_std(x, axis=None, batch_size=1000, mean=None):
     else:
         for i in range(0,len(x), batch_size):
             cumu_sum = cumu_sum + ((x[i:i+batch_size]-mean)**2).sum(axis)
-        return torch.sqrt(cumu_sum/len(x))
-
+        return torch.sqrt(cumu_sum/x.shape[axis])
 
 def pearsonr(x,y):
     """
@@ -587,16 +586,16 @@ def pearsonr(x,y):
     version but allows you to calculate the coefficient over much larger data sizes.
     Additionally allows calculation for torch tensors.
 
-    x: ndarray or torch tensor 
-    y: ndarray or torch tensor 
+    x: ndarray or torch tensor (N,)
+    y: ndarray or torch tensor (N,)
     """
     x = x.reshape(len(x), -1)
     y = y.reshape(len(y), -1)
     try:
         mux = x.mean()
         muy = y.mean()
-        sigx = x.std()
-        sigy = y.std()
+        sigx = (x**2).mean()-mux**2
+        sigy = (y**2).mean()-muy**2
     except MemoryError as e:
         mux = get_mean(x) 
         muy = get_mean(y) 
@@ -627,6 +626,57 @@ class poly1d:
     
     def __call__(self, x):
         return self.poly(x)
+
+def mtx_cor(X,Y, batch_size=500, to_numpy=False):
+    """
+    Creates a correlation matrix for X and Y using the GPU
+
+    X: torch tensor or ndarray (T, C) or (T, C, H, W)
+    Y: torch tensor or ndarray (T, K) or (T, K, H1, W1)
+    batch_size: int
+        batches the calculation if this is not None
+    to_numpy: bool
+        if true, returns matrix as ndarray
+
+    Returns:
+        cor_mtx: (C,K)
+            the correlation matrix
+    """
+    if len(X.shape) > 2:
+        X = X.reshape(len(X), -1)
+    if len(Y.shape) > 2:
+        Y = Y.reshape(len(Y), -1)
+    X = torch.FloatTensor(X)
+    Y = torch.FloatTensor(Y)
+    xmean = X.mean(0)
+    xstd = torch.sqrt(((X-xmean)**2).mean(0))
+    #xstd = (X**2).mean(0)-xmean**2
+    ymean = Y.mean(0)
+    ystd = torch.sqrt(((Y-ymean)**2).mean(0))
+    #ystd = (Y**2).mean(0)-ymean**2
+    X = ((X-xmean)/(xstd+1e-5)).permute(1,0)
+    Y = (Y-ymean)/(ystd+1e-5)
+
+    with torch.no_grad():
+        if batch_size is None:
+            X = X.to(DEVICE)
+            Y = Y.to(DEVICE)
+            cor_mtx = torch.einsum("it,tj->ij", X, Y).detach().cpu()
+        else:
+            cor_mtx = []
+            for i in range(0,len(X),batch_size): # loop over x neurons
+                sub_mtx = []
+                x = X[i:i+batch_size].to(DEVICE)
+                for j in range(0,Y.shape[1], batch_size): # Loop over y neurons
+                    y = Y[:,j:j+batch_size].to(DEVICE)
+                    cor_block = torch.einsum("it,tj->ij",x,y).detach().cpu()
+                    sub_mtx.append(cor_block)
+                cor_mtx.append(torch.cat(sub_mtx,dim=1))
+            cor_mtx = torch.cat(cor_mtx, dim=0)
+    cor_mtx = cor_mtx/len(Y)
+    if to_numpy:
+        return cor_mtx.numpy()
+    return cor_mtx
 
 def revcor(X, y, batch_size=500, to_numpy=False, ret_norm_stats=False):
     """
