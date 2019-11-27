@@ -113,7 +113,7 @@ if __name__ == "__main__":
     print("Total Execution Time:", time.time() - start_time)
     print("\n\nBeginning Analysis..")
     exp_folder = hyps['exp_name']
-    dfs = analysis_pipeline(exp_folder, make_figs=True, verbose=True)
+    dfs = analysis_pipeline(exp_folder, make_figs=True, make_model_rfs=True, verbose=True)
     for k in dfs.keys():
         dfs[k].to_csv(os.path.join(exp_folder,k),sep="!",header=True,index=False)
 
