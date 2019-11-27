@@ -461,7 +461,7 @@ def argmax_correlation(mem_pot, model_layer, ret_max_cor=False, abs_val=False, v
 def model2model_cor_mtxs(model1, model2, model1_layers={"sequential.0", "sequential.6"},
                                           model2_layers={"sequential.0", "sequential.6"},
                                           batch_size=500,  contrast=1.0, n_samples=5000, 
-                                          use_ig=True, verbose=True):
+                                          n_repeats=3, use_ig=True, verbose=True):
     """
     Takes two models and correlates the activations at each layer. Returns a dict 
     of correlation marices.
@@ -499,7 +499,9 @@ def model2model_cor_mtxs(model1, model2, model1_layers={"sequential.0", "sequent
     model2.cpu()
 
     nx = min(model1.img_shape[1], model2.img_shape[1])
-    whitenoise = tdrstim.repeat_white(n_samples, nx=nx, contrast=contrast, n_repeats=3)
+
+    whitenoise = tdrstim.repeat_white(n_samples, nx=nx, contrast=contrast, n_repeats=3,
+                                                                        rand_spat=True)
     filt_depth = max(model1.img_shape[0], model2.img_shape[0])
 
     if verbose:
@@ -801,11 +803,101 @@ def model2model_cors(model1, model2, model1_layers={"sequential.2", "sequential.
         model2.to(DEVICE)
     return intr_cors
 
+#def get_intr_cors(model, stim_dict, mem_pot_dict, layers={"sequential.2", "sequential.8"}, 
+#                                                            batch_size=500, verbose=False):
+#    """
+#    Takes a model and dicts of stimuli and membrane potentials to find the best correlations 
+#    for each layer and each channel in the model. Returns a dict that can easily be converted
+#    into a pandas data frame.
+#
+#    model - torch Module
+#    stim_dict - dict of interneuron stimuli
+#        keys: str (interneuron data file name)
+#            vals: dict
+#                keys: stim_types
+#                    vals: ndarray (T, H, W)
+#    mem_pot_dict - dict of interneuron membrane potentials
+#        keys: str (interneuron data file name)
+#            vals: dict
+#                keys: stim_types
+#                    vals: ndarray (CI, T)
+#                        CI is cell idx and T is time
+#    returns:
+#        intr_cors - dict
+#                - cell_file: list
+#                - cell_idx: list
+#                - stim_type: list
+#                - cell_type: list
+#                - cor: list
+#                - layer: list
+#                - chan: list
+#                - row: list
+#                - col: list
+#    """
+#    intr_cors = {
+#        "cell_file":[], 
+#        "cell_idx":[],
+#        "stim_type":[],
+#        "cell_type":[],
+#        "layer":[],
+#        "chan":[],
+#        "row":[],
+#        "col":[],
+#        "cor":[]
+#    }
+#    layers = sorted(list(layers))
+#    for cell_file in stim_dict.keys():
+#        for stim_type in stim_dict[cell_file].keys():
+#            stim = tdrstim.spatial_pad(stim_dict[cell_file][stim_type],model.img_shape[1])
+#            stim = tdrstim.rolling_window(stim, model.img_shape[0])
+#            if verbose:
+#                temp = cell_file.split("/")[-1].split(".")[0]
+#                cellstim = "cell_file:{}, stim_type:{}...".format(temp, stim_type)
+#                print("Collecting model response for "+cellstim)
+#            response = tdrutils.inspect(model, stim, insp_keys=layers, batch_size=batch_size,
+#                                                                               to_numpy=True)
+#            pots = mem_pot_dict[cell_file][stim_type]
+#            rnge = range(len(pots))
+#            if verbose:
+#                print("Correlating with data...")
+#                rnge = tqdm(rnge)
+#            best_cors = []
+#            for cell_idx in rnge:
+#                best_cor = -1
+#                for layer in layers:
+#                    resp = response[layer]
+#                    if len(resp.shape) == 2 and layer == "sequential.2":
+#                        resp = resp.reshape(-1, model.chans[0], *model.shapes[0])
+#                    elif len(resp.shape) == 2 and layer == "sequential.8":
+#                        resp = resp.reshape(-1, model.chans[1], *model.shapes[1])
+#
+#                    for chan in range(resp.shape[1]):
+#                        r, idx = argmax_correlation_recurse_helper(pots[cell_idx], resp,
+#                                                       shape=resp.shape[2:], idx=(chan,),
+#                                                       verbose=verbose)
+#                        _, row, col = idx
+#                        intr_cors['cell_file'].append(cell_file)
+#                        intr_cors['cell_idx'].append(cell_idx)
+#                        intr_cors['stim_type'].append(stim_type)
+#                        cell_type = cell_file.split("/")[-1].split("_")[0][:-1]
+#                        intr_cors['cell_type'].append(cell_type) # amacrine or bipolar
+#                        intr_cors['cor'].append(r)
+#                        intr_cors['layer'].append(layer)
+#                        intr_cors['chan'].append(chan)
+#                        intr_cors['row'].append(row)
+#                        intr_cors['col'].append(col)
+#                        if r > best_cor:
+#                            best_cor = r
+#                best_cors.append(best_cor)
+#            if verbose:
+#                print("Avg:", np.mean(best_cors))
+#    return intr_cors
+
 def get_intr_cors(model, stim_dict, mem_pot_dict, layers={"sequential.2", "sequential.8"}, 
                                                             batch_size=500, verbose=False):
     """
-    Takes a model and dicts of stimuli and membrane potentials to find the best correlations 
-    for each layer and each channel in the model. Returns a dict that can easily be converted
+    Takes a model and dicts of stimuli and membrane potentials to find all correlations 
+    for each layer in the model. Returns a dict that can easily be converted
     into a pandas data frame.
 
     model - torch Module
@@ -843,6 +935,7 @@ def get_intr_cors(model, stim_dict, mem_pot_dict, layers={"sequential.2", "seque
         "col":[],
         "cor":[]
     }
+    layer_names = get_layer_names(model)
     layers = sorted(list(layers))
     for cell_file in stim_dict.keys():
         for stim_type in stim_dict[cell_file].keys():
@@ -855,40 +948,30 @@ def get_intr_cors(model, stim_dict, mem_pot_dict, layers={"sequential.2", "seque
             response = tdrutils.inspect(model, stim, insp_keys=layers, batch_size=batch_size,
                                                                                to_numpy=True)
             pots = mem_pot_dict[cell_file][stim_type]
-            rnge = range(len(pots))
-            if verbose:
-                print("Correlating with data...")
-                rnge = tqdm(rnge)
-            best_cors = []
-            for cell_idx in rnge:
-                best_cor = -1
-                for layer in layers:
-                    resp = response[layer]
-                    if len(resp.shape) == 2 and layer == "sequential.2":
-                        resp = resp.reshape(-1, model.chans[0], *model.shapes[0])
-                    elif len(resp.shape) == 2 and layer == "sequential.8":
-                        resp = resp.reshape(-1, model.chans[1], *model.shapes[1])
 
-                    for chan in range(resp.shape[1]):
-                        r, idx = argmax_correlation_recurse_helper(pots[cell_idx], resp,
-                                                       shape=resp.shape[2:], idx=(chan,),
-                                                       verbose=verbose)
-                        _, row, col = idx
+            for layer in layers:
+                shape = None
+                for i in range(len(layer_names)):
+                    if layer in layer_names[i]:
+                        shape = (model.chans[i],*model.shapes[i])
+                assert shape is None, "layer {} does not exist!!!".format(layer)
+                resp = response[layer]
+                resp = resp.reshape(len(resp),-1)
+                # Retrns ndarray (Model Neurons, Potentials)
+                cor_mtx = tdrutils.mtx_cor(resp, pots.T,batch_size=batch_size, to_numpy=True)
+                for unit_idx in range(cor_mtx.shape[0]):
+                    for cell_idx in range(cor_mtx.shape[1]):
                         intr_cors['cell_file'].append(cell_file)
                         intr_cors['cell_idx'].append(cell_idx)
                         intr_cors['stim_type'].append(stim_type)
                         cell_type = cell_file.split("/")[-1].split("_")[0][:-1]
                         intr_cors['cell_type'].append(cell_type) # amacrine or bipolar
-                        intr_cors['cor'].append(r)
+                        intr_cors['cor'].append(cor_mtx[unit_idx,cell_idx])
                         intr_cors['layer'].append(layer)
+                        (chan,row,col) = np.unravel_index(unit_idx, shape)
                         intr_cors['chan'].append(chan)
                         intr_cors['row'].append(row)
                         intr_cors['col'].append(col)
-                        if r > best_cor:
-                            best_cor = r
-                best_cors.append(best_cor)
-            if verbose:
-                print("Avg:", np.mean(best_cors))
     return intr_cors
 
 def get_cor_generalization(model, stim_dict, mem_pot_dict,layers={"sequential.2","sequential.8"},

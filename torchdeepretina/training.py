@@ -848,7 +848,7 @@ def fit_nonlin(chunked_data, test_chunk, model, degree=5,n_repeats=10, ret_all=F
         return best_poly, best_degree, best_r, best_preds
     return best_poly
 
-def fit_ln_nonlin(X, y, model, degree=5, ret_all=False):
+def fit_ln_nonlin(X, y, model, degree=5, fit_size=None, ret_all=False):
     """
     Fits a polynomial nonlinearity to the model.
 
@@ -875,9 +875,14 @@ def fit_ln_nonlin(X, y, model, degree=5, ret_all=False):
             outs = model.convolve(x).cpu().detach()
             lin_outs[i:i+batch_size] = outs
 
+    lin_outs = lin_outs.numpy().astype(np.float32).squeeze()
+    y = y.numpy().astype(np.float32).squeeze()
+    if isinstance(fit_size, int) and fit_size < len(lin_outs):
+        sample = np.random.randint(0,len(lin_outs), fit_size).astype(np.int)
+        lin_outs = lin_outs[sample]
+        y = y[sample]
+
     for d in degree:
-        lin_outs = lin_outs.numpy().astype(np.float32).squeeze()
-        y = y.numpy().astype(np.float32).squeeze()
         fit = np.polyfit(lin_outs, y, d)
         poly = tdrutils.poly1d(fit)
         preds = poly(lin_outs)
@@ -909,10 +914,10 @@ def train_ln(X, y, rf_center, cutout_size):
         y = torch.FloatTensor(y)
 
     # STA is cpu torch tensor
-    sta, norm_stats, _ = tdrutils.revcor(X, y, ret_norm_stats=True)
+    sta, norm_stats, _ = tdrutils.revcor(X, y, batch_size=500, ret_norm_stats=True)
     model = RevCorLN(sta.reshape(-1),ln_cutout_size=cutout_size,center=rf_center,
                                                             norm_stats=norm_stats)
-    bests = fit_ln_nonlin(X, y, model,degree=[5], ret_all=True)
+    bests = fit_ln_nonlin(X, y, model,degree=[5], fit_size=15000, ret_all=True)
     best_poly,best_degree,best_r,best_preds = bests
     model.poly = best_poly # Torch compatible polys
     model.poly_degree = best_degree

@@ -272,7 +272,7 @@ class DataDistributor:
         self.is_torch = False
         self.seq_len = seq_len
         self.shuffle = shuffle
-        self.rand_sample = rand_sample
+        self.rand_sample = shuffle if rand_sample is None else rand_sample
         self.recurrent = recurrent
         self.shift_labels = shift_labels
         self.X = data.X
@@ -286,7 +286,6 @@ class DataDistributor:
         else:
             self.y_mean = None
             self.y_std =  None
-        rand_sample = shuffle if rand_sample is None else rand_sample
 
         if seq_len > 1:
             self.X = rolling_window(self.X, seq_len)

@@ -554,7 +554,7 @@ def get_mean(x, axis=None, batch_size=1000):
     else:
         for i in range(0,len(x), batch_size):
             cumu_sum = cumu_sum + x[i:i+batch_size].sum(axis)
-        return cumu_sum/len(x)
+        return cumu_sum/x.shape[axis]
 
 def get_std(x, axis=None, batch_size=1000, mean=None):
     """
@@ -578,8 +578,7 @@ def get_std(x, axis=None, batch_size=1000, mean=None):
     else:
         for i in range(0,len(x), batch_size):
             cumu_sum = cumu_sum + ((x[i:i+batch_size]-mean)**2).sum(axis)
-        return torch.sqrt(cumu_sum/len(x))
-
+        return torch.sqrt(cumu_sum/x.shape[axis])
 
 def pearsonr(x,y):
     """
@@ -595,8 +594,8 @@ def pearsonr(x,y):
     try:
         mux = x.mean()
         muy = y.mean()
-        sigx = x.std()
-        sigy = y.std()
+        sigx = (x**2).mean()-mux**2
+        sigy = (y**2).mean()-muy**2
     except MemoryError as e:
         mux = get_mean(x) 
         muy = get_mean(y) 
@@ -628,7 +627,7 @@ class poly1d:
     def __call__(self, x):
         return self.poly(x)
 
-def mtx_cor(X,Y,batch_size=500, to_numpy=False):
+def mtx_cor(X,Y, batch_size=500, to_numpy=False):
     """
     Creates a correlation matrix for X and Y using the GPU
 
@@ -650,14 +649,13 @@ def mtx_cor(X,Y,batch_size=500, to_numpy=False):
     X = torch.FloatTensor(X)
     Y = torch.FloatTensor(Y)
     xmean = X.mean(0)
-    xstd = X.std(0)
+    xstd = torch.sqrt(((X-xmean)**2).mean(0))
+    #xstd = (X**2).mean(0)-xmean**2
     ymean = Y.mean(0)
-    ystd = Y.std(0)
-    std_mtx = torch.ger(xstd, ystd)
-    X = ((X-xmean)).permute(1,0)
-    Y = (Y-ymean)
-    #X = ((X-xmean)/(xstd+1e-5)).permute(1,0)
-    #Y = (Y-ymean)/(ystd+1e-5)
+    ystd = torch.sqrt(((Y-ymean)**2).mean(0))
+    #ystd = (Y**2).mean(0)-ymean**2
+    X = ((X-xmean)/(xstd+1e-5)).permute(1,0)
+    Y = (Y-ymean)/(ystd+1e-5)
 
     with torch.no_grad():
         if batch_size is None:
@@ -676,7 +674,6 @@ def mtx_cor(X,Y,batch_size=500, to_numpy=False):
                 cor_mtx.append(torch.cat(sub_mtx,dim=1))
             cor_mtx = torch.cat(cor_mtx, dim=0)
     cor_mtx = cor_mtx/len(Y)
-    cor_mtx = cor_mtx/std_mtx
     if to_numpy:
         return cor_mtx.numpy()
     return cor_mtx
