@@ -111,7 +111,7 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, cutout_widt
         stats = {}
         if norm_stats is not None:
             if isinstance(norm_stats, dict):
-                stats = {k:v for k,v in norm_stats.keys()}
+                stats = {k:v for k,v in norm_stats.items()}
             else:
                 stats['mean'] = norm_stats[0]
                 stats['std'] = norm_stats[1]
