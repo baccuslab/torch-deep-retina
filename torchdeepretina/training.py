@@ -565,8 +565,10 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
         model_hyps = get_model_hyps(hyps)
 
         # Load q
-        hyper_q.put([{k:v for k,v in hyps.items()}, {k:v for k,v in model_hyps.items()}])
-        hyps['exp_num'] += 1
+        if 'n_repeats' not in hyps: hyps['n_repeats'] = 1
+        for i in range(hyps['n_repeats']):
+            hyper_q.put([{k:v for k,v in hyps.items()}, {k:v for k,v in model_hyps.items()}])
+            hyps['exp_num'] += 1
 
     # Non-base call. Sets a hyperparameter to a new search value and passes down the dict.
     else:
