@@ -468,6 +468,33 @@ def revcor_sta(model, layers=['sequential.0','sequential.6'], chans=[8,8], verbo
             stas[layer].append(sta)
     return stas
 
+def revcor_sta_ganglion(model, layers=['ganglion.0'], n_units=5,  verbose=True, device=torch.device('cuda:1')):
+    """
+    Computes the sta using reverse correlation. Uses the central unit for computation
+
+    model - torch Module
+
+    returns:
+        dict of sta lists for each channel in each layer
+        keys: layer names
+            vals: lists of stas for each channel in the layer
+    """
+    noise = np.random.randn(10000,50,50)
+    try:
+        filter_size = model.img_shape[0]
+    except:
+        filter_size = model.image_shape[0]
+    X = tdrstim.concat(noise, nh=filter_size)
+    noise = noise[filter_size:]
+    response = inspect(model, X, insp_keys=set(layers), batch_size=500, to_numpy=True, device=device)
+    stas = {layer:[] for layer in layers}
+    for layer in layers:
+        for cell in range(n_units):
+            resp = response[layer]
+            sta,_ = ft.revcorr(noise, scipy.stats.zscore(resp[:, cell]), 0, filter_size)
+            stas[layer].append(sta)
+    return stas
+
 def freeze_weights(model, unfreeze=False):
     for p in model.parameters():
         try:
