@@ -256,9 +256,9 @@ class LN(TDRModel):
         if self.softplus:
             modules.append(nn.Softplus())
         else:
-            modules.append(nn.ReLU())
+            modules.append(nn.ELU())
         self.sequential = nn.Sequential(*modules)
-        
+ 
     def forward(self, x):
         return self.sequential(x)
 
@@ -594,8 +594,9 @@ class RevCorLN:
     """
     LN model made by reverse correlation with fitted polynomial nonlinearity.
     """
-    def __init__(self, filt, ln_cutout_size, center, norm_stats=[0,1], fit=[1,0], cell_file=None, 
-                                                                         cell_idx=None):
+    def __init__(self, filt, ln_cutout_size, center, norm_stats=[0,1], fit=[1,0], cell_file=None,
+                                                             img_shape=(40,50,50),cell_idx=None,
+                                                             **kwargs):
         if type(filt) == type(np.array([])):
             filt = torch.FloatTensor(filt)
         self.filt = filt.reshape(-1)
@@ -605,6 +606,7 @@ class RevCorLN:
         self.norm_stats = norm_stats
         self.cell_file = cell_file
         self.cell_idx = cell_idx
+        self.img_shape = img_shape
 
     def normalize(self, x):
         """
@@ -628,7 +630,7 @@ class RevCorLN:
     def convolve(self, x):
         if type(x) == type(np.array([])):
             x = torch.FloatTensor(x)
-        batch_size = 1000
+        batch_size = 500
         self.filt = self.filt.to(DEVICE)
         x = x.reshape(len(x), -1)
         outputs = torch.empty(len(x)).float()
