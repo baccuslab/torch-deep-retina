@@ -494,14 +494,17 @@ def get_data(hyps):
     hyps: dict
         dict of relevant hyperparameters
     """
+    cutout_size = None if 'cutout_size' not in hyps else hyps['cutout_size']
     img_depth, img_height, img_width = hyps['img_shape']
     train_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'], 
-                                hyps['stim_type'],'train',img_depth,0))
+                                hyps['stim_type'],'train',img_depth,0,
+                                cutout_width=cutout_size))
     norm_stats = [train_data.stats['mean'], train_data.stats['std']] 
 
     try:
         test_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],hyps['stim_type'],
-                                                'test',img_depth,0, norm_stats=norm_stats))
+                                                'test',img_depth,0, norm_stats=norm_stats,
+                                                cutout_width=cutout_size))
         test_data.X = test_data.X[:500]
         test_data.y = test_data.y[:500]
     except:
@@ -898,7 +901,7 @@ def fit_ln_nonlin(X, y, model, degree=5, fit_size=None, ret_all=False):
         return best_poly, best_degree, best_r, best_preds
     return best_poly
 
-def train_ln(X, y, rf_center, cutout_size):
+def train_ln(X, y, rf_center, cutout_size,verbose=True):
     """
     Fits an LN model to the data
 
@@ -916,9 +919,13 @@ def train_ln(X, y, rf_center, cutout_size):
         y = torch.FloatTensor(y)
 
     # STA is cpu torch tensor
+    if verbose:
+        print("Performing reverse correlation")
     sta, norm_stats, _ = tdrutils.revcor(X, y, batch_size=500, ret_norm_stats=True)
     model = RevCorLN(sta.reshape(-1),ln_cutout_size=cutout_size,center=rf_center,
                                                             norm_stats=norm_stats)
+    if verbose:
+        print("Fitting nonlinearity")
     bests = fit_ln_nonlin(X, y, model,degree=[5], fit_size=15000, ret_all=True)
     best_poly,best_degree,best_r,best_preds = bests
     model.poly = best_poly # Torch compatible polys
