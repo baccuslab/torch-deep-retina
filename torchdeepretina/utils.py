@@ -343,6 +343,7 @@ def inspect(model, X, insp_keys={}, batch_size=500, to_numpy=True, to_cpu=True, 
         only effective if to_numpy is false.
 
     returns dict of np arrays or torch cpu tensors
+        "outputs": default key for output layer
     """
     layer_outs = dict()
     handles = []
@@ -485,7 +486,7 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, t
     if verbose:
         print("layer:", layer)
     requires_grad(model, False)
-    device = next(model.parameters()).get_device()
+    device =torch.device('cuda:0') if next(model.parameters()).is_cuda else torch.device('cpu')
     prev_grad_state = torch.is_grad_enabled() 
     torch.set_grad_enabled(True)
 
@@ -493,6 +494,8 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, t
         batch_size = 1
         hs = [torch.zeros(batch_size, *h_shape).to(device) for h_shape in model.h_shapes]
 
+    if layer == 'output' or layer=='outputs':
+        layer = "sequential."+str(len(model.sequential)-1)
     hook_outs = dict()
     module = None
     for name, modu in model.named_modules():
@@ -710,7 +713,7 @@ def mtx_cor(X, Y, batch_size=500, to_numpy=False):
         return cor_mtx.numpy()
     return cor_mtx
 
-def revcor(X, y, batch_size=500, to_numpy=False, ret_norm_stats=False):
+def revcor(X, y, batch_size=500, to_numpy=False, ret_norm_stats=False, verbose=False):
     """
     Reverse correlates X and y using the GPU
 
@@ -740,9 +743,12 @@ def revcor(X, y, batch_size=500, to_numpy=False, ret_norm_stats=False):
         else:
             n_samples = 0
             cumu_sum = 0
-            for i in range(0,len(X),batch_size):
+            rng = range(0,len(X),batch_size)
+            if verbose:
+                rng = tqdm(rng)
+            for i in rng:
                 x = X[i:i+batch_size]
-                truth = y[i:i+batch_size]
+                truth = y[i:i+batch_size].squeeze()
                 x = (x-xmean)/(xstd+1e-5)
                 matmul = torch.einsum("ij,i->j",x.to(DEVICE),truth.to(DEVICE))
                 cumu_sum = cumu_sum + matmul.cpu().detach()
@@ -755,7 +761,7 @@ def revcor(X, y, batch_size=500, to_numpy=False, ret_norm_stats=False):
         return sta, xnorm_stats, ynorm_stats
     return sta
 
-def revcor_sta(model, layer, cell_index, layer_shape=None, n_samples=25000, batch_size=500,
+def revcor_sta(model, layer, cell_index, layer_shape=None, n_samples=20000, batch_size=500,
                                                  contrast=1, to_numpy=False, verbose=True):
     """
     Calculates the STA using the reverse correlation method.
@@ -883,7 +889,7 @@ def multi_shuffle(arrays):
             del temp
     return arrays
 
-def save_ln(model,file_name):
+def save_ln(model,file_name,hyps=None):
     """
     Saves an LNModel to file
 
@@ -900,6 +906,8 @@ def save_ln(model,file_name):
                   "cell_file":model.cell_file,
                   "cell_idx": model.cell_idx,
     }
+    if hyps is not None:
+        model_dict = {**model_dict, **hyps}
     with open(file_name,'wb') as f:
         pickle.dump(model_dict,f)
 
