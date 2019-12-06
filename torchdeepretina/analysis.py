@@ -232,6 +232,7 @@ def read_model(folder, ret_metrics=False):
         if true, returns the recorded training metric history (i.e. val loss, val acc, etc)
     """
     metrics = dict()
+    folder = os.path.expanduser(folder)
     try:
         _, _, fs = next(os.walk(folder.strip()))
     except Exception as e:
@@ -425,11 +426,12 @@ def get_model_folders(main_folder):
                     break
     return sorted(folders, key=lambda x: x.split("/")[-1].split("_")[1])
 
-def get_analysis_table(folder, hyps=None):
+def get_analysis_table(folder=None, hyps=None):
     """
     Returns a dict that can easily be converted into a dataframe
     """
     table = dict()
+    assert hyps is not None or folder is not None, "either folder or hyps must not be None"
     if hyps is None:
         hyps = get_hyps(folder)
     for k,v in hyps.items():
@@ -520,19 +522,10 @@ def sample_model_rfs(model, layers=['sequential.0','sequential.6'], verbose=Fals
 
     layer_names = []
     prev_i = 0
-    # Determine what layers exist in the model
-    for i, (name,modu) in enumerate(model.named_modules()):
-        if isinstance(modu,nn.ReLU):
-            l_names = {'sequential.'+str(l) for l in range(prev_i,i+1)}
-            layer_names.append(l_names)
-            prev_i = i+1
 
-    # Loop to create data frame
+    # Loop to create data frame containing each desired unit
     for layer in layers:
-        # Determines what layer the layer name falls under
-        for chan_idx,l_names in enumerate(layer_names):
-            if layer in l_names:
-                break
+        chan_idx = tdrutils.get_layer_idx(model, layer=layer)
         n_chans = model.chans[chan_idx]
         shape = model.shapes[chan_idx]
         row = shape[0]//2
@@ -547,7 +540,7 @@ def sample_model_rfs(model, layers=['sequential.0','sequential.6'], verbose=Fals
     rfs = get_model_rfs(model, df, verbose=verbose)
     return rfs
 
-def get_model_rfs(model, data_frame, verbose=False):
+def get_model_rfs(model, data_frame, use_grad=False, verbose=False):
     """
     Searches through each entry in the data frame and computes an STA for the model unit
     in that entry. Returns a dict containing the STAs.
@@ -559,6 +552,8 @@ def get_model_rfs(model, data_frame, verbose=False):
             'chan',
             'row',
             'col'
+    use_grad: bool
+        determines method by which to calculate receptive fields
 
     Returns:
         rfs: dict
@@ -585,11 +580,17 @@ def get_model_rfs(model, data_frame, verbose=False):
         chans = model.chans
         shapes = model.shapes
         layer_shape = (chans[0],*shapes[0]) if layer in layer1_names else (chans[1],*shapes[1])
-        sta = compute_sta(model, layer=layer, cell_index=cell_idx, layer_shape=layer_shape,
-                                                                       n_samples=10000,
-                                                                       contrast=1,
-                                                                       to_numpy=True,
-                                                                       verbose=False)
+        if use_grad:
+            sta = compute_sta(model, layer=layer, cell_index=cell_idx, layer_shape=layer_shape,
+                                                                           n_samples=10000,
+                                                                           contrast=1,
+                                                                           to_numpy=True,
+                                                                           verbose=False)
+        else:
+            sta = get_sta(model, layer=layer, cell_index=cell_idx, layer_shape=layer_shape,
+                                                                         n_samples=15000,
+                                                                         to_numpy=True,
+                                                                         verbose=False)
 
         rfs[unit_id] = sta
     return rfs
@@ -668,6 +669,8 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'], stim_keys={"bo
     table = tdrintr.get_intr_cors(model, stim_dict, mem_pot_dict, layers=set(layers),
                                                        batch_size=500, verbose=verbose)
     df = pd.DataFrame(table)
+    dups = ['cell_file', 'cell_idx', 'stim_type', "layer", "chan"]
+    df = df.sort_values(by="cor", ascending=False).drop_duplicates(dups)
     if ret_model_rfs:
         dups = ['cell_file', 'cell_idx']
         temp_df = df.sort_values(by='cor', ascending=False).drop_duplicates(dups)
@@ -755,16 +758,48 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False, verbose=True):
     hor_intr_cor = bests.loc[bests['cell_type']=="horizontal",'cor'].mean()
     df['horizontal_intr_cor'] = hor_intr_cor
     df['intr_cor'] = bests['cor'].mean()
+    if verbose:
+        print("Interneuron Correlations:")
+        print("Bipolar Avg:", bip_intr_cor)
+        print("Amacrine Avg:", amc_intr_cor)
+        print("Horizontal Avg:", hor_intr_cor)
 
     return df, intr_df
 
-def analysis_pipeline(main_folder, make_figs=True, make_model_rfs=True, verbose=True):
+def evaluate_ln(ln, hyps):
+    """
+    ln: RevCorLN object (see models.py)
+    """
+    table = get_analysis_table(hyps=hyps)
+    data = tdrdatas.loadexpt(expt=hyps['dataset'], cells=hyps['cells'], 
+                                            filename=hyps['stim_type'],
+                                            train_or_test="test",
+                                            history=model.img_shape[0],
+                                            norm_stats=ln.norm_stats)
+    with torch.no_grad():
+        response = model(data.X)
+    resp = response.data.numpy()
+    cor = scipy.stats.pearsonr(response, data.y[:,model.cell_idx])
+    table['test_acc'] = [gc_cor]
+    df = pd.DataFrame(table)
+    if verbose:
+        print("GC Cor:", gc_cor,"  Loss:", gc_loss)
+    return df
+
+def analysis_pipeline(main_folder, make_figs=True, make_model_rfs=True, save_dfs=True,
+                                                                        verbose=True):
     """
     Evaluates model on test set, calculates interneuron correlations, 
     and creates figures.
 
     main_folder: str
         the folder full of model folders that contain checkpoints
+    make_figs: bool
+        automatically creates and saves figures in the model folders
+    make_model_rfs: bool
+        automatically creates and saves model receptive field figures in the model folders
+    save_dfs: bool
+        automatically saves the analysis dataframe checkpoints in the main folder
     """
     model_folders = get_model_folders(main_folder)
     csvs = ['model_data.csv', 'intr_data.csv']
@@ -799,6 +834,17 @@ def analysis_pipeline(main_folder, make_figs=True, make_model_rfs=True, verbose=
                 dfs[csvs[1]] = intr_df
             else:
                 dfs[csvs[1]] = dfs[csvs[1]].append(intr_df,sort=True)
+        if save_dfs:
+            for k in dfs.keys():
+                path = os.path.join(main_folder,k)
+                if k == csvs[1] and os.path.exists(path): # Append data if interneuron data
+                    dfs[k].to_csv(path, sep="!", index=False, header=False, mode='a')
+                    dfs[k] = dfs[k].iloc[0:0]
+                elif k == csvs[1]:
+                    dfs[k].to_csv(path, sep="!", index=False, header=True)
+                    dfs[k] = dfs[k].iloc[0:0]
+                else:
+                    dfs[k].to_csv(path, sep="!", index=False, header=True)
     return dfs
 
 
