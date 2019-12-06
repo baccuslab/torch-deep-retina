@@ -9,7 +9,7 @@ from os.path import join, expanduser
 from scipy.stats import zscore
 import pyret.filtertools as ft
 import torch
-import torchdeepretina.stimuli as tdrstimuli
+import torchdeepretina.stimuli as tdrstim
 import torchdeepretina.intracellular as tdrintra
 
 NUM_BLOCKS = {
@@ -30,7 +30,7 @@ CELLS = {
     'arbfilt': [0,1,2,3,4,5,6,7,8,9]
 }
 CENTERS = {
-    '15-10-07': [[21,18], [24,20], [22,18], [27,18], [31,20]],
+    '15-10-07':  [[21,18], [24,20], [22,18], [27,18], [31,20]],
     '15-11-21a': [[37,3], [39,6], [20,15], [41,2]],
     '15-11-21b': [[16,13], [20,12], [19,7],[19,3], [21,7], [22,6], [21,7],
             [25,3],[23,6],[26,4],[24,6],[26,7], [27,9], [26,9],
@@ -38,6 +38,16 @@ CENTERS = {
     '16-01-07': None,
     '16-01-08': None,
     'arbfilt': None,
+}
+CENTERS_DICT = {
+        '15-10-07':  {0:[21,18], 1:[24,20], 2:[22,18], 3:[27,18], 4:[31,20]},
+        '15-11-21a': {6:[37,3], 10:[39,6], 12:[20,15], 13:[41,2]},
+        '15-11-21b': {0:[16,13], 1:[20,12], 3:[19,7], 5:[19,3], 8:[21,7], 9:[22,6], 13:[21,7],
+            14:[25,3],16:[23,6],17:[26,4],18:[24,6],20:[26,7], 21:[27,9], 22:[26,9],
+            23:[27,11], 24:[26,13], 25:[24,10]},
+        '16-01-07': dict(),
+        '16-01-08': dict(),
+        'arbfilt': dict(),
 }
 
 Exptdata = namedtuple('Exptdata', ['X','y','spkhist','stats',"cells","centers"])
@@ -91,11 +101,11 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, cutout_widt
         cells = CELLS[expt]
 
     # get whitenoise STA for cutout stimulus
-    if cutout_width is not None:
-        assert len(cells) == 1, "cutout must be used with single cells"
-        wn = _loadexpt_h5(expt, 'whitenoise')
-        sta = np.array(wn['train/stas/cell{:02d}'.format(cells[0]+1)]).copy()
-        py, px = ft.filterpeak(sta)[1]
+    #if cutout_width is not None:
+    #    assert len(cells) == 1, "cutout must be used with single cells"
+    #    wn = _loadexpt_h5(expt, 'whitenoise')
+    #    sta = np.array(wn['train/stas/cell{:02d}'.format(cells[0]+1)]).copy()
+    #    py, px = ft.filterpeak(sta)[1]
 
     # load the hdf5 file
     with _loadexpt_h5(expt, filename, root=data_path) as f:
@@ -107,7 +117,9 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, cutout_widt
             stim = np.asarray(f[train_or_test]['stimulus']).astype('float32')
         else:
             arr = np.asarray(f[train_or_test]['stimulus'])
-            stim = ft.cutout(arr, idx=(px, py), width=cutout_width).astype('float32')
+            center = CENTERS_DICT[expt][cells[0]]
+            stim = tdrstim.get_cutout(arr, center=center,span=cutout_width,
+                                    pad_to=arr.shape[-1]).astype('float32')
         stats = {}
         if norm_stats is not None:
             if isinstance(norm_stats, dict):
@@ -186,7 +198,7 @@ def rolling_window(array, window, time_axis=0):
     """
     See stimuli.py package for details
     """
-    return tdrstimuli.rolling_window(array, window, time_axis)
+    return tdrstim.rolling_window(array, window, time_axis)
 
 class DataObj:
     def __init__(self, data, idxs):
