@@ -958,6 +958,7 @@ def contrast_fig(model, contrasts=[0.4,2.4], layer_name=None, unit_index=0, verb
     ax1.xaxis.set_ticks_position('bottom')
     ax1.yaxis.set_ticks_position('left')
     
+    # Plot the nonlinearity
     plt.subplot(1, 2, 2)
     plt.locator_params(axis='x', nbins=3)
     plt.plot(high_x, len(high_x) * [0], 'k--', alpha=0.4)
@@ -982,7 +983,7 @@ def contrast_fig(model, contrasts=[0.4,2.4], layer_name=None, unit_index=0, verb
     return fig
 
 def nonlinearity_fig(model, contrast=0.25, layer_name=None, unit_index=0, verbose=False, 
-                                                         nonlinearity_type='bin'):
+                                                         nonlinearity_type='bin', figsize=(8,2)):
     """
     Creates figure 2D from "Deeplearning Models Reveal..." paper. Much of this code has 
     been repurposed from Lane and Niru's notebooks.
@@ -1007,7 +1008,7 @@ def nonlinearity_fig(model, contrast=0.25, layer_name=None, unit_index=0, verbos
                                       nonlinearity_type=nonlinearity_type)
     resp_time, temporal_resp, resp_x, resp, nonlinearity = tup
 
-    fig = plt.figure(figsize=(8, 2))
+    fig = plt.figure(figsize=figsize)
     plt.plot(resp_x, len(resp_x) * [0], 'k--', alpha=0.4)
     plt.plot(resp_x, resp, linewidth=3, color='k')
     plt.xlabel('Filtered Input', fontsize=14)
