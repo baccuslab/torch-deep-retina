@@ -507,6 +507,8 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, t
             hook_handle = module.register_forward_hook(hook)
 
     # Get gradient with respect to activations
+    if type(X) == type(np.array([])):
+        X = torch.FloatTensor(X)
     X.requires_grad = True
     n_loops = X.shape[0]//batch_size
     rng = range(n_loops)
@@ -782,7 +784,7 @@ def revcor_sta(model, layer, cell_index, layer_shape=None, n_samples=20000, batc
         returns values as numpy arrays if true, else as torch tensors
     """
     noise = contrast*np.random.randn(n_samples,*model.img_shape[1:])
-    X = tdrstim.concat(noise, nh=model.img_shape[0])
+    X = tdrstim.concat(noise, nh=model.img_shape[0], nx=model.img_shape[1])
     with torch.no_grad():
         response = inspect(model, X, insp_keys=set([layer]), batch_size=batch_size, 
                                                                     to_numpy=False)
