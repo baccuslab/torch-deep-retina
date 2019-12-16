@@ -622,12 +622,13 @@ def get_model2model_cors(model1, model2, model1_layers={"sequential.0", "sequent
     """
     model1.eval()
     model2.eval()
-    table = tdrintr.model2model_cors(model1,model2, model1_layers=model1_layers, use_ig=use_ig,
-                                                        model2_layers=model2_layers,
-                                                        batch_size=500, contrast=contrast,
-                                                        n_samples=n_samples, only_max=only_max,
-                                                        row_stride=row_stride, 
-                                                        col_stride=col_stride, verbose=verbose)
+    table = tdrintr.model2model_cors(model1,model2, model1_layers=model1_layers, 
+                                           use_ig=use_ig,
+                                           model2_layers=model2_layers,
+                                           batch_size=500, contrast=contrast,
+                                           n_samples=n_samples, only_max=only_max,
+                                           row_stride=row_stride, 
+                                           col_stride=col_stride, verbose=verbose)
     df = pd.DataFrame(table)
     if ret_model1_rfs:
         print("Receptive Field Calculations not implemented yet...")
@@ -635,10 +636,12 @@ def get_model2model_cors(model1, model2, model1_layers={"sequential.0", "sequent
         print("Receptive Field Calculations not implemented yet...")
     return df
 
-def get_intr_cors(model, layers=['sequential.0', 'sequential.6'], stim_keys={"boxes"},
-                                                             files=None,ret_real_rfs=False, 
-                                                             ret_model_rfs=False,
-                                                             verbose=True):
+def get_intr_cors(model, layers=['sequential.0', 'sequential.6'], 
+                                                 stim_keys={"boxes"},
+                                                 files=None,ret_real_rfs=False, 
+                                                 ret_model_rfs=False,
+                                                 slide_stim=False,
+                                                 verbose=True):
     """
     Gets and returns a DataFrame of the interneuron correlations with the model.
 
@@ -654,6 +657,9 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'], stim_keys={"bo
         the sta of the interneuron are returned if this is true
     ret_model_rfs - bool
         the sta of the most correlated model unit are returned if this is true
+    slide_stim - bool
+        slides the stimulus so that misaligned receptive fields of the ganglion
+        cells and interneurons can be accounted for
     """
     if verbose:
         print("Reading data for interneuron correlations...")
@@ -667,7 +673,8 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'], stim_keys={"bo
                                                                            verbose=verbose)
 
     table = tdrintr.get_intr_cors(model, stim_dict, mem_pot_dict, layers=set(layers),
-                                                       batch_size=500, verbose=verbose)
+                                                       batch_size=500, slide_window=False,
+                                                       verbose=verbose)
     df = pd.DataFrame(table)
     dups = ['cell_file', 'cell_idx', 'stim_type', "layer", "chan"]
     df = df.sort_values(by="cor", ascending=False).drop_duplicates(dups)
@@ -683,7 +690,7 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'], stim_keys={"bo
         return df, model_rfs
     return df
 
-def get_analysis_figs(folder, model, metrics=None, verbose=True):
+def get_analysis_figs(folder, model, metrics=None, ret_phenom=True, verbose=True):
     if metrics is not None:
         # Plot Loss Curves
         if "epoch" in metrics and 'loss' in metrics and 'val_loss' in metrics:
@@ -704,11 +711,12 @@ def get_analysis_figs(folder, model, metrics=None, verbose=True):
             plt.savefig(os.path.join(folder,'acc_curves.png'))
 
     ## Get retinal phenomena plots
-    figs, fig_names, metrics = retinal_phenomena_figs(model, verbose=verbose)
+    if ret_phenom:
+        figs, fig_names, metrics = retinal_phenomena_figs(model, verbose=verbose)
 
-    for fig, name in zip(figs, fig_names):
-        save_name = name + ".png"
-        fig.savefig(os.path.join(folder, save_name))
+        for fig, name in zip(figs, fig_names):
+            save_name = name + ".png"
+            fig.savefig(os.path.join(folder, save_name))
 
 def analyze_model(folder, make_figs=True, make_model_rfs=False, verbose=True):
     """
