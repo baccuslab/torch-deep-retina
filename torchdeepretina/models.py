@@ -222,6 +222,14 @@ class LinearStackedBNCNN(TDRModel):
         if not self.training and self.infr_exp:
             return torch.exp(self.sequential(x))
         return self.sequential(x)
+
+    def deactivate_grads(self, deactiv=True):
+        """
+        Turns grad off for all trainable parameters in model
+        """
+        for p in self.parameters():
+            p.requires_grad = deactiv
+
     
     def tiled_forward(self,x):
         """
