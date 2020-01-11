@@ -974,7 +974,8 @@ class AmacRNNFull(nn.Module):
         return outs, bipolar_feedback, h_new
 
 class ConvGRUCell(nn.Module):
-    def __init__(self, in_channels, out_channels, rnn_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
+    def __init__(self, in_channels, out_channels, rnn_channels, kernel_size, 
+                        stride=1, padding=0, dilation=1, groups=1, bias=True):
         super().__init__()
         self.in_chans = in_channels
         self.out_chans = out_channels
@@ -983,13 +984,18 @@ class ConvGRUCell(nn.Module):
         self.stride = stride
         self.padding = padding
         self.bias = bias
-        self.conv = nn.Conv2d(in_channels+rnn_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
+        self.conv = nn.Conv2d(in_channels+rnn_channels, out_channels, kernel_size,
+                                          stride, padding, dilation, groups, bias)
         assert kernel_size % 2 == 1 # Must have odd kernel size
         self.rnn_padding = (kernel_size-1)//2
-        self.rnn_conv = nn.Sequential(nn.Conv2d(in_channels+rnn_channels, rnn_channels*2, kernel_size, stride, self.rnn_padding, bias=True),
-                                                                                                                          nn.Sigmoid())
-        self.tan_conv = nn.Sequential(nn.Conv2d(in_channels+rnn_channels, rnn_channels, kernel_size, stride, self.rnn_padding, bias=True),
-                                                                                                                          nn.Tanh())
+        temp_conv = nn.Conv2d(in_channels+rnn_channels, rnn_channels*2, 
+                                                kernel_size, stride, 
+                                                self.rnn_padding, bias=True)
+        self.rnn_conv = nn.Sequential(temp_conv, nn.Sigmoid())
+        temp_conv = nn.Conv2d(in_channels+rnn_channels, rnn_channels, kernel_size,
+                                                         stride, self.rnn_padding, 
+                                                         bias=True)
+        self.tan_conv = nn.Sequential(temp_conv, nn.Tanh())
     
     def forward(self, x, h):
         """
