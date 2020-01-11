@@ -429,39 +429,55 @@ class Trainer:
                 break
 
             #### Check Integrated Gradient
-            if epoch > hyps['min_epochs'] and epoch % hyps['intg_grad_interval'] == 0:
-                if intg_idx < len(hyps['intg_layers']) and val_acc < prev_acc:
-                    print("Validation decrease detected. Returning to Previous Model")
-                    zero_dict[hyps['intg_layers'][intg_idx]].remove(prev_min_chan)
+            if epoch > hyps['min_epochs'] and\
+                            epoch % hyps['intg_grad_interval'] == 0:
+                new_drop_layer = False
+                if intg_idx<len(hyps['intg_layers']) and val_acc<prev_acc:
+                    print("Validation decrease detected. "+\
+                                    "Returning to Previous Model")
+                    layer = hyps['intg_layers'][intg_idx]
+                    zero_dict[layer].remove(prev_min_chan)
                     # Return weights to previous values
                     model.load_state_dict(prev_state_dict)
                     intg_idx += 1
-                    prev_acc = val_acc
+                    new_drop_layer = True
 
-                if val_acc >= prev_acc and intg_idx < len(hyps['intg_layers']):
-                    print("Calculating Integrated Gradient | Layer:", hyps['intg_layers'][intg_idx])
+                if intg_idx<len(hyps['intg_layers']) and\
+                                     (val_acc>=prev_acc or new_drop_layer):
+                    print("Calculating Integrated Gradient | Layer:",
+                                        hyps['intg_layers'][intg_idx])
                     # Calc intg grad
-                    data_sample = data_distr.train_sample(batch_size=hyps['intg_bsize'])
+                    b = 'intg_bsize'
+                    gen = data_distr.train_sample(batch_size=hyps[b])
+                    (data_sample, _) = next(gen)
+                    del gen
                     # shape (T, C, H, W)
-                    intg_grad, gc_resp = tdrutils.integrated_gradient(model, data_sample,
-                                                            layer=hyps['intg_layers'][intg_idx],
-                                                            gc_idx=None,
-                                                            alpha_steps=hyps['alpha_steps'],
-                                                            batch_size=500, to_numpy=True,
-                                                            verbose=True)
-                    intg_grad = intg_grad.reshape(*intg_grad.shape[:1], -1).mean(-1).mean(0) # shape (C,)
+                    layer = hyps['intg_layers'][intg_idx]
+                    intg_grad, gc_resp = tdrutils.integrated_gradient(model,
+                                            data_sample, layer=layer,
+                                            gc_idx=None,
+                                            alpha_steps=hyps['alpha_steps'],
+                                            batch_size=500, to_numpy=True,
+                                            verbose=True)
+                    intg_grad = intg_grad.reshape(*intg_grad.shape[:2],-1)
+                    intg_grad = intg_grad.mean(-1).mean(0) # shape (C,)
                     min_chans = np.argsort(np.abs(intg_grad.squeeze()))
 
                     # Track changes
-                    prev_min_chan = min_chans[len(zero_dict[hyps['intg_layers'][intg_idx]])]
-                    layer_idx = int(hyps['intg_layers'][intg_idx].split(".")[-1])
+                    min_chan = min_chans[len(zero_dict[layer])]
+                    layer_idx = int(layer.split(".")[-1])
                     prev_state_dict = model.state_dict()
-                    prev_weight = model.sequential[layer_idx].weight.data[prev_min_chan].cpu().clone()
-                    zero_dict[hyps['intg_layers'][intg_idx]].add(prev_min_chan)
+                    zero_dict[layer].add(min_chan)
+                    prev_min_chan = min_chan
+                    print("Dropping channel {} in layer {}".format(min_chan,
+                                                                     layer))
                 else:
-                    print("No more layers in intg_layers list. Stopping Training")
+                    print("No more layers in intg_layers list. "+\
+                                                "Stopping Training")
                     stop_training_loop = True
-                prev_acc = val_acc
+                # If ensures we do not use val_acc from discontinued model
+                if not new_drop_layer: 
+                    prev_acc = val_acc
 
         # Final save
         results = {"save_folder":hyps['save_folder'], 
