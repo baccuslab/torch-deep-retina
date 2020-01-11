@@ -60,9 +60,12 @@ class DataContainer():
         self.centers = data.centers
         self.stats = data.stats
 
-def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, cutout_width=None, 
-                                        norm_stats=None, data_path="~/experiments/data"):
-    """Loads an experiment from an h5 file on disk
+def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, 
+                                        cutout_width=None, 
+                                        norm_stats=None, 
+                                        data_path="~/experiments/data"):
+    """
+    Loads an experiment from an h5 file on disk
 
     Parameters
     ----------
@@ -80,22 +83,24 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, cutout_widt
         The key in the hdf5 file to load ('train' or 'test')
 
     history : int
-        Number of samples of history to include in the toeplitz stimulus
+        Number of samples of history to include in the toeplitz stimulus.
+        If None, no history dimension is created.
 
     nskip : float, optional
         Number of samples to skip at the beginning of each repeat
 
     cutout_width : int, optional
-        If not None, cuts out the stimulus around the STA (assumes cells is a scalar)
+        If not None, cuts out the stimulus around the STA 
+        (assumes cells is a scalar)
 
     norm_stats : listlike of floats or dict i.e. [mean, std], optional
-        If a list of len 2 is argued, idx 0 will be used as the mean and idx 1 the std for
-        data normalization. if dict, use 'mean' and 'std' as keys
+        If a list of len 2 is argued, idx 0 will be used as the mean 
+        and idx 1 the std for data normalization. if dict, use 'mean' 
+        and 'std' as keys
 
     data_path : string
         path to the data folders
     """
-    assert history > 0 and type(history) is int, "Temporal history must be a positive integer"
     assert train_or_test in ('train', 'test'), "train_or_test must be 'train' or 'test'"
     if type(cells) == type(str()) and cells=="all":
         cells = CELLS[expt]
@@ -137,15 +142,20 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, cutout_widt
         valid_indices = np.arange(expt_length).reshape(num_blocks, -1)[:, nskip:].ravel()
 
         # reshape into the Toeplitz matrix (nsamples, history, *stim_dims)
-        stim_reshaped = rolling_window(stim[valid_indices], history, time_axis=0)
+        stim_reshaped = stim[valid_indices]
+        if history is not None and history > 0:
+            stim_reshaped = rolling_window(stim_reshaped, history,
+                                                      time_axis=0)
 
         # get the response for this cell (nsamples, ncells)
         resp = np.array(f[train_or_test]['response/firing_rate_10ms'][cells]).T[valid_indices]
-        resp = resp[history:]
+        if history is not None and history > 0:
+            resp = resp[history:]
 
         # get the spike history counts for this cell (nsamples, ncells)
-        binned = np.array(f[train_or_test]['response/binned'][cells]).T[valid_indices]
-        spk_hist = rolling_window(binned, history, time_axis=0)
+        spk_hist = np.array(f[train_or_test]['response/binned'][cells]).T[valid_indices]
+        if history is not None and history > 0:
+            spk_hist = rolling_window(spk_hist, history, time_axis=0)
 
         # get the ganglion cell receptive field centers
         if expt in CENTERS:
