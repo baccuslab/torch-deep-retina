@@ -245,9 +245,10 @@ def get_layer_idx(model, layer, delimeters=[nn.ReLU, nn.Softplus]):
 #    requires_grad(model, True)
 #    return intg_grad, avg_grad, activs, gc_activs
 
-def integrated_gradient(model, X, layer='sequential.2', gc_idx=None, alpha_steps=5,
-                                                    batch_size=500, y=None, lossfxn=None,
-                                                    to_numpy=False, verbose=False):
+def integrated_gradient(model, X, layer='sequential.2', gc_idx=None,
+                                            alpha_steps=5, batch_size=500,
+                                            y=None, lossfxn=None,
+                                            to_numpy=False, verbose=False):
     """
     Returns the integrated gradient for a particular stimulus at the arged layer.
 
@@ -333,7 +334,7 @@ def inspect(model, X, insp_keys={}, batch_size=500, to_numpy=True, to_cpu=True, 
     performed on gpu.
 
     model - torch Module or torch gpu Module
-    X - ndarray (T,C,H,W)
+    X - ndarray or FloatTensor (T,C,H,W)
     insp_keys - set of str
         name of layers activations to collect
     to_numpy - bool
@@ -685,6 +686,7 @@ def mtx_cor(X, Y, batch_size=500, to_numpy=False):
         X = X.reshape(len(X), -1)
     if len(Y.shape) > 2:
         Y = Y.reshape(len(Y), -1)
+    to_numpy = type(X) == type(np.array([])) or to_numpy
     X = torch.FloatTensor(X)
     Y = torch.FloatTensor(Y)
     xmean = X.mean(0)
