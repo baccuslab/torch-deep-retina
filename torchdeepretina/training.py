@@ -389,7 +389,7 @@ class Trainer:
             for k in hyps.keys():
                 if k not in save_dict:
                     save_dict[k] = hyps[k]
-            del_prev = not hyps['save_every_epoch']
+            del_prev = 'save_every_epoch' in hyps and not hyps['save_every_epoch']
             tdrutils.save_checkpoint(save_dict, hyps['save_folder'], 'test', del_prev=del_prev)
 
             # Print Epoch Stats
@@ -398,6 +398,8 @@ class Trainer:
             stats_string += "Memory Used: {:.2f} mb".format(max_mem_used / 1024)+"\n"
             print(stats_string)
             # If loss is nan, training is futile
+            with open(os.path.join(hyps['save_folder'],"training_log.txt"),'a') as f:
+                f.write(str(stats_string)+'\n')
             if math.isnan(avg_loss) or math.isinf(avg_loss) or stop:
                 break
 
@@ -560,16 +562,16 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
                                                       hyps['starting_exp_num'] == []:
                 hyps['starting_exp_num'] = 0
             hyps['exp_num'] = hyps['starting_exp_num']
-        hyps['save_folder'] = hyps['exp_name'] + "/" + hyps['exp_name'] +"_"+ str(hyps['exp_num']) 
-        for k in keys:
-            hyps['save_folder'] += "_" + str(k)+str(hyps[k])
-
-        hyps['model_class'] = globals()[hyps['model_type']]
-        model_hyps = get_model_hyps(hyps)
-
-        # Load q
         if 'n_repeats' not in hyps: hyps['n_repeats'] = 1
         for i in range(hyps['n_repeats']):
+            hyps['save_folder'] = hyps['exp_name'] + "/" + hyps['exp_name'] +"_"+ str(hyps['exp_num']) 
+            for k in keys:
+                hyps['save_folder'] += "_" + str(k)+str(hyps[k])
+
+            hyps['model_class'] = globals()[hyps['model_type']]
+            model_hyps = get_model_hyps(hyps)
+
+            # Load q
             hyper_q.put([{k:v for k,v in hyps.items()}, {k:v for k,v in model_hyps.items()}])
             hyps['exp_num'] += 1
 
