@@ -753,6 +753,65 @@ def spatial_pad(stimulus, H, W=None):
         leading_zeros = [(0,0) for i in range(len(stimulus.shape)-2)]
         return np.pad(stimulus,(*leading_zeros,pad_h,pad_w),"constant")
 
+def shifted_overlay(img, shift_img, row_shift=0, col_shift=0):
+    """
+    Pastes the shift_img onto the img at the shift coordinates.
+    0,0 corresponds to the center of the image.
+
+    WARNING: OPERATES INPLACE ON ARGUED IMG
+
+    img: ndarray (...,H,W)
+    shift_img: ndarray (...,H',W')
+    row_shift: int
+        number of pixels shifted in the 0th dimension
+    col_shift: int
+        number of pixels shifted in the 1st dimension
+
+    Returns:
+        combined_img: ndarray (H,W)
+            img with shift_img overlayed at the shifted location
+    """
+    shift_rows = shift_img.shape[-2]
+    shift_cols = shift_img.shape[-1]
+    img_rows = img.shape[-2]
+    img_cols = img.shape[-1]
+    
+    img_half = img_rows//2
+    shift_half = shift_rows//2
+    row_lim = min(shift_rows, img_rows)+abs(img_half-shift_half)
+    img_half = img_cols//2
+    shift_half = shift_cols//2
+    col_lim = min(shift_cols, img_cols)+abs(img_half-shift_half)
+    if abs(row_shift) >= row_lim or abs(col_shift) >= col_lim:
+        return img
+
+    # Get the shift cut
+    # Rows
+    low_row_diff = shift_rows//2-row_shift-img_rows//2
+    row_low = max(0,low_row_diff)
+    odd_shift = (shift_rows//2)*2 != shift_rows
+    odd_img = (img_rows//2)*2!=img_rows
+    high_row_diff = shift_rows//2+odd_shift+row_shift-(img_rows//2+odd_img)
+    row_high = min(shift_rows, shift_rows-high_row_diff)
+    # Cols
+    low_col_diff = shift_cols//2-col_shift-img_cols//2
+    col_low = max(0,low_col_diff)
+    odd_shift = (shift_cols//2)*2 != shift_cols
+    odd_img = (img_cols//2)*2!=img_cols
+    high_col_diff = shift_cols//2+odd_shift+col_shift-(img_cols//2+odd_img)
+    col_high = min(shift_cols, shift_cols-high_col_diff)
+    
+    shift_cut = shift_img[...,row_low:row_high, col_low:col_high]
+
+    # Get the img cut
+    row_low = max(0,-low_row_diff)
+    row_high = min(img_rows, img_rows+high_row_diff)
+    col_low = max(0,-low_col_diff)
+    col_high = min(img_cols, img_cols+high_col_diff)
+    
+    img[...,row_low:row_high,col_low:col_high] = shift_cut
+    return img
+
 def prepad(y, n=40, v=0):
     """prepads with value"""
     pad = v * np.ones((n, y.shape[1]))
