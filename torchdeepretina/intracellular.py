@@ -13,6 +13,7 @@ from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 import torchdeepretina.utils as tdrutils
 import torchdeepretina.stimuli as tdrstim
 import torch.nn as nn
+import pandas as pd
 
 centers = {
         "bipolars_late_2012":[  (19, 22), (18, 20), (20, 21), (18, 19)],
@@ -411,7 +412,7 @@ def argmax_correlation(mem_pot, model_layer, ret_max_cor=False, abs_val=False, v
         return best_idx, max_r
     return best_idx # (chan, row, col) of best correlated unit
 
-def model2model_get_response_helper(model, stim, model_layers, use_ig=False, verbose=False):
+def model2model_get_response_helper(model, stim, model_layers, batch_size=500, filt_depth=40, use_ig=False, verbose=False):
     """
     Helper function to dry up code in model2model functions.
 
@@ -429,9 +430,7 @@ def model2model_get_response_helper(model, stim, model_layers, use_ig=False, ver
         else:
             print("Collecting model response")
     stim = tdrstim.spatial_pad(stim, model.img_shape[1])
-    stim = tdrstim.rolling_window(stim, filt_depth)
-    if model.img_shape[0] < filt_depth:
-        stim = stim[:,:model.img_shape[0]]
+    stim = tdrstim.rolling_window(stim, model.img_shape[0])
     if use_ig:
         response = dict()
         gc_resps = None
@@ -634,8 +633,179 @@ def model2model_cor_mtxs(model1, model2, model1_layers={"sequential.0", "sequent
         model2.to(DEVICE)
     return intr_cors
 
-def get_intr_cors(model, stim_dict, mem_pot_dict, layers={"sequential.2", "sequential.8"}, 
-                                                            batch_size=500, slide_stim=False,
+def one2one_recurse(idx, mtx1, mtx2, bests1, bests2):
+    """
+    Recursively finds best matches using depth first search.
+
+    idx: int
+        index of unit in mtx1
+    mtx1: ndarray (M1, M2)
+        sorted indices of correlation matrix along dim 1
+    mtx2: ndarray (M2, M1)
+        sorted indices of transposed correlation matrix along dim 1
+    bests1: dict {int: int}
+        dict of row units for mtx1 to the best available row unit in mtx2
+    bests2: dict {int: int}
+        dict of row units for mtx2 to the best available row unit in mtx1
+    """
+    for c1 in mtx1[idx]:
+        if c1 not in bests2:
+            for c2 in mtx2[c1]:
+                if c2 not in bests1 and c1 not in bests2:
+                    if idx == c2: # Match!!
+                        bests1[c2] = c1
+                        bests2[c1] = c2
+                        return
+                    else:
+                        one2one_recurse(c1, mtx2, mtx1, bests2, bests1)
+                        if c1 in bests2:
+                            break
+        elif idx in bests1:
+            return
+
+def best_one2one_mapping(cor_mtx):
+    """
+    Given a correlation matrix, finds the best one to one mapping
+    between the units of the rows with the columns. Note that
+    bests1 and bests2 are the same except that the keys and values
+    have been switched
+
+    cor_mtx: ndarray (N, M)
+        correlation matrix
+
+    Returns:
+        bests1: dict (int, int)
+            keys: row index (int)
+            vals: best corresponding col index (int)
+        bests1: dict (int, int)
+            keys: col index (int)
+            vals: best corresponding row index (int)
+    """
+    arg_mtx1 = np.argsort(-cor_mtx, axis=1)
+    arg_mtx2 = np.argsort(-cor_mtx, axis=0).T
+    bests1 = dict()
+    bests2 = dict()
+    for idx in range(len(arg_mtx1)):
+        if idx not in bests1:
+            one2one_recurse(idx, arg_mtx1, arg_mtx2, bests1, bests2)
+    return bests1, bests2
+
+def model2model_one2one_cors(model1, model2, model1_layers={"sequential.0", "sequential.6"},
+                                          model2_layers={"sequential.0", "sequential.6"},
+                                          batch_size=500,  contrast=1.0, n_samples=5000, 
+                                          n_repeats=3, use_ig=True, verbose=True):
+    """
+    Finds the correlation mapping that maximizes the sum total of correlation subject to the
+    constraint that no two model units can correlate with the same unit in the other model.
+    i.e. no two model1 units can correlate with the same model2 unit.
+
+    model1 - torch Module
+    model2 - torch Module
+    model1_layers - set of strs
+        the layers of model 1 to be correlated
+    model2_layers - set of strs
+        the layers of model 2 to be correlated
+    batch_size: int
+        size of batches when performing computations on GPU
+    contrast: float
+        contrast of whitenoise stimulus for model input
+    n_samples: int
+        number of time points of stimulus for model input
+    n_repeats: int
+        number of times to repeat whitenoise stimulus in temporal dim. Essentially
+        adjusts the frame rate of the video. Larger values of n_repeats leads to
+        slower video frame rates.
+    use_ig: bool
+        if true, uses integrated gradient rather than activations for model correlations.
+        if the specified layer is outputs, then use_ig is ignored
+
+    Returns:
+        intr_df: pandas DataFrame
+            - cell_file: string
+            - cell_idx: int
+            - stim_type: string
+            - cell_type: string
+            - cor: float
+            - layer: string
+            - chan: int
+            - row: int
+            - col: int
+            - xshift: int
+            - yshift: int
+
+    This is ultimately a recursive algorithm. 
+
+    Algorithm:
+        Get correlation matrix
+        Create argsort matrix along both dim 0 and 1
+        for each unit in arg matrix 1:
+            sequentially check free ordered unit correlations
+            if unit 1 and unit 2 maximally correlate with each other, 
+                pair them and mark it
+            otherwise, sequentially check unit2's oredered unit cors 
+                until an open match is found
+    """
+    
+    ## Dict of correlation matrices between each layer combination
+    cor_mtxs = model2model_cor_mtxs(model1, model2, model1_layers=model1_layers,
+                                          model2_layers=model2_layers,
+                                          batch_size=batch_size,  contrast=contrast, 
+                                          n_samples=n_samples, n_repeats=n_repeats, 
+                                          use_ig=use_ig, verbose=verbose)
+    ## Create complete correlation matrix
+    cor_mtx = []
+    m1_layers = sorted(list(cor_mtxs.keys()))
+    m2_layers = sorted(list(cor_mtxs[m1_layers[0]])) # Assumes same m2 layers for every m1 layer
+    for m1_layer in m1_layers:
+        mtx = []
+        for m2_layer in m2_layers:
+            mtx.append(cor_mtxs[m1_layer][m2_layer])
+        mtx = np.concatenate(mtx, axis=1)
+        cor_mtx.append(mtx)
+    cor_mtx = np.concatenate(cor_mtx, axis=0) # (N_m1_units, N_m2_units)
+
+    bests1, bests2 = best_one2one_mapping(cor_mtx)
+    return cor_mtx, bests1, bests2
+
+def get_shifts(row_steps=0, col_steps=0, n_row=50, n_col=50, row_pad=15,
+                                                            col_pad=15):
+    """
+    Iterator that returns all possible shift combinations.
+
+    row_steps: int
+        The number of row shifts to perform evenly spaced within the padded window
+    col_steps: int
+        The number of col shifts to perform evenly spaced within the padded window
+    n_row: int
+        size of window height
+    n_col: int
+        size of window width
+    row_pad: int
+        the limit of the shifting in the height dimension
+    col_pad: int
+        the limit of the shifting in the width dimension
+    """
+    assert not (row_steps < 0 or col_steps < 0), "steps must be positive"
+    if row_steps==0 and col_steps==0:
+        yield (0,0)
+        return
+    
+    row_dist = (n_row-2*row_pad)
+    assert row_dist >= 0, "padding is too big!"
+    col_dist = (n_col-2*col_pad)
+    assert col_dist >= 0, "padding is too big!"
+
+    row_rng = [0] if row_dist==0 or row_steps<=1\
+                        else np.linspace(-row_dist//2, row_dist//2, row_steps)
+    col_rng = [0] if col_dist==0 or col_steps<=1\
+                        else np.linspace(-col_dist//2, col_dist//2, col_steps)
+
+    for row in row_rng:
+        for col in col_rng:
+            yield (int(row), int(col))
+
+def get_intr_cors(model, stim_dict, mem_pot_dict, layers={"sequential.2", "sequential.8"},
+                                                            batch_size=500, slide_steps=0,
                                                             verbose=False):
     """
     Takes a model and dicts of stimuli and membrane potentials to find all correlations 
@@ -654,21 +824,23 @@ def get_intr_cors(model, stim_dict, mem_pot_dict, layers={"sequential.2", "seque
                 keys: stim_types
                     vals: ndarray (CI, T)
                         CI is cell idx and T is time
-    slide_stim - bool
-        slides the stimulus so that misaligned receptive fields of the ganglion
-        cells and interneurons can be accounted for
+    slide_steps - int
+        slides the stimulus in strides by this amount in an attempt to align
+        the receptive fields of the interneurons with the ganglion cells
 
     returns:
-        intr_cors - dict
-                - cell_file: list
-                - cell_idx: list
-                - stim_type: list
-                - cell_type: list
-                - cor: list
-                - layer: list
-                - chan: list
-                - row: list
-                - col: list
+        intr_df - pandas DataFrame
+                - cell_file: string
+                - cell_idx: int
+                - stim_type: string
+                - cell_type: string
+                - cor: float
+                - layer: string
+                - chan: int
+                - row: int
+                - col: int
+                - xshift: int
+                - yshift: int
     """
     intr_cors = {
         "cell_file":[], 
@@ -679,44 +851,74 @@ def get_intr_cors(model, stim_dict, mem_pot_dict, layers={"sequential.2", "seque
         "chan":[],
         "row":[],
         "col":[],
-        "cor":[]
+        "cor":[],
+        "xshift":[],
+        "yshift":[]
     }
     layers = sorted(list(layers))
     for cell_file in stim_dict.keys():
         for stim_type in stim_dict[cell_file].keys():
-            stim = tdrstim.spatial_pad(stim_dict[cell_file][stim_type],model.img_shape[1])
-            stim = tdrstim.rolling_window(stim, model.img_shape[0])
-            if verbose:
-                temp = cell_file.split("/")[-1].split(".")[0]
-                cellstim = "cell_file:{}, stim_type:{}...".format(temp, stim_type)
-                print("Collecting model response for "+cellstim)
-            response = tdrutils.inspect(model, stim, insp_keys=layers, batch_size=batch_size,
-                                                                               to_numpy=True)
-            pots = mem_pot_dict[cell_file][stim_type]
+            best_mtxs = collections.defaultdict(lambda: dict())
+            for xshift, yshift in get_shifts(row_steps=slide_steps, col_steps=slide_steps,
+                                                                      n_row=model.img_shape[1], 
+                                                                      n_col=model.img_shape[2]):
+                x,y = model.img_shape[1], model.img_shape[2]
+                stim = stim_dict[cell_file][stim_type]
+                if not (xshift == 0 and yshift == 0):
+                    stim = tdrstim.shifted_overlay(np.zeros((len(stim),x,y)), stim,
+                                                                 row_shift=xshift,
+                                                                 col_shift=yshift)
+                else:
+                    stim = tdrstim.spatial_pad(stim, W=x, H=y)
+                stim = tdrstim.rolling_window(stim, model.img_shape[0])
+                if verbose:
+                    temp = cell_file.split("/")[-1].split(".")[0]
+                    cellstim = "cell_file:{}, stim_type:{}...".format(temp, stim_type)
+                    print("Collecting model response for "+cellstim)
+                response = tdrutils.inspect(model, stim, insp_keys=layers, batch_size=batch_size,
+                                                                                   to_numpy=True)
+                pots = mem_pot_dict[cell_file][stim_type]
 
-            for layer in layers:
-                shape = None
+                for layer in layers:
+                    resp = response[layer]
+                    resp = resp.reshape(len(resp),-1)
+                    # Retrns ndarray (Model Neurons, Potentials)
+                    cor_mtx = tdrutils.mtx_cor(resp, pots.T,batch_size=batch_size, to_numpy=True)
+                    if layer in best_mtxs:
+                        best_mtx = best_mtxs[layer]['cor_mtx']
+                        mean_diff = (best_mtx.max(0)-cor_mtx.max(0)).mean()
+                    if layer not in best_mtxs or mean_diff < 0:
+                        best_mtxs[layer]["cor_mtx"] = cor_mtx
+                        best_mtxs[layer]["xshift"] = xshift
+                        best_mtxs[layer]["yshift"] = yshift
+
+            for layer in best_mtxs.keys():
                 layer_idx = tdrutils.get_layer_idx(model, layer=layer)
                 assert layer_idx >= 0, "layer {} does not exist!!!".format(layer)
                 shape = (model.chans[layer_idx],*model.shapes[layer_idx])
-                resp = response[layer]
-                resp = resp.reshape(len(resp),-1)
-                # Retrns ndarray (Model Neurons, Potentials)
-                cor_mtx = tdrutils.mtx_cor(resp, pots.T,batch_size=batch_size, to_numpy=True)
-                for unit_idx in range(cor_mtx.shape[0]):
-                    for cell_idx in range(cor_mtx.shape[1]):
+                best_mtx = best_mtxs[layer]['cor_mtx']
+                xshift = best_mtxs[layer]['xshift']
+                yshift = best_mtxs[layer]['yshift']
+                for unit_idx in range(best_mtx.shape[0]):
+                    for cell_idx in range(best_mtx.shape[1]):
                         intr_cors['cell_file'].append(cell_file)
                         intr_cors['cell_idx'].append(cell_idx)
                         intr_cors['stim_type'].append(stim_type)
                         cell_type = cell_file.split("/")[-1].split("_")[0][:-1]
                         intr_cors['cell_type'].append(cell_type) # amacrine or bipolar
-                        intr_cors['cor'].append(cor_mtx[unit_idx,cell_idx])
+                        intr_cors['cor'].append(best_mtx[unit_idx,cell_idx])
                         intr_cors['layer'].append(layer)
                         (chan,row,col) = np.unravel_index(unit_idx, shape)
                         intr_cors['chan'].append(chan)
                         intr_cors['row'].append(row)
                         intr_cors['col'].append(col)
-    return intr_cors
+                        intr_cors['xshift'] = xshift
+                        intr_cors['yshift'] = yshift
+
+    intr_df = pd.DataFrame(intr_cors)
+    dups = ['cell_file', 'cell_idx', 'stim_type', "layer", "chan"]
+    intr_df = intr_df.sort_values(by="cor", ascending=False).drop_duplicates(dups)
+    return intr_df
 
 def get_cor_generalization(model, stim_dict, mem_pot_dict,layers={"sequential.2","sequential.8"},
                                                                   batch_size=500, verbose=False):
