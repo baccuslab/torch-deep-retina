@@ -1,8 +1,8 @@
-torchdeepretina
 numpy
 scipy
 matplotlib
 torch
+opencv-python
 tqdm
 tableprint
 scikit-learn
@@ -12,6 +12,5 @@ descent
 deepdish
 pyret
 moviepy
-opencv-python
 psutil
 

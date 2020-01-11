@@ -1,8 +1,8 @@
 from setuptools import setup, find_packages
-import torchdeepretina
 
 setup(name='torchdeepretina',
-      version=torchdeepretina.__version__,
+      packages=find_packages(),
+      version="0.1.0",
       description='Neural network models of the retina',
       author='Niru Maheshwaranathan, Lane McIntosh, Josh Melander, Julia Wang, Satchel Grant',
       author_email='grantsrb@stanford.edu',
@@ -15,5 +15,4 @@ setup(name='torchdeepretina',
           'Intended Audience :: Science/Research',
           'Operating System :: MacOS :: MacOS X :: Ubuntu',
           'Topic :: Scientific/Engineering :: Information Analysis'],
-      packages=find_packages(),
       )
