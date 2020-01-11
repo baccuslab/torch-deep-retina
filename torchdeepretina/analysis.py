@@ -27,6 +27,65 @@ import pandas as pd
 
 DEVICE = torch.device("cuda:0")
 
+def std_consistency(model_files, ret_all=False, verbose=True):
+    """
+    This function serves as a way to determine the consistency
+    of a number of models. It does this by feeding in natural
+    scenes and whitenoise to each model and determining the avg
+    standard deviation of the outputs.
+
+    model_files: list of strings
+        a list of model files to be loaded and compared
+    ret_all: bool
+        if true, returns a tuple of the naturalscene and whitenoise 
+        stds in addition to the avg of the two.
+    """
+    nat_scenes = tdrdatas.loadexpt(expt="15-10-07", cells="all", 
+                                            filename="naturalscene",
+                                            train_or_test="test",
+                                            history=None)
+    nat_scenes = nat_scenes.X
+    whitenoise = np.random.randn(*nat_scenes.shape)
+    s = np.s_[len(whitenoise)//3:2*len(whitenoise)//3]
+    whitenoise[s] = 2*whitenoise[s]
+    s = np.s_[2*len(whitenoise)//3:]
+    whitenoise[s] = 3*whitenoise[s]
+
+    natputs = []
+    whitputs = []
+    n_units = None
+    if verbose:
+        print("Collecting model responses")
+    for model_file in model_files:
+        if os.path.isdir(os.path.expanduser(model_file)):
+            model = read_model(model_file)
+        else:
+            model = read_model_file(model_file)
+        if n_units is None:
+            n_units = model.n_units
+        else:
+            assert model.n_units == n_units,\
+                        "models must have same output shape"
+        model.to(DEVICE)
+        model.eval()
+        temp = tdrutils.rolling_window(nat_scenes, model.img_shape[0])
+        natput = tdrutils.inspect(model, temp, verbose=verbose)
+        natputs.append(natput['outputs'])
+
+        temp = tdrutils.rolling_window(whitenoise, model.img_shape[0])
+        whitput = tdrutils.inspect(model, temp, verbose=verbose)
+        whitputs.append(whitput['outputs'])
+    nat_std = np.asarray(natputs).std(0).mean()/nat_scenes.std()
+    white_std = np.asarray(whitputs).std(0).mean()/whitenoise.std()
+    avg_std = (nat_std+white_std)/2
+    if verbose:
+        print("Naturalscene STD:", nat_std)
+        print("Whitenoise STD:", white_std)
+        print("Total STD:", avg_std)
+    if ret_all:
+        return avg_std, nat_std, white_std
+    return avg_std
+
 def make_correlation_frame(model_stats):
     """
     model_stats: dict
@@ -640,7 +699,7 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'],
                                                  stim_keys={"boxes"},
                                                  files=None,ret_real_rfs=False, 
                                                  ret_model_rfs=False,
-                                                 slide_stim=False,
+                                                 slide_steps=0,
                                                  verbose=True):
     """
     Gets and returns a DataFrame of the interneuron correlations with the model.
@@ -657,9 +716,11 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'],
         the sta of the interneuron are returned if this is true
     ret_model_rfs - bool
         the sta of the most correlated model unit are returned if this is true
-    slide_stim - bool
+    slide_steps - int
         slides the stimulus so that misaligned receptive fields of the ganglion
-        cells and interneurons can be accounted for
+        cells and interneurons can be accounted for. This is the number of slides
+        to try. Note that it operates in both the x and y dimension so the total
+        number of attempts is equal to slide_steps squared.
     """
     if verbose:
         print("Reading data for interneuron correlations...")
@@ -672,12 +733,9 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'],
         real_rfs = get_intrneuron_rfs(stim_dict, mem_pot_dict, filt_len=model.img_shape[0],
                                                                            verbose=verbose)
 
-    table = tdrintr.get_intr_cors(model, stim_dict, mem_pot_dict, layers=set(layers),
-                                                       batch_size=500, slide_window=False,
+    df = tdrintr.get_intr_cors(model, stim_dict, mem_pot_dict, layers=set(layers),
+                                                       batch_size=500, slide_steps=slide_steps,
                                                        verbose=verbose)
-    df = pd.DataFrame(table)
-    dups = ['cell_file', 'cell_idx', 'stim_type', "layer", "chan"]
-    df = df.sort_values(by="cor", ascending=False).drop_duplicates(dups)
     if ret_model_rfs:
         dups = ['cell_file', 'cell_idx']
         temp_df = df.sort_values(by='cor', ascending=False).drop_duplicates(dups)
@@ -718,7 +776,8 @@ def get_analysis_figs(folder, model, metrics=None, ret_phenom=True, verbose=True
             save_name = name + ".png"
             fig.savefig(os.path.join(folder, save_name))
 
-def analyze_model(folder, make_figs=True, make_model_rfs=False, verbose=True):
+def analyze_model(folder, make_figs=True, make_model_rfs=False, slide_steps=0,
+                                                                verbose=True):
     """
     Calculates model performance on the testset and calculates interneuron correlations.
 
@@ -728,6 +787,11 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False, verbose=True):
     make_model_rfs: bool
         returns a dict of model receptive fields if set to true. Can be used with 
         plot_model_rfs from the visualizations package
+    slide_steps - int
+        slides the interneuron stimulus so that misaligned rfs of the ganglion
+        cells and interneurons can be accounted for. This is the number of slides
+        to try. Note that it operates in both the x and y dimension so the total
+        number of attempts is equal to slide_steps squared.
     """
     hyps = get_hyps(folder)
     table = get_analysis_table(folder, hyps=hyps)
@@ -749,7 +813,8 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False, verbose=True):
         print("GC Cor:", gc_cor,"  Loss:", gc_loss)
 
     layers = ["sequential.2", 'sequential.8']
-    intr_df = get_intr_cors(model, layers=layers, verbose=verbose)
+    intr_df = get_intr_cors(model, layers=layers, slide_steps=slide_steps,
+                                                verbose=verbose)
     intr_df['save_folder'] = folder
     if make_model_rfs:
         rfs = sample_model_rfs(model, layers=layers, verbose=verbose)
@@ -795,6 +860,7 @@ def evaluate_ln(ln, hyps):
     return df
 
 def analysis_pipeline(main_folder, make_figs=True, make_model_rfs=True, save_dfs=True,
+                                                                        slide_steps=0,
                                                                         verbose=True):
     """
     Evaluates model on test set, calculates interneuron correlations, 
@@ -808,6 +874,11 @@ def analysis_pipeline(main_folder, make_figs=True, make_model_rfs=True, save_dfs
         automatically creates and saves model receptive field figures in the model folders
     save_dfs: bool
         automatically saves the analysis dataframe checkpoints in the main folder
+    slide_steps - int
+        slides the interneuron stimulus so that misaligned rfs of the ganglion
+        cells and interneurons can be accounted for. This is the number of slides
+        to try. Note that it operates in both the x and y dimension so the total
+        number of attempts is equal to slide_steps squared.
     """
     model_folders = get_model_folders(main_folder)
     csvs = ['model_data.csv', 'intr_data.csv']
@@ -820,7 +891,8 @@ def analysis_pipeline(main_folder, make_figs=True, make_model_rfs=True, save_dfs
             dfs[csv] = {"empty":True}
     for folder in model_folders:
         save_folder = os.path.join(main_folder, folder)
-        if "save_folder" in dfs[csvs[0]] and save_folder in set(dfs[csvs[0]]['save_folder']):
+        if "save_folder" in dfs[csvs[0]] and\
+                        save_folder in set(dfs[csvs[0]]['save_folder']):
             intr_save_folders = set(dfs[csvs[1]]['save_folder'])
             if "save_folder" in dfs[csvs[1]] and save_folder in intr_save_folders:
                 if verbose:
@@ -831,13 +903,14 @@ def analysis_pipeline(main_folder, make_figs=True, make_model_rfs=True, save_dfs
         
         df, intr_df = analyze_model(save_folder, make_figs=make_figs, 
                                         make_model_rfs=make_model_rfs, 
+                                        slide_steps=slide_steps,
                                         verbose=verbose)
-        if not("save_folder" in dfs[csvs[0]] and folder in set(dfs[csvs[0]]['save_folder'])):
+        if not("save_folder" in dfs[csvs[0]] and save_folder in set(dfs[csvs[0]]['save_folder'])):
             if 'empty' in dfs[csvs[0]]:
                 dfs[csvs[0]] = df
             else:
                 dfs[csvs[0]] = dfs[csvs[0]].append(df, sort=True)
-        if not("save_folder" in dfs[csvs[1]] and folder in set(dfs[csvs[1]]['save_folder'])):
+        if not("save_folder" in dfs[csvs[1]] and save_folder in set(dfs[csvs[1]]['save_folder'])):
             if 'empty' in dfs[csvs[1]]:
                 dfs[csvs[1]] = intr_df
             else:
@@ -847,10 +920,10 @@ def analysis_pipeline(main_folder, make_figs=True, make_model_rfs=True, save_dfs
                 path = os.path.join(main_folder,k)
                 if k == csvs[1] and os.path.exists(path): # Append data if interneuron data
                     dfs[k].to_csv(path, sep="!", index=False, header=False, mode='a')
-                    dfs[k] = dfs[k].iloc[0:0]
+                    dfs[k] = dfs[k].iloc[:0]
                 elif k == csvs[1]:
                     dfs[k].to_csv(path, sep="!", index=False, header=True)
-                    dfs[k] = dfs[k].iloc[0:0]
+                    dfs[k] = dfs[k].iloc[:0]
                 else:
                     dfs[k].to_csv(path, sep="!", index=False, header=True)
     return dfs
