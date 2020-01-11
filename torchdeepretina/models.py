@@ -651,3 +651,147 @@ class RevCorLN:
         fx = self.convolve(x)
         return self.poly(fx)
 
+class VaryLayers(TDRModel):
+    def __init__(self, n_layers=3, stackconvs=True, drop_p=0, one2one=False, stack_ksizes=[3,3], stack_chans=[None,None],
+                                                 final_bias=False, paddings=None, **kwargs):
+        super().__init__(**kwargs)
+        """
+        n_layers: int
+            number of neural network layers. Includes ganglion cell layer
+        stackconvs: bool
+            if true, the convolutions are all linearstacked convolutions
+        drop_p: float
+            the dropout probability for the linearly stacked convolutions
+        one2one: bool
+            if true and stackconvs is true, then the stacked convolutions
+            do not allow crosstalk between the inner channels
+        stack_ksizes: list of ints
+            the kernel size of the stacked convolutions
+        stack_chans: list of ints
+            the channel size of the stacked convolutions. If none, defaults
+            to channel size of main convolution
+        final_bias: bool
+            if true, a final bias term is used after the final non-linearity
+            for the ganglion cell layer
+        paddings: list of ints
+            the padding for each conv layer. If none,
+            defaults to 0.
+        """
+        self.name = 'VaryNet'
+        self.n_layers = n_layers
+        self.stackconvs = stackconvs
+        self.drop_p = drop_p
+        self.one2one = one2one
+        self.stack_ksizes = stack_ksizes
+        self.stack_chans = stack_chans
+        self.paddings = [0 for x in stack_ksizes] if paddings is None else\
+                                                                   paddings
+        self.final_bias = final_bias
+        shape = self.img_shape[1:] # (H, W)
+        self.shapes = []
+        modules = []
+
+        #### Layer Loop
+        temp_chans = [self.img_shape[0]]+self.chans
+        for i in range(self.n_layers-1):
+            ## Convolution
+            if not self.stackconvs:
+                conv = nn.Conv2d(temp_chans[i],temp_chans[i+1],
+                                    kernel_size=self.ksizes[i],
+                                    padding=self.paddings[i],
+                                    bias=self.bias)
+            else:
+                if self.one2one:
+                    conv = OneToOneLinearStackedConv2d(temp_chans[i],
+                                                 temp_chans[i+1],
+                                                 kernel_size=self.ksizes[i],
+                                                 padding=self.paddings[i],
+                                                 bias=self.bias)
+                else:
+                    conv = LinearStackedConv2d(temp_chans[i],temp_chans[i+1],
+                                         kernel_size=self.ksizes[i],
+                                         abs_bnorm=False,
+                                         bias=self.bias,
+                                         stack_chan=self.stack_chans[i],
+                                         stack_ksize=self.stack_ksizes[i],
+                                         drop_p=self.drop_p,
+                                         padding=self.paddings[i])
+            modules.append(conv)
+            shape = update_shape(shape, self.ksizes[i],
+                                        padding=self.paddings[i])
+            self.shapes.append(tuple(shape))
+                    
+            ## BatchNorm
+            if self.bnorm_d == 1:
+                modules.append(Flatten())
+                size = temp_chans[i+1]*shape[0]*shape[1]
+                modules.append(AbsBatchNorm1d(size,momentum=self.bn_moment))
+                modules.append(Reshape((-1,temp_chans[i+1],*shape)))
+            else:
+                modules.append(AbsBatchNorm2d(temp_chans[i+1],
+                                     momentum=self.bn_moment))
+            # Noise and ReLU
+            modules.append(GaussianNoise(std=self.noise))
+            modules.append(nn.ReLU())
+
+        # Noise and ReLU
+        modules.append(GaussianNoise(std=self.noise))
+        modules.append(nn.ReLU())
+
+        ##### Final Layer
+        if self.convgc:
+            conv = nn.Conv2d(temp_chans[-1],self.n_units,
+                             kernel_size=self.ksizes[self.n_layers-1],
+                             bias=self.linear_bias)
+            modules.append(conv)
+            shape = update_shape(shape, self.ksizes[self.n_layers-1])
+            self.shapes.append(tuple(shape))
+            modules.append(GrabUnits(self.centers, self.ksizes,
+                                 self.img_shape, self.n_units))
+        else:
+            modules.append(nn.Linear(temp_chans[-1]*shape[0]*shape[1],
+                                                 self.n_units,
+                                                 bias=self.linear_bias))
+        modules.append(AbsBatchNorm1d(self.n_units,momentum=self.bn_moment))
+        if self.softplus:
+            modules.append(nn.Softplus())
+        else:
+            modules.append(Exponential(train_off=True))
+        if self.final_bias:
+            modules.append(Add(0,trainable=True))
+
+        self.sequential = nn.Sequential(*modules)
+
+    def forward(self, x):
+        if not self.training and self.infr_exp:
+            return torch.exp(self.sequential(x))
+        return self.sequential(x)
+
+    def deactivate_grads(self, deactiv=True):
+        """
+        Turns grad off for all trainable parameters in model
+        """
+        for p in self.parameters():
+            p.requires_grad = deactiv
+
+    def tiled_forward(self,x):
+        """
+        Allows for the fully convolutional functionality
+        """
+        if not self.convgc:
+            return self.forward(x)
+        fx = self.sequential[:-3-self.final_bias](x) # Remove GrabUnits layer
+        bnorm = self.sequential[-2-self.final_bias]
+        # Perform 2d batchnorm using 1d parameters collected from training
+        fx = torch.nn.functional.batch_norm(fx, bnorm.running_mean.data,
+                                                 bnorm.running_var.data,
+                                                 weight=bnorm.scale.abs(),
+                                                 bias=bnorm.shift,
+                                                 eps=bnorm.eps,
+                                                 momentum=bnorm.momentum, 
+                                                 training=self.training)
+        fx = self.sequential[-1-self.final_bias:](fx)
+        if not self.training and self.infr_exp:
+            return torch.exp(fx)
+        return fx
+
