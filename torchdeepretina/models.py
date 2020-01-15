@@ -100,6 +100,7 @@ class BNCNN(TDRModel):
             self.shapes.append(tuple(shape))
             modules.append(GrabUnits(self.centers, self.ksizes, self.img_shape, self.n_units))
         else:
+            modules.append(Flatten())
             modules.append(nn.Linear(self.chans[1]*shape[0]*shape[1],self.n_units,
                                                            bias=self.linear_bias))
         modules.append(nn.BatchNorm1d(self.n_units, eps=1e-3, momentum=self.bn_moment))
@@ -741,10 +742,6 @@ class VaryModel(TDRModel):
             modules.append(GaussianNoise(std=self.noise))
             modules.append(nn.ReLU())
 
-        # Noise and ReLU
-        modules.append(GaussianNoise(std=self.noise))
-        modules.append(nn.ReLU())
-
         ##### Final Layer
         if self.convgc:
             conv = nn.Conv2d(temp_chans[-1],self.n_units,
@@ -756,6 +753,7 @@ class VaryModel(TDRModel):
             modules.append(GrabUnits(self.centers, self.ksizes,
                                  self.img_shape, self.n_units))
         else:
+            modules.append(Flatten())
             modules.append(nn.Linear(temp_chans[-1]*shape[0]*shape[1],
                                                  self.n_units,
                                                  bias=self.linear_bias))
