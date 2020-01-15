@@ -183,68 +183,6 @@ def get_layer_idx(model, layer, delimeters=[nn.ReLU, nn.Softplus]):
             return i
     return -1
 
-#def integrated_gradient(model, X, layer='sequential.2', gc_idx=None, alpha_steps=5,
-#                                                    batch_size=500, verbose=False):
-#    """
-#    Inputs:
-#        model: PyTorch Deep Retina models
-#        X: Input stimuli ndarray or torch FloatTensor (T,D,H,W)
-#        layer: str layer name
-#        gc_idx: ganglion cell of interest
-#            if None, uses all cells
-#        alpha_steps: int, integration steps
-#        batch_size: step size when performing computations on GPU
-#    Outputs:
-#        intg_grad: Integrated Gradients (avg_grad*activs)
-#        avg_grad: Averaged Gradients
-#        activs: Activation of the argued layer
-#        gc_activs: Activation of the final layer
-#    """
-#    requires_grad(model, False) # Model gradient unnecessary for integrated gradient
-#    layer1_layers = {"sequential."+str(i) for i in range(6)}
-#    layer_idx = 0 if layer in layer1_layers else 1
-#    avg_grad = torch.zeros(len(X), model.chans[layer_idx], *model.shapes[layer_idx])
-#    activs = torch.zeros_like(avg_grad)
-#    gc_activs = None
-#    model.to(DEVICE)
-#    X = torch.FloatTensor(X)
-#    X.requires_grad = True
-#    idxs = torch.arange(len(X)).long()
-#    delta_alpha = 1/(alpha_steps-1)
-#    for alpha in torch.linspace(0,1,alpha_steps):
-#        x = alpha*X
-#        batch_range = range(0, len(x), batch_size)
-#        if verbose:
-#            print("Calculating for alpha",alpha.item())
-#            batch_range = tqdm(batch_range)
-#        for batch in batch_range:
-#            idx = idxs[batch:batch+batch_size]
-#            # Response is dict of activations. response[layer] has shape avg_grad.shape
-#            response = inspect(model, x[idx], insp_keys=[layer], batch_size=None,
-#                                                    to_numpy=False, to_cpu=False,
-#                                                    verbose=False)
-#            ins = response[layer]
-#            outs = response['outputs'][:,gc_idx]
-#            grad = torch.autograd.grad(outs.sum(), ins)[0]
-#            avg_grad[idx] += grad.detach().cpu().reshape(len(grad), *avg_grad.shape[1:])
-#            if alpha == 1:
-#                act = response[layer].detach().cpu().reshape(len(grad), *activs.shape[1:])
-#                activs[idx] = act
-#                if gc_activs is None:
-#                    if isinstance(gc_idx, int):
-#                        gc_activs = torch.zeros(len(activs))
-#                    else:
-#                        gc_activs = torch.zeros(len(activs), len(gc_idx))
-#                gc_activs[idx] = response['outputs'][:,gc_idx].detach().cpu()
-#    del response
-#    del grad
-#    avg_grad = avg_grad/alpha_steps
-#    intg_grad = (activs*avg_grad).detach()
-#    if len(gc_activs.shape) == 1:
-#        gc_activs = gc_activs.unsqueeze(1) # Create new axis
-#    requires_grad(model, True)
-#    return intg_grad, avg_grad, activs, gc_activs
-
 def integrated_gradient(model, X, layer='sequential.2', gc_idx=None,
                                             alpha_steps=5, batch_size=500,
                                             y=None, lossfxn=None,
