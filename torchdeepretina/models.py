@@ -88,13 +88,20 @@ class BNCNN(TDRModel):
             modules.append(Flatten())
             modules.append(nn.BatchNorm1d(self.chans[1]*shape[0]*shape[1], eps=1e-3, 
                                                             momentum=self.bn_moment))
+            modules.append(Reshape((-1, self.chans[1], shape[0], shape[1])))
         else:
             modules.append(nn.BatchNorm2d(self.chans[1], eps=1e-3, momentum=self.bn_moment))
-            modules.append(Flatten())
         modules.append(GaussianNoise(std=self.noise))
         modules.append(nn.ReLU())
-        modules.append(nn.Linear(self.chans[1]*shape[0]*shape[1],self.n_units,
-                                                       bias=self.linear_bias))
+        if self.convgc:
+            modules.append(nn.Conv2d(self.chans[1], self.n_units, kernel_size=self.ksizes[2],
+                                                                        bias=self.linear_bias))
+            shape = update_shape(shape, self.ksizes[2])
+            self.shapes.append(tuple(shape))
+            modules.append(GrabUnits(self.centers, self.ksizes, self.img_shape, self.n_units))
+        else:
+            modules.append(nn.Linear(self.chans[1]*shape[0]*shape[1],self.n_units,
+                                                           bias=self.linear_bias))
         modules.append(nn.BatchNorm1d(self.n_units, eps=1e-3, momentum=self.bn_moment))
         if self.softplus:
             modules.append(nn.Softplus())
@@ -651,7 +658,7 @@ class RevCorLN:
         fx = self.convolve(x)
         return self.poly(fx)
 
-class VaryLayers(TDRModel):
+class VaryModel(TDRModel):
     def __init__(self, n_layers=3, stackconvs=True, drop_p=0, one2one=False, stack_ksizes=[3,3], stack_chans=[None,None],
                                                  final_bias=False, paddings=None, **kwargs):
         super().__init__(**kwargs)
