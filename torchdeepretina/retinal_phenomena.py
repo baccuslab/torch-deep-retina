@@ -16,14 +16,30 @@ import torch
 DEVICE = torch.device("cuda:0")
 device = DEVICE
 
-def step_response(model, duration=100, delay=50, nsamples=200, intensity=-1., filt_depth=40):
-    """Step response"""
-    flash = tdrstim.flash(duration, delay, nsamples, intensity=intensity)
+def step_response(model, duration=100, delay=50, nsamples=200,
+                                intensity=-1., filt_depth=40):
+    """
+    Interrogates the model's step response
+
+    model: torch Module
+    duration: int
+        the duration of the flashes
+    delay: int
+        the delay between flashes
+    nsamples: int
+        the length of the flash stimulus in frames
+    intensity: float
+        the numeric value of the flash pixels
+    filt_depth: int
+        the depth of the training stimulus in terms of frames
+    """
+    flash = tdrstim.flash(duration, delay, nsamples,
+                                intensity=intensity)
     X = tdrstim.concat(flash, nh=filt_depth)
     X_torch = torch.from_numpy(X).to(DEVICE)
     with torch.no_grad():
         if model.recurrent:
-            hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+            hs =[torch.zeros(1,*h).to(device) for h in model.h_shapes]
             resps = []
             for i in range(X_torch.shape[0]):
                 resp, hs = model(X_torch[i:i+1], hs)
@@ -31,13 +47,17 @@ def step_response(model, duration=100, delay=50, nsamples=200, intensity=-1., fi
             resp = torch.cat(resps, dim=0)
         else:
             resp = model(X_torch)
-    figs = viz.response1D(X[:, -1, 0, 0].copy(), resp.cpu().detach().numpy())
+    resp = resp.cpu().detach().numpy()
+    figs = viz.response1D(X[:,-1,0,0].copy(), resp)
     (fig, (ax0,ax1)) = figs
     return (fig, (ax0,ax1)), X, resp
 
 
-def paired_flash(model, ifis=(2, 20), duration=1, intensity=-2.0, total=100, delay=40):
-    """Generates responses to a pair of neighboring flashes
+def paired_flash(model, ifis=(2, 20), duration=1, intensity=-2.0,
+                                            total=100, delay=40):
+    """
+    Generates responses to a pair of neighboring flashes
+
     Parameters
     ----------
     ifi : int
@@ -47,7 +67,8 @@ def paired_flash(model, ifis=(2, 20), duration=1, intensity=-2.0, total=100, del
     intensity : float
         the flash intensity (default: -2.0)
     padding : int
-        how much padding in frames to put on either side of the flash (default: 50)
+        how much padding in frames to put on either side of the
+        flash (default: 50)
     """
     s1, r1, s2, r2 = [], [], [], []
     stimuli = []
@@ -55,12 +76,14 @@ def paired_flash(model, ifis=(2, 20), duration=1, intensity=-2.0, total=100, del
 
     for ifi in tqdm(np.arange(ifis[0], ifis[1], duration)):
         # single flashes
-        x1 = tdrstim.paired_flashes(ifi, duration, (intensity, 0), total, delay)
+        x1 = tdrstim.paired_flashes(ifi, duration, (intensity, 0),
+                                                     total, delay)
         s1.append(tdrstim.unroll(x1)[:, 0, 0])
         x1_torch = torch.from_numpy(x1).to(DEVICE)
         with torch.no_grad():
             if model.recurrent:
-                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                hs = [torch.zeros(1,*h).to(device) for h in\
+                                             model.h_shapes]
                 resps = []
                 for i in range(x1_torch.shape[0]):
                     resp, hs = model(x1_torch[i:i+1], hs)
@@ -70,12 +93,14 @@ def paired_flash(model, ifis=(2, 20), duration=1, intensity=-2.0, total=100, del
                 resp = model(x1_torch)
         r1.append(tdrstim.prepad(resp.cpu().detach().numpy()))
 
-        x2 = tdrstim.paired_flashes(ifi, duration, (0, intensity), total, delay)
+        x2 = tdrstim.paired_flashes(ifi, duration, (0, intensity),
+                                                     total, delay)
         x2_torch = torch.from_numpy(x2).to(DEVICE)
         s2.append(tdrstim.unroll(x2)[:, 0, 0])
         with torch.no_grad():
             if model.recurrent:
-                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                hs = [torch.zeros(1,*h).to(device) for h in\
+                                             model.h_shapes]
                 resps = []
                 for i in range(x2_torch.shape[0]):
                     resp, hs = model(x2_torch[i:i+1], hs)
@@ -86,12 +111,14 @@ def paired_flash(model, ifis=(2, 20), duration=1, intensity=-2.0, total=100, del
         r2.append(tdrstim.prepad(resp.cpu().detach().numpy()))
 
         # pair
-        x = tdrstim.paired_flashes(ifi, duration, intensity, total, delay)
+        x = tdrstim.paired_flashes(ifi, duration, intensity, total,\
+                                                              delay)
         x_torch = torch.from_numpy(x).to(DEVICE)
         stimuli.append(tdrstim.unroll(x)[:, 0, 0])
         with torch.no_grad():
             if model.recurrent:
-                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                hs = [torch.zeros(1,*h).to(device) for h in\
+                                             model.h_shapes]
                 resps = []
                 for i in range(x_torch.shape[0]):
                     resp, hs = model(x_torch[i:i+1], hs)
@@ -100,19 +127,32 @@ def paired_flash(model, ifis=(2, 20), duration=1, intensity=-2.0, total=100, del
             else:
                 resp = model(x_torch)
         responses.append(tdrstim.prepad(resp.cpu().detach().numpy()))
-
     return map(np.stack, (s1, r1, s2, r2, stimuli, responses))
 
-
 def reversing_grating(model, size=5, phase=0., filt_depth=40):
-    """A reversing grating stimulus"""
-    grating = tdrstim.grating(barsize=(size, 0), phase=(phase, 0.0), intensity=(1.0, 1.0), 
-                                                                      us_factor=1, blur=0)
-    X = tdrstim.concat(tdrstim.reverse(grating, halfperiod=50, nsamples=300), nh=filt_depth)
+    """
+    A reversing grating stimulus
+
+    model: torch Module
+    size: int
+        size of grating bars in pixels
+    phase: float
+        The phase of the grating in the x dimension (as a
+        fraction of the period). Must be between 0 and 1.
+    filt_depth: int
+        the number of temporal frames in the stimulus that is fed
+        into the model.
+    """
+    grating = tdrstim.grating(barsize=(size, 0), phase=(phase, 0.0),
+                                               intensity=(1.0, 1.0),
+                                               us_factor=1, blur=0)
+    X = tdrstim.concat(tdrstim.reverse(grating, halfperiod=50,
+                                 nsamples=300), nh=filt_depth)
     X_torch = torch.from_numpy(X).to(DEVICE)
     with torch.no_grad():
         if model.recurrent:
-            hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+            hs = [torch.zeros(1,*h).to(device) for h in\
+                                            model.h_shapes]
             resps = []
             for i in range(X_torch.shape[0]):
                 resp, hs = model(X_torch[i:i+1], hs)
@@ -120,27 +160,47 @@ def reversing_grating(model, size=5, phase=0., filt_depth=40):
             resp = torch.cat(resps, dim=0)
         else:
             resp = model(X_torch)
-    figs = viz.response1D(X[:, -1, 0, 0].copy(), resp.cpu().detach().numpy())
+    figs = viz.response1D(X[:, -1, 0, 0].copy(),
+                                   resp.cpu().detach().numpy())
     (fig, (ax0,ax1)) = figs
     return (fig, (ax0,ax1)), X, resp
 
-def contrast_adaptation(model, c0=0.7, c1=.1, tot_dur=300, filt_depth=40, nx=50):
-    """Step change in contrast"""
+def contrast_adaptation(model, c0=0.7, c1=.1, tot_dur=300,
+                                    filt_depth=40, nx=50):
+    """
+    Step change in contrast
+
+    model: torch Module
+    c0: float
+        the first contrast
+    c1: float
+        the second contrast
+    tot_dur: int
+        the length of the stimulus in frames
+    filt_depth: int
+        the depth of the first convolutional filter in the model
+    """
 
     # the contrast envelope
     qrtr_dur = int((tot_dur-filt_depth)//4)
     remainder = (tot_dur-filt_depth)%4
-    flicker_1 = tdrstim.repeat_white(filt_depth+qrtr_dur, nx=nx, contrast=c0, n_repeats=3)
-    flicker_2 = tdrstim.repeat_white(qrtr_dur*2, nx=nx, contrast=c1, n_repeats=3)
-    flicker_3 = tdrstim.repeat_white(qrtr_dur+remainder, nx=nx, contrast=c0, n_repeats=3)
-    envelope = np.concatenate([flicker_1, flicker_2, flicker_3], axis=0)
+    flicker_1 = tdrstim.repeat_white(filt_depth+qrtr_dur, nx=nx,
+                                        contrast=c0, n_repeats=3)
+    flicker_2 = tdrstim.repeat_white(qrtr_dur*2, nx=nx, contrast=c1,
+                                                        n_repeats=3)
+    flicker_3 = tdrstim.repeat_white(qrtr_dur+remainder, nx=nx,
+                                      contrast=c0, n_repeats=3)
+    envelope = np.concatenate([flicker_1, flicker_2, flicker_3],
+                                                         axis=0)
 
-    # generate a bunch of responses to random noise with the given contrast envelope
+    # generate a bunch of responses to random noise with the given
+    # contrast envelope
     with torch.no_grad():
-        x = torch.from_numpy(tdrstim.concat(np.random.randn(*envelope.shape) * envelope, 
-                                                                  nh=filt_depth)).to(DEVICE)
+        rand = np.random.randn(*envelope.shape) * envelope
+        x = torch.from_numpy(tdrstim.concat(rand, nh=filt_depth))
+        x = x.to(DEVICE)
         if model.recurrent:
-            hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+            hs =[torch.zeros(1,*h).to(device) for h in model.h_shapes]
             resps = []
             for i in range(x.shape[0]):
                 resp, hs = model(x[i:i+1], hs)
@@ -154,69 +214,96 @@ def contrast_adaptation(model, c0=0.7, c1=.1, tot_dur=300, filt_depth=40, nx=50)
 
     return (fig, (ax0,ax1)), envelope, response
 
-def oms_random_differential(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=8, background_velocity=.3, foreground_velocity=.5, seed=None, bar_size=2, inner_bar_size=None, filt_depth=40):
+def oms_random_differential(model, duration=5, sample_rate=30,
+                                               pre_frames=40,
+                                               post_frames=40,
+                                               img_shape=(50,50),
+                                               center=(25,25),
+                                               radius=8,
+                                               background_velocity=.3,
+                                               foreground_velocity=.5,
+                                               seed=None, bar_width=4,
+                                               inner_bar_width=None,
+                                               filt_depth=40):
     """
-    Plays a video of differential motion by keeping a circular window fixed in space on a 2d background grating.
-    A grating exists behind the circular window that moves counter to the background grating. Each grating is jittered
-    randomly.
+    Plays a video of differential motion by keeping a circular window
+    fixed in space on a 2d background grating. A grating exists behind
+    the circular window that moves counter to the background grating.
+    Each grating is jittered randomly.
 
     duration: float
         length of video in seconds
     sample_rate: float
         sample rate of video in frames per second
     pre_frames: int
-        number of frames of still image to be prepended to the jittering
+        number of frames of still image to be prepended to the
+        jittering
     post_frames: int
-        number of frames of still image to be appended to the jittering
+        number of frames of still image to be appended to the
+        jittering
     img_shape: sequence of ints len 2
         the image size (H,W)
     center: sequence of ints len 2
-        the starting pixel coordinates of the circular window (0,0 is the upper left most pixel)
+        the starting pixel coordinates of the circular window
+        (0,0 is the upper left most pixel)
     radius: float
         the radius of the circular window
     background_velocity: float
-        the intensity of the horizontal jittering of the background grating
+        the intensity of the horizontal jittering of the background
+        grating
     foreground_velocity: float
-        the intensity of the horizontal jittering of the foreground grating
+        the intensity of the horizontal jittering of the foreground
+        grating
     seed: int or None
         sets the numpy random seed if int
-    bar_size: int
+    bar_width: int
         size of stripes. Min value is 3
-    inner_bar_size: int
-        size of grating bars inside circle. If None, set to bar_size
+    inner_bar_width: int
+        size of grating bars inside circle. If None, set to bar_width
     """
     if seed is not None:
         np.random.seed(seed)
     tot_frames = int(duration * sample_rate)
     diff_frames = int(tot_frames-pre_frames-post_frames)
     assert diff_frames > 0
-    differential, _, _ = tdrstim.random_differential_circle(diff_frames, bar_size=bar_size, inner_bar_size=inner_bar_size,
-                                    foreground_velocity=foreground_velocity, 
-                                    background_velocity=background_velocity,
-                                    image_shape=img_shape, center=center, radius=radius) 
+    differential,_,_ = tdrstim.random_differential_circle(diff_frames,
+                              bar_width=bar_width,
+                              inner_bar_width=inner_bar_width,
+                              foreground_velocity=foreground_velocity,
+                              background_velocity=background_velocity,
+                              image_shape=img_shape,
+                              center=center, radius=radius) 
     pre_vid = np.repeat(differential[:1], pre_frames, axis=0)
     post_vid = np.repeat(differential[-1:], post_frames, axis=0)
-    diff_vid = np.concatenate([pre_vid, differential, post_vid], axis=0)
+    diff_vid =np.concatenate([pre_vid,differential,post_vid], axis=0)
 
-    global_velocity = foreground_velocity if foreground_velocity != 0 else background_velocity
-    global_, _, _ = tdrstim.random_differential_circle(diff_frames, bar_size=bar_size, inner_bar_size=inner_bar_size,
-                                    foreground_velocity=global_velocity, sync_jitters=True,
-                                    background_velocity=global_velocity, 
-                                    image_shape=img_shape, center=center, radius=radius, 
-                                    horizontal_foreground=False, horizontal_background=False)
+    global_velocity = foreground_velocity if foreground_velocity != 0\
+                                              else background_velocity
+    global_, _, _ = tdrstim.random_differential_circle(diff_frames,
+                                 bar_width=bar_width,
+                                 inner_bar_width=inner_bar_width,
+                                 foreground_velocity=global_velocity,
+                                 sync_jitters=True,
+                                 background_velocity=global_velocity,
+                                 image_shape=img_shape, center=center,
+                                 radius=radius, 
+                                 horizontal_foreground=False,
+                                 horizontal_background=False)
     pre_vid = np.repeat(global_[:1], pre_frames, axis=0)
     post_vid = np.repeat(global_[-1:], post_frames, axis=0)
     global_vid = np.concatenate([pre_vid, global_, post_vid], axis=0)
-    
+
     if model is None:
         fig = None
         diff_response = None
         global_response = None
     else:
-        x = torch.FloatTensor(tdrstim.concat(diff_vid, nh=filt_depth)).to(DEVICE)
+        x = torch.FloatTensor(tdrstim.concat(diff_vid, nh=filt_depth))
+        x = x.to(DEVICE)
         with torch.no_grad():
             if model.recurrent:
-                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                hs = [torch.zeros(1,*h).to(device) for h in\
+                                                model.h_shapes]
                 resps = []
                 for i in range(x.shape[0]):
                     resp, hs = model(x[i:i+1], hs)
@@ -226,10 +313,12 @@ def oms_random_differential(model, duration=5, sample_rate=30, pre_frames=40, po
                 resp = model(x)
         diff_response = resp.cpu().detach().numpy()
 
-        x = torch.FloatTensor(tdrstim.concat(global_vid, nh=filt_depth)).to(DEVICE)
+        x = tdrstim.concat(global_vid, nh=filt_depth)
+        x = torch.FloatTensor(x).to(DEVICE)
         with torch.no_grad():
             if model.recurrent:
-                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                hs = [torch.zeros(1,*h).to(device) for h in\
+                                                    model.h_shapes]
                 resps = []
                 for i in range(x.shape[0]):
                     resp, hs = model(x[i:i+1], hs)
@@ -245,132 +334,84 @@ def oms_random_differential(model, duration=5, sample_rate=30, pre_frames=40, po
         ax.plot(diff_response.mean(-1), color="g")
         ax.plot(global_response.mean(-1), color="b")
         ax.legend(["diff", "global"])
-        diff_response = diff_response[pre_frames-40:tot_frames-post_frames]
-        global_response = global_response[pre_frames-40:tot_frames-post_frames]
+        s = np.s_[pre_frames-40:tot_frames-post_frames]
+        diff_response = diff_response[s]
+        global_response = global_response[s]
     return fig, diff_vid, global_vid, diff_response, global_response
 
-def random_differential(duration=5, sample_rate=30, pre_frames=40, 
-                        post_frames=40, img_shape=(50,50), center=(25,25),     
-                        radius=8, background_velocity=1, foreground_velocity=1, 
-                        seed=None, bar_size=2, n_loops=5):
-    if seed is not None:
-        np.random.seed(seed)
-    tot_frames = int(duration * sample_rate)
-    diff_frames = int(tot_frames-pre_frames-post_frames)
-    assert diff_frames > 0
-    back_grate = stripes(img_shape, bar_size, angle=0)
-    circ_grate = stripes(img_shape, bar_size, angle=0)
-    vid = []
-    for i in range(n_loops):
-        differential, back_grate, circ_grate = tdrstim.random_differential_circle(diff_frames, 
-                                                    bar_size=bar_size,
-                                                    foreground_velocity=foreground_velocity, 
-                                                    background_velocity=background_velocity,
-                                                    horizontal_background=True, horizontal_foreground=True,
-                                                    image_shape=img_shape, center=center, radius=radius,
-                                                    background_grating=back_grate, circle_grating=circ_grate)
-        post_vid = np.tile(back_grate[None], (post_frames,1,1))
-        if i == 0:
-            pre_vid = np.repeat(differential[:1], pre_frames, axis=0)
-            diff_vid = np.concatenate([pre_vid, differential, post_vid], axis=0)            
-        else:
-            diff_vid = np.concatenate([differential, post_vid], axis=0)
-        vid.append(diff_vid)
-
-        global_velocity = foreground_velocity if foreground_velocity != 0 else background_velocity
-        global_, back_grate, circ_grate = tdrstim.random_differential_circle(diff_frames, bar_size=bar_size, 
-                                        foreground_velocity=global_velocity, sync_jitters=True,
-                                        background_velocity=global_velocity, 
-                                        image_shape=img_shape, center=center, radius=radius, 
-                                        horizontal_foreground=True, horizontal_background=True,
-                                        background_grating=back_grate, circle_grating=back_grate.copy())
-        post_vid = np.repeat(global_[-1:], post_frames, axis=0)
-        global_vid = np.concatenate([global_, post_vid], axis=0)
-        vid.append(global_vid)
-    return np.concatenate(vid, axis=0)
-
-def periodic_differential(duration=5, sample_rate=30, pre_frames=40, 
-                        post_frames=40, img_shape=(50,50), center=(25,25),     
-                        radius=8, period_dur=30, bar_size=2, n_loops=5, n_steps=3):
-    tot_frames = int(duration * sample_rate)
-    diff_frames = int(tot_frames-pre_frames-post_frames)
-    assert diff_frames > 0
-    back_grate = stripes(img_shape, bar_size, angle=0)
-    circ_grate = stripes(img_shape, bar_size, angle=0)
-    vid = []
-    for i in range(n_loops):
-        differential, back_grate, circ_grate = tdrstim.periodic_differential_circle(n_frames=diff_frames, 
-                                                    period_dur=30, sync_periods=False, image_shape=img_shape,
-                                                    center=center, radius=radius, horizontal_background=True,
-                                                    horizontal_foreground=True, background_grating=back_grate, 
-                                                    circle_grating=circ_grate, n_steps=n_steps)
-        post_vid = np.tile(back_grate[None], (post_frames,1,1))
-        if i == 0:
-            pre_vid = np.repeat(differential[:1], pre_frames, axis=0)
-            diff_vid = np.concatenate([pre_vid, differential, post_vid], axis=0)            
-        else:
-            diff_vid = np.concatenate([differential, post_vid], axis=0)
-        vid.append(diff_vid)
-        global_, back_grate, circ_grate = tdrstim.periodic_differential_circle(n_frames=diff_frames, 
-                                                    period_dur=30, sync_periods=True, image_shape=img_shape,
-                                                    center=center, radius=radius, horizontal_background=True,
-                                                    horizontal_foreground=True, background_grating=back_grate, 
-                                                    circle_grating=back_grate.copy(), n_steps=n_steps)
-        post_vid = np.repeat(global_[-1:], post_frames, axis=0)
-        global_vid = np.concatenate([global_, post_vid], axis=0)
-        vid.append(global_vid)
-    return np.concatenate(vid, axis=0)
-
-def oms_differential(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=8, background_velocity=0, foreground_velocity=.5, seed=None, bar_size=2, inner_bar_size=None, filt_depth=40):
+def oms_differential(model, duration=5, sample_rate=30, pre_frames=40,
+                                    post_frames=40, img_shape=(50,50),
+                                    center=(25,25), radius=8,
+                                    background_velocity=0,
+                                    foreground_velocity=.5,
+                                    seed=None, bar_width=2,
+                                    inner_bar_width=None,
+                                    filt_depth=40):
     """
-    Plays a video of differential motion by keeping a circular window fixed in space on a 2d background grating.
-    A grating exists behind the circular window that moves counter to the background grating. 
+    Plays a video of differential motion by keeping a circular
+    window fixed in space on a 2d background grating. A grating exists
+    behind the circular window that moves counter to the background
+    grating. 
 
     duration: float
         length of video in seconds
     sample_rate: float
         sample rate of video in frames per second
     pre_frames: int
-        number of frames of still image to be prepended to the jittering
+        number of frames of still image to be prepended to the
+        jittering
     post_frames: int
-        number of frames of still image to be appended to the jittering
+        number of frames of still image to be appended to the
+        jittering
     img_shape: sequence of ints len 2
         the image size (H,W)
     center: sequence of ints len 2
-        the starting pixel coordinates of the circular window (0,0 is the upper left most pixel)
+        the starting pixel coordinates of the circular window
+        (0,0 is the upper left most pixel)
     radius: float
         the radius of the circular window
     background_velocity: float
-        the magnitude of horizontal movement of the background grating in pixels per frame
+        the magnitude of horizontal movement of the background grating
+        in pixels per frame
     foreground_velocity: float
-        the magnitude of horizontal movement of the foreground grating in pixels per frame
+        the magnitude of horizontal movement of the foreground grating
+        in pixels per frame
     seed: int or None
         sets the numpy random seed if int
-    bar_size: int
+    bar_width: int
         size of stripes. Min value is 3
-    inner_bar_size: int
-        size of grating bars inside circle. If None, set to bar_size
+    inner_bar_width: int
+        size of grating bars inside circle. If None, set to bar_width
     """
     if seed is not None:
         np.random.seed(seed)
     tot_frames = int(duration * sample_rate)
     diff_frames = int(tot_frames-pre_frames-post_frames)
     assert diff_frames > 0
-    differential, _, _ = tdrstim.differential_circle(diff_frames, bar_size=bar_size, inner_bar_size=inner_bar_size,
-                                    foreground_velocity=foreground_velocity, 
-                                    background_velocity=background_velocity,
-                                    image_shape=img_shape, center=center, radius=radius, 
-                                    horizontal_foreground=False, horizontal_background=False)
+    tup = tdrstim.differential_circle(diff_frames, bar_width=bar_width,
+                                    inner_bar_width=inner_bar_width,
+                              foreground_velocity=foreground_velocity,
+                              background_velocity=background_velocity,
+                              image_shape=img_shape, center=center,
+                              radius=radius,
+                              horizontal_foreground=False,
+                              horizontal_background=False)
+    differential, _, _ = tup
     pre_vid = np.repeat(differential[:1], pre_frames, axis=0)
     post_vid = np.repeat(differential[-1:], post_frames, axis=0)
-    diff_vid = np.concatenate([pre_vid, differential, post_vid], axis=0)
+    diff_vid = np.concatenate([pre_vid,differential,post_vid], axis=0)
 
-    global_velocity = foreground_velocity if foreground_velocity != 0 else background_velocity
-    global_, _, _ = tdrstim.differential_circle(diff_frames, bar_size=bar_size, inner_bar_size=inner_bar_size,
-                                    foreground_velocity=global_velocity,
-                                    background_velocity=global_velocity, 
-                                    image_shape=img_shape, center=center, radius=radius, 
-                                    horizontal_foreground=False, horizontal_background=False)
+    global_velocity = foreground_velocity if foreground_velocity != 0\
+                                              else background_velocity
+    global_, _, _ = tdrstim.differential_circle(diff_frames,
+                                  bar_width=bar_width,
+                                  inner_bar_width=inner_bar_width,
+                                  foreground_velocity=global_velocity,
+                                  background_velocity=global_velocity,
+                                  image_shape=img_shape,
+                                  center=center, radius=radius,
+                                  horizontal_foreground=False,
+                                  horizontal_background=False)
     pre_vid = np.repeat(global_[:1], pre_frames, axis=0)
     post_vid = np.repeat(global_[-1:], post_frames, axis=0)
     global_vid = np.concatenate([pre_vid, global_, post_vid], axis=0)
@@ -380,10 +421,12 @@ def oms_differential(model, duration=5, sample_rate=30, pre_frames=40, post_fram
         diff_response = None
         global_response = None
     else:
-        x = torch.FloatTensor(tdrstim.concat(diff_vid, nh=filt_depth)).to(DEVICE)
+        x = torch.FloatTensor(tdrstim.concat(diff_vid, nh=filt_depth))
+        x = x.to(DEVICE)
         with torch.no_grad():
             if model.recurrent:
-                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                hs = [torch.zeros(1,*h).to(device) for h in\
+                                                model.h_shapes]
                 resps = []
                 for i in range(x.shape[0]):
                     resp, hs = model(x[i:i+1], hs)
@@ -393,10 +436,12 @@ def oms_differential(model, duration=5, sample_rate=30, pre_frames=40, post_fram
                 resp = model(x)
         diff_response = resp.cpu().detach().numpy()
 
-        x = torch.FloatTensor(tdrstim.concat(global_vid, nh=filt_depth)).to(DEVICE)
+        x = torch.FloatTensor(tdrstim.concat(global_vid,
+                                            nh=filt_depth)).to(DEVICE)
         with torch.no_grad():
             if model.recurrent:
-                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                hs = [torch.zeros(1,*h).to(device) for h in\
+                                             model.h_shapes]
                 resps = []
                 for i in range(x.shape[0]):
                     resp, hs = model(x[i:i+1], hs)
@@ -412,34 +457,43 @@ def oms_differential(model, duration=5, sample_rate=30, pre_frames=40, post_fram
         ax.plot(diff_response.mean(-1), color="g")
         ax.plot(global_response.mean(-1), color="b")
         ax.legend(["diff", "global"])
-        diff_response = diff_response[pre_frames-40:tot_frames-post_frames]
-        global_response = global_response[pre_frames-40:tot_frames-post_frames]
+        s = np.s_[pre_frames-40:tot_frames-post_frames]
+        diff_response = diff_response[s]
+        global_response = global_response[s]
     return fig, diff_vid, global_vid, diff_response, global_response
 
-def oms_jitter(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=5, seed=None, bar_size=2, inner_bar_size=None, jitter_freq=.5, step_size=1, filt_depth=40):
+def oms_jitter(model, duration=5, sample_rate=30, pre_frames=40,
+                              post_frames=40, img_shape=(50,50),
+                              center=(25,25), radius=5,
+                              seed=None, bar_width=2,
+                              inner_bar_width=None, jitter_freq=.5,
+                              step_size=1, filt_depth=40):
     """
-    Plays a video of a jittered circle window onto a grating different than that of the background.
+    Plays a video of a jittered circle window onto a grating different
+    than that of the background.
 
     duration: float
         length of video in seconds
     sample_rate: float
         sample rate of video in frames per second
     pre_frames: int
-        number of frames of still image to be prepended to the jittering
+        number of frames of still image to be prepended to the jitter
     post_frames: int
-        number of frames of still image to be appended to the jittering
+        number of frames of still image to be appended to the jitter
     img_shape: sequence of ints len 2
         the image size (H,W)
     center: sequence of ints len 2
-        the starting pixel coordinates of the circular window (0,0 is the upper left most pixel)
+        the starting pixel coordinates of the circular window (0,0 is
+        the upper left most pixel)
     radius: float
         the radius of the circular window
     seed: int or None
         sets the numpy random seed if int
-    bar_size: int
+    bar_width: int
         size of stripes. Min value is 3
-    inner_bar_size: int
-        size of stripes inside circle. Min value is 3. If none, same as bar_size
+    inner_bar_width: int
+        size of stripes inside circle. Min value is 3. If none, same
+        as bar_width
     jitter_freq: float between 0 and 1
         the frequency of jittered movements
     step_size: int
@@ -451,10 +505,16 @@ def oms_jitter(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40,
     tot_frames = int(duration * sample_rate)
     jitter_frames = int(tot_frames-pre_frames-post_frames)
     assert jitter_frames > 0
-    jitters, _, _ = tdrstim.jittered_circle(jitter_frames, bar_size=bar_size, inner_bar_size=inner_bar_size, 
-                                    foreground_jitter=jitter_freq, background_jitter=0, step_size=step_size,
-                                    image_shape=img_shape, center=center, radius=radius, 
-                                    horizontal_foreground=False, horizontal_background=False)
+    jitters, _, _ = tdrstim.jittered_circle(jitter_frames,
+                                    bar_width=bar_width,
+                                    inner_bar_width=inner_bar_width,
+                                    foreground_jitter=jitter_freq,
+                                    background_jitter=0,
+                                    step_size=step_size,
+                                    image_shape=img_shape,
+                                    center=center, radius=radius,
+                                    horizontal_foreground=False,
+                                    horizontal_background=False)
     pre_vid = np.repeat(jitters[:1], pre_frames, axis=0)
     post_vid = np.repeat(jitters[-1:], post_frames, axis=0)
     vid = np.concatenate([pre_vid, jitters, post_vid], axis=0)
@@ -463,10 +523,12 @@ def oms_jitter(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40,
         fig = None
         response = None
     else:
-        x = torch.FloatTensor(tdrstim.concat(vid, nh=filt_depth)).to(DEVICE)
+        x = torch.FloatTensor(tdrstim.concat(vid, nh=filt_depth))
+        x = x.to(DEVICE)
         with torch.no_grad():
             if model.recurrent:
-                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                hs = [torch.zeros(1,*h).to(device) for h in\
+                                             model.h_shapes]
                 resps = []
                 for i in range(x.shape[0]):
                     resp, hs = model(x[i:i+1], hs)
@@ -483,11 +545,16 @@ def oms_jitter(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40,
         ax.plot(avg_response)
     return fig, vid, response
 
-def oms(duration=5, sample_rate=0.01, transition_duration=0.07, silent_duration=0.93,
-        magnitude=5, space=(50, 50), center=(25, 25), object_radius=5, coherent=False, roll=False):
+def oms(duration=5, sample_rate=0.01, transition_duration=0.07,
+                                          silent_duration=0.93,
+                                          magnitude=5, space=(50, 50),
+                                          center=(25, 25),
+                                          object_radius=5,
+                                          coherent=False, roll=False):
     """
-    Object motion sensitivity stimulus, where an object moves differentially
-    from the background.
+    Object motion sensitivity stimulus, where an object moves
+    differentially from the background.
+
     INPUT:
     duration        movie duration in seconds
     sample_rate     sample rate of movie in Hz
@@ -510,23 +577,30 @@ def oms(duration=5, sample_rate=0.01, transition_duration=0.07, silent_duration=
     total_frames = int(duration / sample_rate)
 
     # silence, one direction, silence, opposite direction
-    obj_position = np.hstack([np.zeros((silent_frames,)), np.linspace(0, magnitude, transition_frames),
-                              magnitude * np.ones((silent_frames,)), np.linspace(magnitude, 0, transition_frames)]).astype('int')
+    obj_position = np.hstack([np.zeros((silent_frames,)),
+                         np.linspace(0, magnitude, transition_frames),
+                         magnitude*np.ones((silent_frames,)),
+                         np.linspace(magnitude, 0,transition_frames)])
+    obj_position = obj_position.astype('int')
 
     half_silent = silent_frames // 2
-    back_position = np.hstack([obj_position[half_silent:], obj_position[:-half_silent]]).astype('int')
+    back_position = np.hstack([obj_position[half_silent:],
+                             obj_position[:-half_silent]])
+    back_position = back_position.astype('int')
 
     # make position sequence last total_frames
     if len(back_position) > total_frames:
-        print("Warning: movie won't be {} shorter than a full period.".format(np.float(2 * transition_frames + 2 * silent_frames) / total_frames))
+        s = "Warning: movie won't be {} shorter than a full period."
+        f = np.float(2 * transition_frames + 2 * silent_frames)
+        print(s.format(f / total_frames))
         back_position[:total_frames]
         obj_position[:total_frames]
     else:
-        reps = int(np.ceil(np.float(total_frames) / len(back_position)))
+        reps = int(np.ceil(np.float(total_frames)/len(back_position)))
         back_position = np.tile(back_position, reps)[:total_frames]
         obj_position = np.tile(obj_position, reps)[:total_frames]
 
-    # create a larger fixed world of bars that we'll just crop from later
+    # create a larger fixed world of bars that we crop from later
     padding = 2 * grating_width + magnitude
     fixed_world = -1 * np.ones((space[0], space[1] + padding))
     for i in range(grating_width):
@@ -536,14 +610,18 @@ def oms(duration=5, sample_rate=0.01, transition_duration=0.07, silent_duration=
     movie = np.zeros((total_frames, space[0], space[1]))
     for frame in range(total_frames):
         # make background grating
-        background_frame = np.copy(fixed_world[:, back_position[frame]:back_position[frame] + space[0]])
+        s =np.s_[:,back_position[frame]:back_position[frame]+space[0]]
+        background_frame = np.copy(fixed_world[s])
 
         if not coherent:
             # make object frame
-            object_frame = np.copy(fixed_world[:, obj_position[frame]:obj_position[frame] + space[0]])
+            temp = obj_position[frame]+space[0]
+            s = np.s_[:,obj_position[frame]:temp]
+            object_frame = np.copy(fixed_world[s])
 
             # set center of background frame to object
-            object_mask = tdrstim.cmask(center, object_radius, object_frame)
+            object_mask = tdrstim.cmask(center, object_radius,
+                                                    object_frame)
             background_frame[object_mask] = object_frame[object_mask]
 
         # adjust contrast
@@ -552,8 +630,12 @@ def oms(duration=5, sample_rate=0.01, transition_duration=0.07, silent_duration=
     return movie
 
 
-def osr(model=None, duration=2, interval=10, nflashes=5, intensity=-2.0, filt_depth=40):
-    """Omitted stimulus response
+def osr(model=None, duration=2, interval=10, nflashes=5,
+                                         intensity=-2.0,
+                                         filt_depth=40):
+    """
+    Omitted stimulus response
+
     Parameters
     ----------
     duration : int
@@ -567,17 +649,22 @@ def osr(model=None, duration=2, interval=10, nflashes=5, intensity=-2.0, filt_de
     """
 
     # generate the stimulus
-    single_flash = tdrstim.flash(duration, interval, interval * 2, intensity=intensity)
-    omitted_flash = tdrstim.flash(duration, interval, interval * 2, intensity=0.0)
+    single_flash = tdrstim.flash(duration, interval, interval * 2,
+                                              intensity=intensity)
+    omitted_flash = tdrstim.flash(duration, interval, interval * 2,
+                                                     intensity=0.0)
     flash_group = list(repeat(single_flash, nflashes))
     zero_pad = np.zeros((interval, 1, 1))
-    X = tdrstim.concat(zero_pad, *flash_group, omitted_flash, *flash_group, nx=50, nh=filt_depth)
+    X = tdrstim.concat(zero_pad, *flash_group, omitted_flash,
+                                         *flash_group, nx=50,
+                                         nh=filt_depth)
     X[X!=0] = 1
     if model is not None:
         X_torch = torch.from_numpy(X).to(DEVICE)
         with torch.no_grad():
             if model.recurrent:
-                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                hs = [torch.zeros(1,*h).to(device) for h in\
+                                             model.h_shapes]
                 resps = []
                 for i in range(X_torch.shape[0]):
                     resp, hs = model(X_torch[i:i+1], hs)
@@ -586,19 +673,20 @@ def osr(model=None, duration=2, interval=10, nflashes=5, intensity=-2.0, filt_de
             else:
                 resp = model(X_torch)
         resp = resp.cpu().detach().numpy()
-        figs = viz.response1D(X[:, -1, 0, 0].copy(), resp, figsize=(20, 8))
+        figs = viz.response1D(X[:,-1,0,0].copy(),resp,figsize=(20, 8))
         (fig, (ax0,ax1)) = figs
 
         # Table Metrics
         n_full_responses = len(resp)//len(single_flash)
-        responses = [resp[i*len(single_flash):(i+1)*len(single_flash)] for i in range(n_full_responses)]
+        responses =[resp[i*len(single_flash):(i+1)*len(single_flash)]\
+                                    for i in range(n_full_responses)]
         flash_resps = np.zeros((len(responses), *responses[0].shape))
         for i,resp in enumerate(responses):
             if i != len(flash_group):
                 flash_resps[i] = resp
         omitted_resp = np.asarray(responses[len(flash_group)])
         avg_flash_resp = np.mean(flash_resps, axis=0)
-        resp_ratio = (omitted_resp.sum(0)/avg_flash_resp.sum(0)).mean()
+        resp_ratio =(omitted_resp.sum(0)/avg_flash_resp.sum(0)).mean()
     else:
         fig = None
         ax0,ax1 = None, None
@@ -607,7 +695,9 @@ def osr(model=None, duration=2, interval=10, nflashes=5, intensity=-2.0, filt_de
 
     return (fig, (ax0,ax1)), X, resp, resp_ratio
 
-def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_duration=2, filt_depth=40, make_fig=True):
+def motion_anticipation(model, scale_factor=55, velocity=0.08,
+                                    width=2, flash_duration=2,
+                                    filt_depth=40, make_fig=True):
     """Generates the Berry motion anticipation stimulus
     Stimulus from the paper:
     Anticipation of moving stimuli by the retina,
@@ -616,9 +706,11 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
     ----------
     model : keras.Model
     scale_factor = 55       # microns per bar
-    velocity = 0.08         # 0.08 bars/frame == 0.44mm/s, same as Berry et. al.
-    width = 2               # 2 bars == 110 microns, Berry et. al. used 133 microns
-    flash_duration = 2      # 2 frames == 20 ms, Berry et. al. used 15ms
+    velocity = 0.08         # 0.08 bars/frame == 0.44mm/s, same as
+                            # Berry et. al.
+    width = 2               # 2 bars == 110 microns, Berry et. al.
+                            # used 133 microns
+    flash_duration = 2      # 2 frames==20ms, Berry et. al. used 15ms
     Returns
     -------
     motion : array_like
@@ -626,11 +718,13 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
     """
     # moving bar stimulus and responses
     # c_right and c_left are the center positions of the bar
-    c_right, speed_right, stim_right = tdrstim.driftingbar(velocity, width, x=(-30, 30))
+    c_right, speed_right, stim_right = tdrstim.driftingbar(velocity,
+                                                 width, x=(-30, 30))
     x = torch.from_numpy(stim_right).to(DEVICE)
     with torch.no_grad():
         if model.recurrent:
-            hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+            hs = [torch.zeros(1,*h).to(device) for h in\
+                                         model.h_shapes]
             resps = []
             for i in range(x.shape[0]):
                 resp, hs = model(x[i:i+1], hs)
@@ -640,11 +734,13 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
             resp = model(x)
     resp_right = resp.cpu().detach().numpy()
 
-    c_left, speed_left, stim_left = tdrstim.driftingbar(-velocity, width, x=(30, -30))
+    c_left, speed_left, stim_left = tdrstim.driftingbar(-velocity,
+                                               width, x=(30, -30))
     x = torch.from_numpy(stim_left).to(DEVICE)
     with torch.no_grad():
         if model.recurrent:
-            hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+            hs = [torch.zeros(1,*h).to(device) for h in\
+                                         model.h_shapes]
             resps = []
             for i in range(x.shape[0]):
                 resp, hs = model(x[i:i+1], hs)
@@ -656,16 +752,20 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
 
     # flashed bar stimulus
     flash_centers = np.arange(-25, 26)
-    flashes = (tdrstim.flash(flash_duration, 43, 70, intensity=tdrstim.bar((x, 0), width, 50))
-               for x in flash_centers)
+    flashes = (tdrstim.flash(flash_duration, 43, 70,
+                        intensity=tdrstim.bar((x, 0), width, 50))\
+                        for x in flash_centers)
 
-    # flash responses are a 3-D array with dimensions (centers, stimulus time, cell)
+    # flash responses are a 3-D array with dimensions
+    # (centers, stimulus time, cell)
     flash_responses = []
     with torch.no_grad():
         for f in tqdm(flashes):
-            x = torch.from_numpy(tdrstim.concat(f, nh=filt_depth)).to(DEVICE)
+            x = torch.from_numpy(tdrstim.concat(f, nh=filt_depth))
+            x = x.to(DEVICE)
             if model.recurrent:
-                hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+                hs = [torch.zeros(1,*h).to(device) for h in\
+                                             model.h_shapes]
                 resps = []
                 for i in range(x.shape[0]):
                     resp, hs = model(x[i:i+1], hs)
@@ -677,7 +777,8 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
         
     flash_responses = np.stack(flash_responses)
 
-    # pick off the flash responses at a particular time point (the time of the max response)
+    # pick off the flash responses at a particular time point
+    # (the time of the max response)
     max_resp_idx = flash_responses.mean(axis=-1).mean(axis=0).argmax()
     resp_flash = flash_responses[:, max_resp_idx, :]
 
@@ -695,52 +796,69 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
         # generate the figure
         fig = plt.figure(figsize=(6, 4))
         ax = fig.add_subplot(111)
-        ax.plot(scale_factor * c_left[40:], avg_resp_left, 'g-', label='Left motion')
-        ax.plot(scale_factor * c_right[40:], avg_resp_right, 'b-', label='Right motion')
-        ax.plot(scale_factor * flash_centers, avg_resp_flash, 'r-', label='Flash')
+        ax.plot(scale_factor * c_left[40:], avg_resp_left, 'g-',
+                                            label='Left motion')
+        ax.plot(scale_factor * c_right[40:], avg_resp_right, 'b-',
+                                             label='Right motion')
+        ax.plot(scale_factor * flash_centers, avg_resp_flash, 'r-',
+                                                     label='Flash')
         ax.legend(frameon=True, fancybox=True, fontsize=18)
         ax.set_xlabel('Position ($\mu m$)')
         ax.set_ylabel('Scaled firing rate')
         ax.set_xlim(-735, 135)
 
-        return (fig, ax), (speed_left, speed_right), (c_right, stim_right, resp_right),(c_left, stim_left, resp_left), (flash_centers, flash_responses)#, (symmetry, continuity, peak_height, right_anticipation, left_anticipation)
-    return (speed_left, speed_right), (c_right, stim_right, resp_right),(c_left, stim_left, resp_left), (flash_centers, flash_responses)#, (symmetry, continuity, peak_height, right_anticipation, left_anticipation)
+        return (fig, ax), (speed_left, speed_right),\
+                (c_right, stim_right, resp_right),\
+                (c_left, stim_left, resp_left),\
+                (flash_centers, flash_responses)
+    return (speed_left, speed_right),\
+            (c_right, stim_right, resp_right),\
+            (c_left, stim_left, resp_left),\
+            (flash_centers, flash_responses)
 
-def motion_reversal(model, scale_factor=55, velocity=0.08, width=2, filt_depth=40):
+def motion_reversal(model, scale_factor=55, velocity=0.08, width=2,
+                                                    filt_depth=40):
     """
-    Moves a bar to the right and reverses it in the center, then does the same to the left. 
-    The responses are averaged.
+    Moves a bar to the right and reverses it in the center, then does
+    the same to the left.  The responses are averaged.
+
     Parameters
     ----------
     model : pytorch model
     scale_factor = 55       # microns per bar
-    velocity = 0.08         # 0.08 bars/frame == 0.44mm/s, same as Berry et. al.
-    width = 2               # 2 bars == 110 microns, Berry et. al. used 133 microns
-    flash_duration = 2      # 2 frames == 20 ms, Berry et. al. used 15ms
+    velocity = 0.08         # 0.08 bars/frame == 0.44mm/s, same as
+                            # Berry et. al.
+    width = 2               # 2 bars == 110 microns, Berry et. al.
+                            # used 133 microns
+    flash_duration = 2      # 2 frames==20ms, Berry et. al. used 15ms
     Returns
     -------
     motion : array_like
     flashes : array_like
     """
     # moving bar stimuli
-    c_right, speed_right, stim_right = tdrstim.driftingbar(velocity, width)
+    c_right, speed_right, stim_right = tdrstim.driftingbar(velocity,
+                                                              width)
     stim_right = stim_right[:,0]
-    c_left, speed_left, stim_left = tdrstim.driftingbar(-velocity, width, x=(30, -30))
+    c_left, speed_left, stim_left = tdrstim.driftingbar(-velocity,
+                                               width, x=(30, -30))
     stim_left = stim_left[:,0]
     # Find point that bars are at center
     right_halfway = None
     left_halfway = None 
     half_idx = stim_right.shape[1]//2
     for i in range(len(stim_right)):
-        if right_halfway is None and stim_right[i,0, half_idx] <= -.99:
+        if right_halfway is None and stim_right[i,0, half_idx]<=-.99:
             right_halfway = i
         if left_halfway is None and stim_left[i, 0, half_idx] <= -.99:
             left_halfway = i
         if right_halfway is not None and left_halfway is not None:
             break
     # Create stimulus from moving bars
-    rtl = np.concatenate([stim_right[:right_halfway], stim_left[left_halfway:]], axis=0)
-    ltr = np.concatenate([stim_left[:left_halfway], stim_right[right_halfway:]], axis=0)
+    arr = [stim_right[:right_halfway], stim_left[left_halfway:]]
+    rtl = np.concatenate(arr, axis=0)
+    arr = [stim_left[:left_halfway], stim_right[right_halfway:]]
+    ltr = np.concatenate(arr, axis=0)
     if right_halfway < left_halfway:
         cutoff = left_halfway-right_halfway
         ltr = ltr[cutoff:-cutoff]
@@ -752,7 +870,7 @@ def motion_reversal(model, scale_factor=55, velocity=0.08, width=2, filt_depth=4
     rtl_blocks = torch.from_numpy(rtl_blocks).to(DEVICE)
     with torch.no_grad():
         if model.recurrent:
-            hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+            hs =[torch.zeros(1,*h).to(device) for h in model.h_shapes]
             resps = []
             for i in range(rtl_blocks.shape[0]):
                 resp, hs = model(rtl_blocks[i:i+1], hs)
@@ -766,7 +884,7 @@ def motion_reversal(model, scale_factor=55, velocity=0.08, width=2, filt_depth=4
     ltr_blocks = torch.from_numpy(ltr_blocks).to(DEVICE)
     with torch.no_grad():
         if model.recurrent:
-            hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
+            hs =[torch.zeros(1,*h).to(device) for h in model.h_shapes]
             resps = []
             for i in range(ltr_blocks.shape[0]):
                 resp, hs = model(ltr_blocks[i:i+1], hs)
@@ -789,30 +907,25 @@ def motion_reversal(model, scale_factor=55, velocity=0.08, width=2, filt_depth=4
     fig = plt.figure(figsize=(6, 4))
     ax = fig.add_subplot(111)
     halfway = avg_resp_ltr.shape[0]//2
-    ax.plot(np.arange(-halfway, halfway+1), avg_resp_ltr, 'g-', label='l->r')
-    ax.plot(np.arange(-halfway, halfway+1), avg_resp_rtl, 'b-', label='r->l')
-    ax.plot(np.arange(-halfway, halfway+1), avg_resp, 'r-', label='avg')
+    ax.plot(np.arange(-halfway, halfway+1), avg_resp_ltr, 'g-',
+                                                  label='l->r')
+    ax.plot(np.arange(-halfway, halfway+1), avg_resp_rtl, 'b-',
+                                                  label='r->l')
+    ax.plot(np.arange(-halfway, halfway+1), avg_resp, 'r-',
+                                               label='avg')
     ax.legend(frameon=True, fancybox=True, fontsize=18)
     ax.set_xlabel('Frames from reversal')
     ax.set_ylabel('Scaled firing rate')
     ax.set_xlim(-halfway, halfway)
 
-    return (fig, ax), (speed_left, speed_right), (rtl, resp_rtl), (ltr, resp_ltr), avg_resp
+    return (fig, ax), (speed_left, speed_right), (rtl, resp_rtl),\
+                                        (ltr, resp_ltr), avg_resp
 
-def ds(img_shape=(500,500), bar_width=20, angle=0, step_size=10, n_repeats=3):
-    frames = tdrstim.dir_select_vid(img_shape, bar_width=bar_width, angle=angle, step_size=step_size)
-    ones = [1 for i in range(len(frames.shape[1:]))]
-    return np.tile(frames, (n_repeats, *ones))
 
 # Fast Contrast adaptation figure
-# The following functions are used for the fast contrast adaptation figure
-#######################################################################################
-
-def repeat_white(time, contrast=1.0):
-    compressed_time = int(np.ceil(time/3.0))
-    compressed_stim = contrast * np.random.randn(compressed_time, 50, 50)
-    stimulus = np.repeat(compressed_stim, 3, axis=0)
-    return stimulus[:time]
+# The following functions are used for the fast contrast adaptation
+# figure
+######################################################################
 
 def normalize_filter(sta, stimulus, target_sd, batch_size=1000):
     '''
@@ -820,59 +933,92 @@ def normalize_filter(sta, stimulus, target_sd, batch_size=1000):
     as the stimulus by scaling the values of the sta.
     '''
     with torch.no_grad():
-        temp_sta = sta if type(sta) == type(torch.zeros(1)) else torch.FloatTensor(sta)
-        temp_stim = stimulus if type(stimulus) == type(torch.zeros(1)) else\
-                                                            torch.FloatTensor(stimulus)
+        temp_sta = sta if type(sta) == type(torch.zeros(1)) else\
+                                           torch.FloatTensor(sta)
+        temp_stim = stimulus if type(stimulus)==type(torch.zeros(1))\
+                                      else torch.FloatTensor(stimulus)
         def sd_difference(theta):
             filt = abs(float(theta)) * temp_sta
-            response = tdrutils.linear_response(filt, temp_stim, batch_size=batch_size,
-                                                                         to_numpy=True)
+            response = tdrutils.linear_response(filt, temp_stim,
+                                          batch_size=batch_size,
+                                          to_numpy=True)
             return (response.std() - target_sd)**2
 
         res = minimize(sd_difference, x0=1.0)
         theta = abs(res.x)
     return (theta * sta, theta, res.fun)
 
-def filter_and_nonlinearity(model, contrast, layer_name='sequential.0',
-                                                    unit_index=(0,15,15), 
-                                                    nonlinearity_type='bin', 
-                                                    filt_depth=40, sta=None, 
-                                                    batch_size=2000,
-                                                    n_samples=10000,
-                                                    verbose=False):
+def filter_and_nonlinearity(model, contrast,layer_name='sequential.0',
+                                              unit_index=(0,15,15),
+                                              nonlinearity_type='bin',
+                                              filt_depth=40, sta=None,
+                                              batch_size=2000,
+                                              n_samples=10000,
+                                              verbose=False):
+    """
+    Creates a filter and a nonlinearity fit to the model output at the
+    specified layer. Used to evaluate the internal cells of the model.
+
+    contrast: float
+        intensity (std) of stimulus for fitting filter and
+        nonlinearity
+    layer_name: str
+        the name of the layer of interest
+    unit_index: tuple of ints (channel, row, col)
+        the index of the unit of interest within the layer.
+    nonlinearity_type: str
+        the type of nonlinearity to be fit
+    filt_depth: int
+        the depth of the stimulus for each sample
+    sta: ndarray (C,H,W)
+        a premade spike triggered average
+    batch_size: int
+        the size of the batches used for computing the filter
+    n_samples: int
+        the number of samples to use when fitting the filter
+    """
     # Computing STA
-    stimulus = tdrstim.repeat_white(n_samples,nx=model.img_shape[1],contrast=contrast,
-                                                                          n_repeats=3)
+    stimulus = tdrstim.repeat_white(n_samples,nx=model.img_shape[1],
+                                                  contrast=contrast,
+                                                  n_repeats=3)
     stimulus = tdrstim.rolling_window(stimulus, model.img_shape[0])
     if sta is None:
         if verbose:
             print("Calculating STA with contrast:", contrast)
-        sta = tdrutils.compute_sta(model, contrast=contrast, layer=layer_name, 
-                                                         cell_index=unit_index,
-                                                         n_samples=n_samples,
-                                                         X=stimulus,
-                                                         batch_size=batch_size,
-                                                         to_numpy=True,
-                                                         verbose=verbose)
+        sta = tdrutils.compute_sta(model, contrast=contrast,
+                                           layer=layer_name,
+                                           cell_index=unit_index,
+                                           n_samples=n_samples,
+                                           X=stimulus,
+                                           batch_size=batch_size,
+                                           to_numpy=True,
+                                           verbose=verbose)
     if verbose:
         print("Normalizing filter and collecting linear response")
-    normed_sta, theta, error = normalize_filter(sta, stimulus, contrast, batch_size=batch_size)
-    filtered_stim = tdrutils.linear_response(normed_sta, stimulus, batch_size=batch_size,
-                                                                      to_numpy=True)
+    normed_sta, theta, error = normalize_filter(sta, stimulus,
+                                                contrast,
+                                                batch_size=batch_size)
+    filtered_stim = tdrutils.linear_response(normed_sta, stimulus,
+                                            batch_size=batch_size,
+                                            to_numpy=True)
 
     # Inspecting model response
     if verbose:
         print("Collecting full model response")
     X = torch.FloatTensor(stimulus)
     model.eval()
-    model_response = tdrutils.inspect(model, X, batch_size=batch_size, insp_keys={layer_name,},
-                                                                 to_numpy=True,verbose=verbose)
+    model_response = tdrutils.inspect(model, X, batch_size=batch_size,
+                                              insp_keys={layer_name,},
+                                              to_numpy=True,
+                                              verbose=verbose)
     if type(unit_index) == type(int()):
         response = model_response[layer_name][:,unit_index]
     elif len(unit_index) == 1:
         response = model_response[layer_name][:,unit_index[0]]
     else:
-        response = model_response[layer_name][:,unit_index[0], unit_index[1], unit_index[2]]
+        response = model_response[layer_name][:,unit_index[0],
+                                                unit_index[1],
+                                                unit_index[2]]
 
     # Fitting nonlinearity
     if verbose:
@@ -894,38 +1040,45 @@ def filter_and_nonlinearity(model, contrast, layer_name='sequential.0',
 
     return time, temporal, x, nonlinear_prediction, nonlinearity
 
-def contrast_fig(model, contrasts=[0.4,2.4], layer_name=None, unit_index=0, verbose=False,
-                                                                 nonlinearity_type='bin'):
+def contrast_fig(model, contrasts=[0.4,2.4], layer_name=None,
+                                 unit_index=0, verbose=False,
+                                 nonlinearity_type='bin'):
     """
-    Creates figure 3A from "Deeplearning Models Reveal..." paper. Much of this code has 
-    been repurposed from Lane and Niru's notebooks. Significant chance of bugs...
+    Creates figure 3A from "Deeplearning Models Reveal..." paper.
+    Much of this code has been repurposed from Lane and Niru's
+    notebooks. Significant chance of bugs...
 
     model: torch module
     contrasts: sequence of ints len 2 [low, high]
         the sequence should be in ascending order
     layer_name: string
-        specifies the layer of interest, if None, the final layer is used
+        specifies the layer of interest, if None, the final layer is
+        used
     unit_index: int or sequence of length 3
         specifies the unit of interest
     nonlinearity_type: string
-        fits the nonlinearity to the specified type. allowed args are "bin" and "sigmoid".
+        fits the nonlinearity to the specified type. allowed args are
+        "bin" and "sigmoid".
     """
     if layer_name is None:
         layer_name = "sequential." + str(len(model.sequential)-1)
     if verbose:
-        print("Making Fast Contr Fig for", layer_name, "unit:", unit_index)
+        print("Making Fast Contr Fig for", layer_name, "unit:",
+                                                    unit_index)
 
     low_contr, high_contr = contrasts
-    tup = filter_and_nonlinearity(model, low_contr, layer_name=layer_name,
-                                      unit_index=unit_index, verbose=verbose,
-                                      nonlinearity_type=nonlinearity_type)
+    tup = filter_and_nonlinearity(model, low_contr,
+                                  layer_name=layer_name,
+                                  unit_index=unit_index,
+                                  verbose=verbose,
+                                  nonlinearity_type=nonlinearity_type)
     low_time, low_temporal, low_x, low_nl, low_nonlinearity = tup
-    #low_x = np.linspace(np.min(low_x)-2, np.max(low_x), 50)
-    #low_nl = low_nonlinearity.predict(low_x)
 
-    tup = filter_and_nonlinearity(model, high_contr, layer_name=layer_name,
-                                      unit_index=unit_index, verbose=verbose,
-                                      nonlinearity_type=nonlinearity_type)
+    tup = filter_and_nonlinearity(model, high_contr,
+                                  layer_name=layer_name,
+                                  unit_index=unit_index,
+                                  verbose=verbose,
+                                  nonlinearity_type=nonlinearity_type)
     high_time, high_temporal, high_x, high_nl, high_nonlinearity = tup
 
     # Assure correct sign of decomp
@@ -939,12 +1092,12 @@ def contrast_fig(model, contrasts=[0.4,2.4], layer_name=None, unit_index=0, verb
     plt.subplot(1, 2, 1)
     time = low_time[5:]
     temporal = low_temporal[5:]
-    plt.plot(time,temporal,label='Contrast = %02d%%'%(contrasts[0]*100), color='g',
-                                                                       linewidth=3)
+    label = 'Contrast = %02d%%'%(contrasts[0]*100)
+    plt.plot(time,temporal,label=label, color='g', linewidth=3)
     time = high_time[5:]
     temporal = high_temporal[5:]
-    plt.plot(time, temporal, label='Contrast = %02d%%'%(contrasts[1]*100), color='b',
-                                                                         linewidth=3)
+    label = 'Contrast = %02d%%'%(contrasts[1]*100)
+    plt.plot(time, temporal, label=label, color='b', linewidth=3)
     plt.xlabel('Delay (s)', fontsize=14)
     plt.ylabel('Filter ($s^{-1}$)', fontsize=14)
     plt.text(0.2, -30, 'Low', color='g', fontsize=18)
@@ -973,39 +1126,40 @@ def contrast_fig(model, contrasts=[0.4,2.4], layer_name=None, unit_index=0, verb
     ax1.spines['top'].set_visible(False)
     ax1.xaxis.set_ticks_position('bottom')
     ax1.yaxis.set_ticks_position('left')
-    #majorLocator = MultipleLocator(1)
-    #majorFormatter = FormatStrFormatter('%d')
-    #minorLocator = MultipleLocator(0.5)
-    
-    #ax1.xaxis.set_major_locator(majorLocator)
-    #ax1.xaxis.set_major_formatter(majorFormatter)
-    #ax1.xaxis.set_minor_locator(minorLocator)
     return fig
 
-def nonlinearity_fig(model, contrast=0.25, layer_name=None, unit_index=0, verbose=False, 
-                                                         nonlinearity_type='bin', figsize=(8,2)):
+def nonlinearity_fig(model, contrast=0.25, layer_name=None,
+                                unit_index=0, verbose=False,
+                                nonlinearity_type='bin',
+                                figsize=(8,2)):
     """
-    Creates figure 2D from "Deeplearning Models Reveal..." paper. Much of this code has 
-    been repurposed from Lane and Niru's notebooks.
+    Creates figure 2D from "Deeplearning Models Reveal..." paper.
+    Much of this code has been repurposed from Lane and Niru's
+    notebooks.
 
     model: torch module
     contrast: int
         contrast to calculate nonlinearity
     layer_name: string
-        specifies the layer of interest, if None, the final layer is used
+        specifies the layer of interest, if None, the final layer is
+        used
     unit_index: int or sequence of length 3
         specifies the unit of interest
     nonlinearity_type: string
-        fits the nonlinearity to the specified type. allowed args are "bin" and "sigmoid".
+        fits the nonlinearity to the specified type. allowed args are
+        "bin" and "sigmoid".
     """
     if layer_name is None:
         layer_name = "sequential." + str(len(model.sequential)-1)
     if verbose:
-        print("Making Nonlinearity Fig for", layer_name, "unit:", unit_index)
+        print("Making Nonlinearity Fig for", layer_name, "unit:",
+                                                      unit_index)
 
-    tup = filter_and_nonlinearity(model, contrast, layer_name=layer_name,
-                                      unit_index=unit_index, verbose=verbose,
-                                      nonlinearity_type=nonlinearity_type)
+    tup = filter_and_nonlinearity(model, contrast,
+                                 layer_name=layer_name,
+                                 unit_index=unit_index,
+                                 verbose=verbose,
+                                 nonlinearity_type=nonlinearity_type)
     resp_time, temporal_resp, resp_x, resp, nonlinearity = tup
 
     fig = plt.figure(figsize=figsize)
@@ -1022,41 +1176,54 @@ def nonlinearity_fig(model, contrast=0.25, layer_name=None, unit_index=0, verbos
     ax1.spines['bottom'].set_visible(False)
     return fig
 
-#########################################################################################################
+######################################################################
 
 def retinal_phenomena_figs(model, verbose=True):
+    """
+    Runs the model through a battering of tests and returns figures
+    for each.
+
+    model: torch Module
+    """
     figs = []
     fig_names = []
     metrics = dict()
     filt_depth = model.img_shape[0]
 
-    (fig, (ax0,ax1)), X, resp = step_response(model, filt_depth=filt_depth)
+    (fig, (ax0,ax1)), X, resp = step_response(model,
+                                filt_depth=filt_depth)
     figs.append(fig)
     fig_names.append("step_response")
     metrics['step_response'] = None
 
-    (fig,_),_,_,osr_resp_ratio = osr(model,duration=1,filt_depth=filt_depth)
+    (fig,_),_,_,osr_resp_ratio = osr(model,duration=1,
+                                filt_depth=filt_depth)
     figs.append(fig)
     fig_names.append("osr")
     metrics['osr'] = osr_resp_ratio 
 
-    (fig, (ax0,ax1)), X, resp = reversing_grating(model, filt_depth=filt_depth)
+    (fig, (ax0,ax1)), X, resp = reversing_grating(model,
+                                    filt_depth=filt_depth)
     figs.append(fig)
     fig_names.append("reversing_grating")
     metrics['reversing_grating'] = None
 
     contrasts = [0.1, 0.7]
-    (fig, (_)), _, _ = contrast_adaptation(model, contrasts[1], contrasts[0], filt_depth=filt_depth)
+    (fig, (_)), _, _ = contrast_adaptation(model, contrasts[1],
+                            contrasts[0], filt_depth=filt_depth)
     figs.append(fig)
     fig_names.append("contrast_adaptation")
     metrics['contrast_adaptation'] = None
 
-    fig = contrast_fig(model, contrasts, unit_index=0, nonlinearity_type="bin", verbose=verbose)
+    fig = contrast_fig(model, contrasts, unit_index=0,
+                              nonlinearity_type="bin",
+                              verbose=verbose)
     figs.append(fig)
     fig_names.append("fast_contr_adaptation")
     metrics['contrast_fig'] = None
 
-    (fig, ax), _, _, _, _ = motion_reversal(model, filt_depth=filt_depth)
+    (fig, ax), _, _, _, _ = motion_reversal(model,
+                            filt_depth=filt_depth)
     figs.append(fig)
     fig_names.append("motion_reversal")
     metrics['motion_reversal'] = None

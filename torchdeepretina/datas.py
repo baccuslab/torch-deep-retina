@@ -1,16 +1,18 @@
 """
-Preprocessing utility functions for loading and formatting experimental data
+Preprocessing utility functions for loading and formatting
+experimental data
 """
 from collections import namedtuple
 
 import h5py
 import numpy as np
+import os
+import re
 from os.path import join, expanduser
 from scipy.stats import zscore
 import pyret.filtertools as ft
 import torch
 import torchdeepretina.stimuli as tdrstim
-import torchdeepretina.intracellular as tdrintra
 
 NUM_BLOCKS = {
     '15-10-07': 6,
@@ -23,7 +25,8 @@ NUM_BLOCKS = {
 CELLS = {
     '15-10-07': [0, 1, 2, 3, 4],
     '15-11-21a': [6, 10, 12, 13],
-    '15-11-21b': [0, 1, 3, 5, 8, 9, 13, 14, 16, 17, 18, 20, 21, 22, 23, 24, 25],
+    '15-11-21b': [0, 1, 3, 5, 8, 9, 13, 14, 16, 17, 18, 20, 21, 22,
+                                                       23, 24, 25],
     '16-01-07': [0, 2, 7, 10, 11, 12, 31],
     '16-01-08': [0, 3, 7, 9, 11],
     '16-05-31': [2, 3, 4, 14, 16, 18, 20, 25, 27],
@@ -32,26 +35,31 @@ CELLS = {
 CENTERS = {
     '15-10-07':  [[21,18], [24,20], [22,18], [27,18], [31,20]],
     '15-11-21a': [[37,3], [39,6], [20,15], [41,2]],
-    '15-11-21b': [[16,13], [20,12], [19,7],[19,3], [21,7], [22,6], [21,7],
-            [25,3],[23,6],[26,4],[24,6],[26,7], [27,9], [26,9],
-            [27,11], [26,13], [24,10]],
+    '15-11-21b': [[16,13], [20,12], [19,7],[19,3], [21,7], [22,6],
+                  [21,7], [25,3], [23,6], [26,4], [24,6], [26,7],
+                  [27,9], [26,9], [27,11], [26,13], [24,10]],
     '16-01-07': None,
     '16-01-08': None,
     'arbfilt': None,
 }
 CENTERS_DICT = {
-        '15-10-07':  {0:[21,18], 1:[24,20], 2:[22,18], 3:[27,18], 4:[31,20]},
+        '15-10-07':  {0:[21,18], 1:[24,20], 2:[22,18], 3:[27,18],
+                      4:[31,20]},
         '15-11-21a': {6:[37,3], 10:[39,6], 12:[20,15], 13:[41,2]},
-        '15-11-21b': {0:[16,13], 1:[20,12], 3:[19,7], 5:[19,3], 8:[21,7], 9:[22,6], 13:[21,7],
-            14:[25,3],16:[23,6],17:[26,4],18:[24,6],20:[26,7], 21:[27,9], 22:[26,9],
-            23:[27,11], 24:[26,13], 25:[24,10]},
+        '15-11-21b': {0:[16,13], 1:[20,12], 3:[19,7], 5:[19,3],
+                      8:[21,7], 9:[22,6], 13:[21,7], 14:[25,3],
+                      16:[23,6],17:[26,4],18:[24,6],20:[26,7],
+                      21:[27,9], 22:[26,9], 23:[27,11], 24:[26,13],
+                      25:[24,10]},
         '16-01-07': dict(),
         '16-01-08': dict(),
         'arbfilt': dict(),
 }
 
-Exptdata = namedtuple('Exptdata', ['X','y','spkhist','stats',"cells","centers"])
-__all__ = ['loadexpt','stimcut','CELLS',"CENTERS","DataContainer","DataObj","DataDistributor"]
+Exptdata = namedtuple('Exptdata', ['X','y','spkhist','stats',"cells",
+                                                          "centers"])
+__all__ = ['loadexpt','CELLS',"CENTERS","DataContainer","DataObj",
+                                                "DataDistributor"]
 
 class DataContainer():
     def __init__(self, data):
@@ -60,31 +68,33 @@ class DataContainer():
         self.centers = data.centers
         self.stats = data.stats
 
-def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, 
-                                        cutout_width=None, 
-                                        norm_stats=None, 
-                                        data_path="~/experiments/data"):
+def loadexpt(expt, cells, filename, train_or_test, history, nskip=0,
+                                     cutout_width=None, 
+                                     norm_stats=None, 
+                                     data_path="~/experiments/data"):
     """
     Loads an experiment from an h5 file on disk
 
     Parameters
     ----------
     expt : str
-        The date of the experiment to load in YY-MM-DD format (e.g. '15-10-07')
+        The date of the experiment to load in YY-MM-DD format
+        (e.g. '15-10-07')
 
     cells : list of ints (or string "all")
         Indices of the cells to load from the experiment
-        If "all" is argued, then all cells for the argued expt are used.
+        If "all" is argued, all cells for the argued expt are used.
 
     filename : string
-        Name of the hdf5 file to load (e.g. 'whitenoise' or 'naturalscene')
+        Name of the hdf5 file to load (e.g. 'whitenoise' or
+        'naturalscene')
 
     train_or_test : string
         The key in the hdf5 file to load ('train' or 'test')
 
     history : int
-        Number of samples of history to include in the toeplitz stimulus.
-        If None, no history dimension is created.
+        Number of samples of history to include in the toeplitz
+        stimulus. If None, no history dimension is created.
 
     nskip : float, optional
         Number of samples to skip at the beginning of each repeat
@@ -101,30 +111,27 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0,
     data_path : string
         path to the data folders
     """
-    assert train_or_test in ('train', 'test'), "train_or_test must be 'train' or 'test'"
+    assert train_or_test in ('train', 'test'), "train_or_test must\
+                                              be 'train' or 'test'"
     if type(cells) == type(str()) and cells=="all":
         cells = CELLS[expt]
-
-    # get whitenoise STA for cutout stimulus
-    #if cutout_width is not None:
-    #    assert len(cells) == 1, "cutout must be used with single cells"
-    #    wn = _loadexpt_h5(expt, 'whitenoise')
-    #    sta = np.array(wn['train/stas/cell{:02d}'.format(cells[0]+1)]).copy()
-    #    py, px = ft.filterpeak(sta)[1]
 
     # load the hdf5 file
     with _loadexpt_h5(expt, filename, root=data_path) as f:
 
         expt_length = f[train_or_test]['time'].size
 
-        # load the stimulus into memory as a numpy array, and z-score it
+        # load the stimulus into memory as a numpy array, and z-score
         if cutout_width is None:
-            stim = np.asarray(f[train_or_test]['stimulus']).astype('float32')
+            stim = np.asarray(f[train_or_test]['stimulus'])
+            stim = stim.astype('float32')
         else:
             arr = np.asarray(f[train_or_test]['stimulus'])
             center = CENTERS_DICT[expt][cells[0]]
-            stim = tdrstim.get_cutout(arr, center=center,span=cutout_width,
-                                    pad_to=arr.shape[-1]).astype('float32')
+            stim = tdrstim.get_cutout(arr, center=center,
+                                       span=cutout_width,
+                                       pad_to=arr.shape[-1])
+            stim = stim.astype('float32')
         stats = {}
         if norm_stats is not None:
             if isinstance(norm_stats, dict):
@@ -138,24 +145,30 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0,
         stim = (stim-stats['mean'])/stats['std']
 
         # apply clipping to remove the stimulus just after transitions
-        num_blocks = NUM_BLOCKS[expt] if train_or_test == 'train' and nskip > 0 else 1
-        valid_indices = np.arange(expt_length).reshape(num_blocks, -1)[:, nskip:].ravel()
+        num_blocks = NUM_BLOCKS[expt] if train_or_test == 'train'\
+                                                and nskip > 0 else 1
+        valid_indices = np.arange(expt_length).reshape(num_blocks, -1)
+        valid_indices = valid_indices[:, nskip:].ravel()
 
-        # reshape into the Toeplitz matrix (nsamples, history, *stim_dims)
+        # reshape into the Toeplitz matrix (nsamps, hist, # *stim_dim)
         stim_reshaped = stim[valid_indices]
         if history is not None and history > 0:
-            stim_reshaped = rolling_window(stim_reshaped, history,
-                                                      time_axis=0)
+            stim_reshaped = tdrstim.rolling_window(stim_reshaped,
+                                                         history,
+                                                         time_axis=0)
 
         # get the response for this cell (nsamples, ncells)
-        resp = np.array(f[train_or_test]['response/firing_rate_10ms'][cells]).T[valid_indices]
+        stream = f[train_or_test]['response/firing_rate_10ms'][cells]
+        resp = np.array(stream).T[valid_indices]
         if history is not None and history > 0:
             resp = resp[history:]
 
-        # get the spike history counts for this cell (nsamples, ncells)
-        spk_hist = np.array(f[train_or_test]['response/binned'][cells]).T[valid_indices]
+        # get the spike history counts for this cell (nsamp, ncells)
+        stream = f[train_or_test]['response/binned'][cells]
+        spk_hist = np.array(stream).T[valid_indices]
         if history is not None and history > 0:
-            spk_hist = rolling_window(spk_hist, history, time_axis=0)
+            spk_hist = tdrstim.rolling_window(spk_hist, history,
+                                                    time_axis=0)
 
         # get the ganglion cell receptive field centers
         if expt in CENTERS:
@@ -163,52 +176,169 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0,
         else:
             centers = None
 
-    return Exptdata(stim_reshaped, resp, spk_hist, stats, cells, centers)
-
+    return Exptdata(stim_reshaped, resp, spk_hist, stats, cells,
+                                                        centers)
 
 def _loadexpt_h5(expt, filename, root="~/experiments/data"):
     """Loads an h5py reference to an experiment on disk"""
     filepath = join(expanduser(root), expt, filename + '.h5')
     return h5py.File(filepath, mode='r')
 
-def load_interneuron_data(*args, **kwargs):
+def prepare_stim(stim, stim_type):
+    """
+    Used to prepare the interneuron stimulus for the model
+
+    stim: ndarray
+    stim_type: str
+        preparation method
+    """
+    if stim_type == 'boxes':
+        return 2*stim - 1
+    elif stim_type == 'flashes':
+        stim = stim.reshape(stim.shape[0], 1, 1)
+        return np.broadcast_to(stim, (stim.shape[0], 38, 38))
+    elif stim_type == 'movingbar':
+        stim = block_reduce(stim, (1,6), func=np.mean)
+        stim = stim.reshape(stim.shape[0], stim.shape[1], 1)
+        stim = pyret.stimulustools.upsample(stim, 5)[0]
+        return np.broadcast_to(stim, (stim.shape[0], stim.shape[1],
+                                                    stim.shape[1]))
+    elif stim_type == 'lines':
+        fxn = lambda m: np.convolve(m,0.5*np.ones((2,)),mode='same')
+        stim_averaged = np.apply_along_axis(fxn, axis=1, arr=stim)
+        stim = stim_averaged[:,::2]
+        # now stack stimulus to convert 1d to 2d spatial stimulus
+        shape = (-1,1,stim.shape[-1])
+        return stim.reshape(shape).repeat(stim.shape[-1], axis=1)
+    else:
+        print("Invalid stim type")
+        assert False
+
+def load_interneuron_data(root_path="~/interneuron_data/", files=None,
+                                                  filter_length=40,
+                                                  stim_keys={"boxes"},
+                                                  join_stims=False,
+                                                  trunc_join=True):
     """ 
     Load data
-    num_pots (number of potentials) stores the number of cells per stimulus
-    mem_pots (membrane potentials) stores the membrane potential
-    psst, you can find the "data" folder in /home/grantsrb on deepretina server if you need
+
+    root_path: str
+        path to folder that contains the interneuron h5 files
+    files: list
+        a list of the desired interneuron h5 file names
+    filter_length: int
+        length of first layer filters of model
+    stim_keys: set of str
+        the desired stimulus types
+    join_stims: bool
+       combines the stimuli listed in stim_keys
+    trunc_join: bool
+       truncates the joined stimuli to be of equal length. 
+       Only applies if join_stims is true.
 
     returns:
+    if using join_stims then no stim_type key exists
     stims - dict
-        keys are the cell files, vals are a list of nd array stimuli for each cell within the file
+        keys are the cell files, vals are dicts
+        keys of subdicts are stim type with vals of ndarray
+        stimuli (T,H,W)
     mem_pots - dict
-        keys are the cell files, vals are a list of nd array membrane potential responses for each 
-        cell within the file
+        keys are the cell files, vals are dicts
+            keys of subdicts are stim type with values of ndarray
+            membrane potentials for each cell within the
+            file (N_CELLS, T-filter_length)
     """
-    return tdrintra.load_interneuron_data(*args,**kwargs)
+    if files is None:
+        files = ['bipolars_late_2012.h5', 'bipolars_early_2012.h5',
+                                         'amacrines_early_2012.h5',
+                                         'amacrines_late_2012.h5',
+                                         'horizontals_early_2012.h5',
+                                         'horizontals_late_2012.h5']
+    full_files = [os.path.expanduser(os.path.join(root_path, name))\
+                                                  for name in files]
+    file_ids = []
+    for f in full_files:
+        file_ids.append(re.split('_|\.', f)[0])
+    num_pots = []
+    stims = dict()
+    mem_pots = dict()
+    for fi,file_name in zip(full_files,files):
+        stims[file_name] = None if join_stims else dict()
+        mem_pots[file_name] = None if join_stims else dict()
+        if join_stims:
+            shapes = []
+            mem_shapes = []
+        with h5py.File(fi,'r') as f:
+            for k in f.keys():
+                if k in stim_keys:
+                    if join_stims:
+                        arr = np.asarray(f[k+'/stimuli'])
+                        shape = prepare_stim(arr, k).shape
+                        shapes.append(shape)
+                        s = '/detrended_membrane_potential'
+                        mem_pot = np.asarray(f[k+s])
+                        mem_shapes.append(mem_pot.shape)
+                        del mem_pot
+                    else:
+                        try:
+                            temp = f[k+'/stimuli']
+                            temp = np.asarray(temp, dtype=np.float32)
+                            stims[file_name][k]=prepare_stim(temp, k)
+                            s = 'detrended_membrane_potential'
+                            temp = np.asarray(f[k][s])
+                            temp = temp[:,filter_length:]
+                            temp = temp.astype(np.float32)
+                            mem_pots[file_name][k] = temp
+                            del temp
+                        except Exception as e:
+                            print(e)
+                            print("stim error at", k)
+            if join_stims:
+                # Summing up length of first dimension of all stimuli
+                if trunc_join:
+                    trunc_len = np.min([s[0] for s in shapes])
+                    zero_dim = [trunc_len*len(shapes)]
+                else:
+                    zero_dim=[s[0] for i,s in enumerate(shapes)]
+                one_dim = [s[1] for s in shapes]
+                two_dim = [s[2] for s in shapes]
+                shape = [np.sum(zero_dim), np.max(one_dim),
+                                            np.max(two_dim)]
+                stims[file_name] = np.empty(shape, dtype=np.float32)
 
-def stimcut(data, expt, ci, width=11):
-    """Cuts out a stimulus around the whitenoise receptive field"""
+                zero_dim = [s[0] for s in mem_shapes] # Num cells
+                mem_shape = [np.max(zero_dim), shape[0]-filter_length]
+                mem_pots[file_name] = np.empty(mem_shape,
+                                        dtype=np.float32)
 
-    # get the white noise STA for this cell
-    wn = _loadexpt_h5(expt, 'whitenoise')
-    sta = np.array(wn['train/stas/cell{:02d}'.format(ci+1)]).copy()
-
-    # find the peak of the sta
-    xc, yc = ft.filterpeak(sta)[1]
-
-    # cutout stimulus
-    X, y = data
-    Xc = ft.cutout(X, idx=(yc, xc), width=width)
-    yc = y[:, ci].reshape(-1, 1)
-    return Exptdata(Xc, yc)
-
-
-def rolling_window(array, window, time_axis=0):
-    """
-    See stimuli.py package for details
-    """
-    return tdrstim.rolling_window(array, window, time_axis)
+                startx = 0
+                mstartx = 0
+                for i,k in enumerate(stim_keys):
+                    prepped = np.asarray(f[k+'/stimuli'])
+                    prepped = prepare_stim(prepped, k)
+                    if trunc_join:
+                        prepped = prepped[:trunc_len]
+                    # In case stim have varying spatial dimensions
+                    if not (prepped.shape[-2] ==\
+                                      stims[file_name].shape[-2] and\
+                                      prepped.shape[-1] ==\
+                                      stims[file_name].shape[-1]):
+                        prepped = tdrstim.spatial_pad(prepped,
+                                          stims[file_name].shape[-2],
+                                          stims[file_name].shape[-1])
+                    endx = startx+len(prepped)
+                    stims[file_name][startx:endx] = prepped
+                    s = 'detrended_membrane_potential'
+                    mem_pot = np.asarray(f[k][s])
+                    if trunc_join:
+                        mem_pot = mem_pot[:,:trunc_len]
+                    if i == 0:
+                        mem_pot = mem_pot[:,filter_length:]
+                    mendx = mstartx+mem_pot.shape[1]
+                    mem_pots[file_name][:,mstartx:mendx] = mem_pot
+                    startx = endx
+                    mstartx = mendx
+    return stims, mem_pots, full_files
 
 class DataObj:
     def __init__(self, data, idxs):
@@ -218,9 +348,11 @@ class DataObj:
 
     def reshape(self, *args):
         args = list(args)
-        if type(args[0]) == type(list()) or type(args[0]) == type(tuple()):
+        if type(args[0]) == type(list()) or\
+                                    type(args[0]) == type(tuple()):
             args = [*args[0]]
-        assert args[0] == -1 or args[0] == len(self.idxs) # Reshape must not change indexing axis
+        # Reshape must not change indexing axis
+        assert args[0] == -1 or args[0] == len(self.idxs) 
         others = []
         for i,arg in enumerate(args):
             if arg != -1:
@@ -269,32 +401,40 @@ class DataObj:
 
 class DataDistributor:
     """
-    This class is used to abstract away the manipulations required for shuffling or organizing 
-    data for rnns.
+    This class is used to abstract away the manipulations required for
+    shuffling or organizing data for rnns.
     """
 
-    def __init__(self, data, val_size=30000, batch_size=512, seq_len=1, shuffle=True, 
-                    rand_sample=None, recurrent=False, shift_labels=False, zscorey=False):
+    def __init__(self, data, val_size=30000, batch_size=512,
+                                    seq_len=1, shuffle=True,
+                                    rand_sample=None,
+                                    recurrent=False,
+                                    shift_labels=False,
+                                    zscorey=False):
         """
-        data - a class or named tuple containing an X and y member variable.
+        data: a class or named tuple containing an X and y member
+            variable.
         val_size - the number of samples dedicated to validation
         batch_size - size of batches yielded by train_sample generator
-        seq_len - int describing how long the data sequences should be.
-                    if not doing recurrent training, set to 1
-        shuffle - bool describing if data should be shuffled (the shuffling
-                    preserves the frame order within each data point)
-        rand_sample - bool similar to shuffle but specifies the sampling method rather
-                        than the storage method. Allows for the data to be
-                        unshuffled but sampled randomly. Defaults to the state of shuffle
-                        if left as None
+        seq_len - int describing how long the data sequences should
+            be. if not doing recurrent training, set to 1
+        shuffle - bool describing if data should be shuffled
+            (the shuffling preserves the frame order within each
+            data point)
+        rand_sample - bool similar to shuffle but specifies the
+            sampling method rather than the storage method. Allows
+            for the data to be unshuffled but sampled randomly.
+            Defaults to the state of shuffle if left as None
         recurrent - bool describing if model is recurrent
-        shift_labels - bool describing if labels should be shifted for null model training
+        shift_labels - bool describing if labels should be shifted
+            for null model training
         """
         self.batch_size = batch_size
         self.is_torch = False
         self.seq_len = seq_len
         self.shuffle = shuffle
-        self.rand_sample = shuffle if rand_sample is None else rand_sample
+        self.rand_sample = shuffle if rand_sample is None else\
+                                                    rand_sample
         self.recurrent = recurrent
         self.shift_labels = shift_labels
         self.X = data.X
@@ -310,14 +450,15 @@ class DataDistributor:
             self.y_std =  None
 
         if seq_len > 1:
-            self.X = rolling_window(self.X, seq_len)
-            self.y = rolling_window(self.y, seq_len)
+            self.X = tdrstim.rolling_window(self.X, seq_len)
+            self.y = tdrstim.rolling_window(self.y, seq_len)
         if recurrent:
             self.X = self.order_into_batches(self.X, batch_size)
             self.y = self.order_into_batches(self.y, batch_size)
         if type(self.X) == type(np.array([])):
             if shuffle:
-                self.perm = np.random.permutation(self.X.shape[0]).astype('int')
+                self.perm = np.random.permutation(self.X.shape[0])
+                self.perm = self.perm.astype('int')
             else:
                 self.perm = np.arange(self.X.shape[0]).astype('int')
         else:
@@ -348,29 +489,65 @@ class DataDistributor:
         return self.X[self.perm[idx]]
 
     def shift_in_groups(self, arr, group_size=200):
+        """
+        Shifts the labels in groups by a random amount. i.e. if the
+        group_size is 200, then the first 200 samples take on the
+        value of the 200 samples shifted by some random amount. This
+        method of grouping ensures any temporal correlations are
+        broken.
+
+        arr: ndarray (N,C)
+            the data to be shifted. Only shifts along the first
+            dimension N
+        group_size: int
+            the size of the chunks for shifting
+        """
         shifted = np.empty(arr.shape, dtype=np.float32)
         for i in range(0,len(arr),group_size):
             shift = int(np.random.randint(len(arr)))
-            idxs = (np.arange(i,min(i+group_size,len(arr)))+shift)%len(arr)
+            arange = np.arange(i,min(i+group_size,len(arr)))
+            idxs = (arange+shift)%len(arr)
             shifted[i:i+group_size] = arr[idxs]
         return shifted
 
     def order_into_batches(self, data, batch_size):
+        """
+        Rearranges the data into batches, preserving the order of the
+        samples along the batch dimension.
+
+        Ex:
+            data = 1 2 3 4 5 6 7 8 9 10
+            batch_size = 2
+            return: 1 2 3 4 5
+                    6 7 8 9 10
+
+        data: ndarray or torch FloatTensor (N, ...)
+        batch_size: int
+            size of the batching
+        """
         switch_back = False
         if type(data) != type(np.array([])):
             data = data.numpy()
             switch_back = True
         length = data.shape[0]//batch_size
         tot_len = length*batch_size
-        trunc = data[:tot_len].reshape(batch_size, length, *data.shape[1:])
+        trunc = data[:tot_len].reshape(batch_size, length,
+                                          *data.shape[1:])
         trans_order = list(range(len(trunc.shape)))
-        trans_order[0], trans_order[1] = trans_order[1], trans_order[0]
+        trans_order[0],trans_order[1]=trans_order[1],trans_order[0]
         trunc = trunc.transpose(trans_order)
         if switch_back:
             trunc = torch.from_numpy(trunc)
         return trunc
 
     def undo_batch_order(self, data):
+        """
+        Returns data that is shaped (B,L,...) in which the sequential
+        order is preserved along L, into (N,...) in which the
+        sequential order is preserved along N.
+
+        data: ndarray (B,L, ...)
+        """
         switch_back = False
         if type(data) == type(np.array([])):
             data = torch.from_numpy(data)
@@ -384,6 +561,16 @@ class DataDistributor:
         return data
 
     def val_sample(self, step_size):
+        """
+        Sample batches of data from the validation set.
+
+        step_size: int
+            the number of val samples to be returned
+
+        Returns:
+            val_X: ndarray or FloatTensor (S, ...)
+            val_Y: ndarray or FloatTensor (S, C)
+        """
         val_X = self.val_X
         val_y = self.val_y
         n_loops = self.val_shape[0]//step_size
@@ -396,6 +583,16 @@ class DataDistributor:
             yield val_X[idxs], val_y[idxs]
 
     def train_sample(self, batch_size=None):
+        """
+        Sample batches of data from the validation set.
+
+        batch_size: int
+            the number of train samples to be returned
+
+        Returns:
+            train_X: ndarray or FloatTensor (B, ...)
+            train_Y: ndarray or FloatTensor (B, C)
+        """
         n_loops = self.n_loops
         # Allow for new batchsize argument
         if batch_size is None:
@@ -418,6 +615,9 @@ class DataDistributor:
             yield self.train_X[idxs], self.train_y[idxs]
     
     def torch(self):
+        """
+        Converts all data to torch datatype
+        """
         self.is_torch = True
         self.X = torch.FloatTensor(self.X)
         self.y = torch.FloatTensor(self.y)
@@ -430,6 +630,9 @@ class DataDistributor:
         self.val_y = DataObj(self.y, self.val_idxs)
 
     def numpy(self):
+        """
+        Converts all data to numpy datatype
+        """
         self.is_torch = False
         self.X = np.asarray(self.X)
         self.y = np.asarray(self.y)
@@ -462,7 +665,8 @@ class ChunkedData:
 
     def get_mean(self, test_chunk):
         """
-        returns mean along dimension 0
+        returns mean along dimension 0. Created to reduce RAM
+        footprint.
 
         test_chunk - idx of test chunk
         """
@@ -476,6 +680,12 @@ class ChunkedData:
         return cumu_sum/n_samples
 
     def get_std(self, test_chunk):
+        """
+        returns std along dimension 0. Created to reduce RAM
+        footprint.
+
+        test_chunk - idx of test chunk
+        """
         mean = self.get_mean(test_chunk)
         cumu_sum = torch.zeros_like(mean)
         n_samples = 0
@@ -487,6 +697,14 @@ class ChunkedData:
         return torch.sqrt(cumu_sum / n_samples)
 
     def get_norm_stats(self, test_chunk):
+        """
+        Returns the mean and standard deviation of the test_chunk.
+        Created to reduce RAM footprint.
+
+        test_chunk: int
+            the chunk of data to exclude in the normalization
+            statistics
+        """
         mean = self.get_mean(test_chunk)
         cumu_sum = torch.zeros_like(mean)
         n_samples = 0
@@ -498,6 +716,12 @@ class ChunkedData:
         return mean, torch.sqrt(cumu_sum / n_samples)
 
     def get_train_data(self,test_chunk):
+        """
+        Returns all chunks of data except for the argued test_chunk.
+
+        test_chunk: int
+            the chunk of data to exclude in the training data
+        """
         X,y = [],[]
         for i in range(self.n_chunks):
             if i != test_chunk:

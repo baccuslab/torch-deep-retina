@@ -18,11 +18,18 @@ class TDRModel(nn.Module):
     variables that are shared for most model definitions.
     """
     def __init__(self, n_units=5, noise=.05, bias=True, gc_bias=None,
-                               chans=[8,8], bn_moment=.01, softplus=True,
-                               inference_exp=False, img_shape=(40,50,50),
-                               ksizes=(15,11), recurrent=False,
-                               kinetic=False, convgc=False, centers=None,
-                               bnorm_d=1, **kwargs):
+                                                chans=[8,8],
+                                                bn_moment=.01,
+                                                softplus=True,
+                                                inference_exp=False,
+                                                img_shape=(40,50,50),
+                                                ksizes=(15,11),
+                                                recurrent=False,
+                                                kinetic=False,
+                                                convgc=False,
+                                                centers=None,
+                                                bnorm_d=1,
+                                                **kwargs):
         """
         n_units: int
             number of different ganglion cells being fit
@@ -81,8 +88,8 @@ class TDRModel(nn.Module):
         self.convgc = convgc
         self.centers = centers
         self.bnorm_d = bnorm_d
-        assert bnorm_d == 1 or bnorm_d == 2, "Only 1 and 2 dimensional\
-                                     batchnorm are currently supported"
+        assert bnorm_d == 1 or bnorm_d == 2, "Only 1 and 2 dim\
+                             batchnorm are currently supported"
 
     def forward(self, x):
         return x
@@ -93,13 +100,13 @@ class TDRModel(nn.Module):
         details about the model's member variables.
         """
         s = 'n_units={}, noise={}, bias={}, gc_bias={}, chans={},\
-                                       bn_moment={}, softplus={},\
-                                       inference_exp={}, img_shape={},\
-                                       ksizes={}'
+                                     bn_moment={}, softplus={},\
+                                     inference_exp={}, img_shape={},\
+                                     ksizes={}'
         return s.format(self.n_units, self.noise, self.bias,
                                     self.gc_bias, self.chans,
                                     self.bn_moment, self.softplus,
-                                    self.inference_exp,
+                                    self.infr_exp,
                                     self.img_shape, self.ksizes)
 
     def requires_grad(self, state):
@@ -108,8 +115,8 @@ class TDRModel(nn.Module):
         will most likely want to use `with torch.no_grad():` instead.
 
         state: bool
-            if true, then all parameters' `requires_grad` variable will
-            be set to true. Visa-versa with false.
+            if true, then all parameters' `requires_grad` variable
+            will be set to true. Visa-versa with false.
         """
         for p in self.parameters():
             try:
@@ -215,10 +222,10 @@ class BNCNN(TDRModel):
 
 class LinearStackedBNCNN(TDRModel):
     """
-    Similar to the BNCNN model, except that the convolutional filters are
-    constructed out of s series of linear, smaller convolutions.
-    Additionally the batchnorm parameters are forced to be positive. This
-    prevents sign inversion.
+    Similar to the BNCNN model, except that the convolutional filters
+    are constructed out of s series of linear, smaller convolutions.
+    Additionally the batchnorm parameters are forced to be positive.
+    This prevents sign inversion.
     """
     def __init__(self, drop_p=0, one2one=False, stack_ksizes=3,
                                                  stack_chans=None,
@@ -234,12 +241,12 @@ class LinearStackedBNCNN(TDRModel):
         stack_ksizes: list of ints or int
             the kernel sizes of the sub-convolutions. the zeroth index
             is the kernel size for the first LinearStackedConv2d,
-            the first index is used for the second LinearStackedConv2d, 
-            and so on. Defaults to 3
+            the first index is used for the second
+            LinearStackedConv2d, and so on. Defaults to 3
         stack_chans: list of ints or None
-            similar to stack_ksizes, but denotes the channel depths of
-            each of the sub-convolutions. Defaults to the output channel
-            depth is Nones are argued.
+            similar to stack_ksizes, but denotes the channel depths
+            of each of the sub-convolutions. Defaults to the output
+            channel depth is Nones are argued.
         paddings: list of ints
             the paddings for each layer. Defaults
         """
@@ -248,10 +255,12 @@ class LinearStackedBNCNN(TDRModel):
         self.drop_p = drop_p
         self.one2one = one2one
         if isinstance(stack_ksizes, int):
-            stack_ksizes=[stack_ksizes for i in range(len(self.ksizes))]
+            stack_ksizes = [stack_ksizes for i in\
+                                        range(len(self.ksizes))]
         self.stack_ksizes = stack_ksizes
         if stack_chans is None or isinstance(stack_chans, int):
-            stack_chans = [stack_chans for i in range(len(self.ksizes))]
+            stack_chans = [stack_chans for i in\
+                                        range(len(self.ksizes))]
         self.stack_chans = stack_chans
         self.paddings = [0 for x in stack_ksizes] if paddings is None\
                                                          else paddings
@@ -269,14 +278,15 @@ class LinearStackedBNCNN(TDRModel):
                                         bias=self.bias)
 
         else:
-            conv = LinearStackedConv2d(self.img_shape[0], self.chans[0],
-                                        kernel_size=self.ksizes[0],
-                                        abs_bnorm=False,
-                                        bias=self.bias,
-                                        stack_chan=self.stack_chans[0],
-                                        stack_ksize=self.stack_ksizes[0],
-                                        drop_p=self.drop_p, 
-                                        padding=self.paddings[0])
+            conv = LinearStackedConv2d(self.img_shape[0],
+                                    self.chans[0],
+                                    kernel_size=self.ksizes[0],
+                                    abs_bnorm=False,
+                                    bias=self.bias,
+                                    stack_chan=self.stack_chans[0],
+                                    stack_ksize=self.stack_ksizes[0],
+                                    drop_p=self.drop_p, 
+                                    padding=self.paddings[0])
         modules.append(conv)
         shape = update_shape(shape, self.ksizes[0],
                             padding=self.paddings[0])
@@ -288,7 +298,8 @@ class LinearStackedBNCNN(TDRModel):
             bnorm = AbsBatchNorm1d(size, eps=1e-3,
                                     momentum=self.bn_moment)
             modules.append(bnorm)
-            modules.append(Reshape((-1,self.chans[0],shape[0],shape[1])))
+            modules.append(Reshape((-1,self.chans[0],shape[0],
+                                                   shape[1])))
         else:
             bnorm = AbsBatchNorm2d(self.chans[0], eps=1e-3,
                                         momentum=self.bn_moment)
@@ -307,12 +318,13 @@ class LinearStackedBNCNN(TDRModel):
                                     bias=self.bias)
         else:
             conv = LinearStackedConv2d(self.chans[0],self.chans[1],
-                                       kernel_size=self.ksizes[1],
-                                       abs_bnorm=False, bias=self.bias,
-                                       stack_chan=self.stack_chans[1],
-                                       stack_ksize=self.stack_ksizes[1],
-                                       padding=self.paddings[1],
-                                       drop_p=self.drop_p)
+                                    kernel_size=self.ksizes[1],
+                                    abs_bnorm=False,
+                                    bias=self.bias,
+                                    stack_chan=self.stack_chans[1],
+                                    stack_ksize=self.stack_ksizes[1],
+                                    padding=self.paddings[1],
+                                    drop_p=self.drop_p)
         modules.append(conv)
         shape = update_shape(shape, self.ksizes[1],
                             padding=self.paddings[1])
@@ -333,7 +345,8 @@ class LinearStackedBNCNN(TDRModel):
 
         ##### Final Layer
         if self.convgc:
-            modules.append(Reshape((-1,self.chans[1],shape[0],shape[1])))
+            modules.append(Reshape((-1,self.chans[1],shape[0],
+                                                   shape[1])))
             modules.append(nn.Conv2d(self.chans[1],self.n_units,
                                      kernel_size=self.ksizes[2],
                                      bias=self.gc_bias))
@@ -379,13 +392,13 @@ class LinearStackedBNCNN(TDRModel):
         fx = self.sequential[:-3](x) # Remove GrabUnits layer
         bnorm = self.sequential[-2]
         # Perform 2d batchnorm using 1d parameters from training
-        fx = torch.nn.functional.batch_norm(fx, bnorm.running_mean.data,
-                                                bnorm.running_var.data,
-                                                weight=bnorm.scale.abs(),
-                                                bias=bnorm.shift, 
-                                                eps=bnorm.eps,
-                                                momentum=bnorm.momentum,
-                                                training=self.training)
+        fx =torch.nn.functional.batch_norm(fx,bnorm.running_mean.data,
+                                            bnorm.running_var.data,
+                                            weight=bnorm.scale.abs(),
+                                            bias=bnorm.shift, 
+                                            eps=bnorm.eps,
+                                            momentum=bnorm.momentum,
+                                            training=self.training)
         fx = self.sequential[-1](fx)
         if not self.training and self.infr_exp:
             return torch.exp(fx)
@@ -434,7 +447,8 @@ class RevCorLN:
             the size of the cutout window centered on the gc receptive
             field.
         center: tuple of ints (row,col)
-            the row,col coordinate of the ganglion cell receptive field.
+            the row,col coordinate of the ganglion cell receptive
+            field.
         norm_stats: list of floats
             the normalization statistics of the data
         fit: list of floats
@@ -488,8 +502,8 @@ class RevCorLN:
         x = x.reshape(len(x), -1)
         outputs = torch.empty(len(x)).float()
         for i in range(0,len(x),batch_size):
-            outs = torch.einsum("ij,j->i", x[i:i+batch_size].to(DEVICE),
-                                                              self.filt)
+            outs =torch.einsum("ij,j->i",x[i:i+batch_size].to(DEVICE),
+                                                            self.filt)
             outputs[i:i+len(outs)] = outs.cpu()
         return outputs
 
@@ -511,14 +525,18 @@ class VaryModel(TDRModel):
         super().__init__(**kwargs)
         """
         n_layers: int
-            number of neural network layers. Includes ganglion cell layer
+            number of neural network layers. Includes ganglion cell
+            layer
         stackconvs: bool
-            if true, the convolutions are all linearstacked convolutions
+            if true, the convolutions are all linearstacked
+            convolutions
         drop_p: float
-            the dropout probability for the linearly stacked convolutions
+            the dropout probability for the linearly stacked
+            convolutions
         one2one: bool
-            if true and stackconvs is true, then the stacked convolutions
-            do not allow crosstalk between the inner channels
+            if true and stackconvs is true, then the stacked
+            convolutions do not allow crosstalk between the inner
+            channels
         stack_ksizes: list of ints
             the kernel size of the stacked convolutions
         stack_chans: list of ints
@@ -537,10 +555,12 @@ class VaryModel(TDRModel):
         self.drop_p = drop_p
         self.one2one = one2one
         if isinstance(stack_ksizes, int):
-            stack_ksizes=[stack_ksizes for i in range(len(self.ksizes))]
+            stack_ksizes=[stack_ksizes for i in\
+                                        range(len(self.ksizes))]
         self.stack_ksizes = stack_ksizes
         if stack_chans is None or isinstance(stack_chans, int):
-            stack_chans = [stack_chans for i in range(len(self.ksizes))]
+            stack_chans = [stack_chans for i in\
+                                        range(len(self.ksizes))]
         self.stack_chans = stack_chans
         self.paddings = [0 for x in stack_ksizes] if paddings is None\
                                                          else paddings
@@ -590,8 +610,9 @@ class VaryModel(TDRModel):
                              momentum=self.bn_moment))
                 modules.append(Reshape((-1,temp_chans[i+1],*shape)))
             else:
-                modules.append(AbsBatchNorm2d(temp_chans[i+1],eps=1e-3,
-                                              momentum=self.bn_moment))
+                bnorm = AbsBatchNorm2d(temp_chans[i+1],eps=1e-3,
+                                        momentum=self.bn_moment)
+                modules.append(bnorm)
             # Noise and ReLU
             modules.append(GaussianNoise(std=self.noise))
             modules.append(nn.ReLU())
@@ -644,13 +665,13 @@ class VaryModel(TDRModel):
         fx = self.sequential[:-3-self.final_bias](x) 
         bnorm = self.sequential[-2-self.final_bias]
         # Perform 2dbatchnorm using 1d parameters
-        fx = torch.nn.functional.batch_norm(fx, bnorm.running_mean.data,
-                                                bnorm.running_var.data,
-                                                weight=bnorm.scale.abs(),
-                                                bias=bnorm.shift,
-                                                eps=bnorm.eps,
-                                                momentum=bnorm.momentum,
-                                                training=self.training)
+        fx =torch.nn.functional.batch_norm(fx,bnorm.running_mean.data,
+                                            bnorm.running_var.data,
+                                            weight=bnorm.scale.abs(),
+                                            bias=bnorm.shift,
+                                            eps=bnorm.eps,
+                                            momentum=bnorm.momentum,
+                                            training=self.training)
         fx = self.sequential[-1-self.final_bias:](fx)
         if not self.training and self.infr_exp:
             return torch.exp(fx)

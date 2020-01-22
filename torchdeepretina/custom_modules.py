@@ -3,11 +3,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-DEVICE = torch.device("cuda:0")
+if torch.cuda.is_available():
+    DEVICE = torch.device("cuda:0")
+else:
+    DEVICE = torch.device("cpu")
 
 def update_shape(shape, kernel=3, padding=0, stride=1, op="conv"):
     """
-    Calculates the new shape of the tensor following a convolution or deconvolution
+    Calculates the new shape of the tensor following a convolution or
+    deconvolution
 
     shape: list-like or int
         the height/width of the activations
@@ -40,6 +44,31 @@ def diminish_weight_magnitude(params):
         divisor = float(np.prod(param.data.shape))/2
         if param.data is not None and divisor >= 0:
             param.data = param.data/divisor
+
+class Poly1d:
+    """
+    Creates a polynomial with the argued fit
+    """
+    def __init__(self, fit):
+        """
+        fit: list of float
+            the polynomial coefs. the zeroth index of the fit
+            corresponds to the largest power of x.
+            y = fit[-1] + fit[-2]*x + fig[-3]*x**2 + ...
+        """
+        self.coefficients = fit
+        self.poly = self.get_poly(fit)
+
+    def get_poly(self, fit):
+        def poly(x):
+            cumu_sum = 0
+            for i in range(len(fit)):
+                cumu_sum = cumu_sum + fit[i]*(x**(len(fit)-i-1))
+            return cumu_sum
+        return poly
+    
+    def __call__(self, x):
+        return self.poly(x)
 
 class GrabUnits(nn.Module):
     """
@@ -124,8 +153,52 @@ class Exponential(nn.Module):
     def extra_repr(self):
         return 'train_off={}'.format(self.train_off)
 
+class GaussRegularizer:
+    def __init__(self, model, conv_idxs, std=1):
+        """
+        Regularizes a model such that weights further from the spatial
+        center of the model have a greater regularizing effect, 
+        encouraging a large center with weaker edges.
+
+        model - torch nn Module
+        conv_idxs - list of indices of convolutional layers
+        std - int
+            standard deviation of gaussian in terms of pixels
+        """
+        modu = model.sequential[conv_idxs[0]]
+        # Needs to be Conv2d module
+        assert "sequential" in dir(model) and type(modu) == nn.Conv2d
+        self.weights = [model.sequential[i].weight for i in conv_idxs]
+        self.std = std
+        self.gaussians = []
+        for i,weight in enumerate(self.weights):
+            shape = weight.shape[1:]
+            half_width = shape[1]//2
+            sq = 1/np.sqrt(2*np.pi*self.std**2)
+            ar = np.arange(-half_width,half_width+1)**2
+            ex = np.exp(-(ar/(2*self.std**2)))
+            pdf = sq * ex
+            gauss = np.outer(pdf, pdf)
+            inverted = 1/(gauss+1e-5)
+            inverted = (inverted-np.min(inverted))/np.max(inverted)
+            full_gauss = np.asarray([gauss for i in range(shape[0])])
+            self.gaussians.append(torch.FloatTensor(full_gauss))
+    
+    def get_loss(self):
+        """
+        Calculates the loss associated with the regularizer.
+        """
+        if self.weights[0].data.is_cuda and not\
+                                        self.gaussians[0].is_cuda:
+            self.gaussians = [g.to(DEVICE) for g in self.gaussians]
+        loss = 0
+        for weight,gauss in zip(self.weights,self.gaussians):
+            loss += (weight*gauss).mean()
+        return loss
+
 class GaussianNoise(nn.Module):
-    def __init__(self, std=0.1, trainable=False, adapt=False, momentum=.95):
+    def __init__(self, std=0.1, trainable=False, adapt=False,
+                                               momentum=.95):
         """
         std - float
             the standard deviation of the noise to add to the layer.
@@ -140,8 +213,9 @@ class GaussianNoise(nn.Module):
             std of the received activations. Cannot be set to True if
             trainable is True
         momentum - float (0 <= momentum < 1)
-            this is the exponentially moving average factor for updating the
-            activ_std. 0 uses the std of the current activations.
+            this is the exponentially moving average factor for
+            updating the activ_std. 0 uses the std of the current
+            activations.
         """
         super(GaussianNoise, self).__init__()
         self.trainable = trainable
@@ -161,7 +235,7 @@ class GaussianNoise(nn.Module):
             self.running_std = self.momentum*self.running_std +\
                                           (1-self.momentum)*xstd
             self.sigma.data[0] = self.std*self.running_std
-        noise = sigma*torch.randn_like(x)
+        noise = self.sigma*torch.randn_like(x)
         return x + noise
 
     def extra_repr(self):
