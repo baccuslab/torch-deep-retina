@@ -1,25 +1,37 @@
-This json will not work as is! Need to remove comments!
 {
-    "exp_name":"absbndatasetsearch", ## Experiment name
-    "model_type":"AbsBNBNCNN",
-    "dataset":"15-10-07", ## Name of dataset to be used
-    "cells":"all", # Which cells to use from the dataset
-    "stim_type":"naturalscene", # Can either be "naturalscene" or "whitenoise"
-    "starting_exp_num": 0, # This is the first experiment number to be used in the hyper search
-    "lossfxn":"PoissonNLLLoss", # Can either be PoissonNLLLoss or MSELoss
-    "log_poisson":false, # Determines type of PoissonNLLLoss to use (see pytorch documentation)
-    "softplus":true, # If true, a softplus layer is used at the end of the model
-    "batch_size":2056, 
-    "n_epochs":100, # Early stopping is used, so sometimes will not make it to the last epoch
-    "lr":0.001, 
+    "exp_name":"myfirsttraining",
+    "n_repeats":1,
+    "model_type":"VaryModel",
+    "dataset":"15-10-07",
+    "cells":"all",
+    "stim_type":"naturalscene",
+    "shuffle":true,
+    "starting_exp_num":null,
+    "lossfxn":"PoissonNLLLoss",
+    "log_poisson":false,
+    "softplus":true,
+    "batch_size":5000,
+    "n_epochs":40,
+    "lr":0.005,
     "l1":1e-4,
-    "l2":1e-2,
-    "noise":0.05,
-    "adapt_gauss":false, # If true, the gaussian is adapted as a portion of the variance of the layer
-    "bias":true, # Determines if bias is used for all layers
-    "linear_bias":null, # If null, defaults to value of bias, otherwise determines if bias is used on final linear layer
-    "bnorm_momentum":0.01, # counterintuitively running mu and std are updated as mu = (1-momentum)*mu + momentum*batch_mu
-    "chans":[8,8], # number of chans for the first and second convolutional layers respectively
-    "inference_exp":false # if true, outputs during inference are exponentiated. i.e. torch.exp(outputs)
+    "l2":1e-3,
+    "noise":0.075,
+    "bias":true,
+    "bnorm":true,
+    "bnorm_d":2,
+    "n_layers":3,
+    "drop_p":0.05,
+    "gc_bias":false,
+    "bn_moment":0.01,
+    "chans":[8,8],
+    "ksizes":[15,11,11],
+    "img_shape":[40,50,50],
+    "stackconvs":true,
+    "convgc":true,
+    "one2one":false,
+    "zscorey":false,
+    "final_bias":false,
+    "save_every_epoch":false,
+    "skip_nums":[]
 }
 
