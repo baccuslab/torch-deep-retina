@@ -1,6 +1,7 @@
 """
-This script is made to automate the analysis of the model performance for a batch of models.
-You must give a command line argument of the model search folder to be analyzed.
+This script is made to automate the analysis of the model performance
+for a batch of models.  You must give a command line argument of the
+model search folder to be analyzed.
 
 $ python3 search_analysis.py bncnn
 
@@ -15,7 +16,6 @@ import pickle
 from torchdeepretina.models import *
 import matplotlib.pyplot as plt
 from torchdeepretina.datas import loadexpt
-from torchdeepretina.physiology import Physio
 import torchdeepretina.intracellular as intracellular
 import torchdeepretina.retinal_phenomena as rp
 import torchdeepretina.stimuli as stimuli
@@ -42,12 +42,10 @@ if __name__ == "__main__":
     torch.cuda.empty_cache()
     for grand_folder in grand_folders:
         print("Analyzing", grand_folder)
-        dfs = analysis.analysis_pipeline(grand_folder, make_figs=True, make_model_rfs=True,
-                                                                             save_dfs=True,
-                                                                             verbose=True)
-        ## Actually unnecessary 
-        for k in dfs.keys():
-            dfs[k].to_csv(os.path.join(grand_folder,k), sep="!", index=False, header=True)
-
-
+        dfs = analysis.analysis_pipeline(grand_folder,
+                                      make_figs=True,
+                                      make_model_rfs=True,
+                                      slide_steps=0,
+                                      save_dfs=True,
+                                      verbose=True)
 
