@@ -642,8 +642,6 @@ def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
         else:
             dfs[csv] = {"empty":True}
             save_folders[csv] = set()
-    print("1:", save_folders[csvs[0]])
-    print("2:", save_folders[csvs[1]])
     for folder in model_folders:
         save_folder = os.path.join(main_folder, folder)
         if save_folder in save_folders[csvs[0]] and\
