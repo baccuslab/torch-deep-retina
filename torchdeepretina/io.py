@@ -168,13 +168,22 @@ def load_model(path):
         try:
             model.load_state_dict(data['model_state_dict'])
         except:
+            print("Error loading state_dict, attempting fix..")
             sd = data['model_state_dict']
-            sd['sequential.4.sigma'] = sd['sequential.3.sigma']
-            del sd['sequential.3.sigma']
+            sd_keys = list(sd.keys())
+            m_keys = [name for name,_ in model.named_parameters()]
+            for sk,mk in zip(sd_keys,m_keys):
+                if sk != mk:
+                    print("renaming {} to {}".format(sk,mk))
+                    sd[mk] = sd[sk]
+                    del sd[sk]
             model.load_state_dict(sd)
+            print("Fix successful!")
     except KeyError as e:
-        print("Failed to load state_dict. This checkpoint does not\
-                                      contain a model state_dict!")
+        print("Failed to load state_dict. Key pairings:")
+        for i,(sk,mk) in enumerate(zip(sd_keys,m_keys)):
+            print(i,"State Dict:", sk)
+            print(i,"Model:", mk)
     model.norm_stats = data['norm_stats']
     return model
 
