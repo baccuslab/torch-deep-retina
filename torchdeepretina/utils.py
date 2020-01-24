@@ -44,7 +44,7 @@ def get_conv_layer_names(model, conv_types=None):
         conv_types.add(LinearStackedConv2d)
     conv_names = []
     for i,(name,modu) in enumerate(model.named_modules()):
-        if len(name.split(".")) == 2 and type(modu) not in conv_types:
+        if len(name.split(".")) == 2 and type(modu) in conv_types:
             conv_names.append(name)
     return conv_names
 
@@ -64,12 +64,9 @@ def get_layer_name_sets(model, delimeters=[nn.ReLU,nn.Softplus]):
     layer_set = set()
     for i,(name,modu) in enumerate(model.named_modules()):
         layer_set.add(name)
-        if i > 0:
-            for delim in delimeters:
-                if isinstance(modu, delim):
-                    layer_names.append(layer_set)
-                    layer_set = set()
-                    break
+        if i > 0 and type(modu) in delimeters:
+            layer_names.append(layer_set)
+            layer_set = set()
     if len(layer_set) > 0:
         layer_names.append(layer_set)
     return layer_names
@@ -514,17 +511,21 @@ def get_std(x, axis=None, batch_size=1000, mean=None):
         automatically calculated. If ndarray or torch tensor, must
         match datatype of x.
     """
+    if type(x) == type(np.array([])):
+        sqrt = np.sqrt
+    else:
+        sqrt = torch.sqrt
     if mean is None:
         mean = get_mean(x,axis,batch_size)
     cumu_sum = 0
     if axis is None:
         for i in range(0,len(x), batch_size):
             cumu_sum = cumu_sum + ((x[i:i+batch_size]-mean)**2).sum()
-        return torch.sqrt(cumu_sum/x.numel())
+        return sqrt(cumu_sum/x.numel())
     else:
         for i in range(0,len(x), batch_size):
             cumu_sum=cumu_sum+((x[i:i+batch_size]-mean)**2).sum(axis)
-        return torch.sqrt(cumu_sum/x.shape[axis])
+        return sqrt(cumu_sum/x.shape[axis])
 
 def pearsonr(x,y):
     """
@@ -533,29 +534,45 @@ def pearsonr(x,y):
     coefficient over much larger data sizes. Additionally allows
     calculation for torch tensors.
 
-    x: ndarray or torch tensor (N,)
-    y: ndarray or torch tensor (N,)
+    Inputs:
+        x: ndarray or torch tensor (N, ...)
+            dimensionality and type must match that of y
+        y: ndarray or torch tensor (N, ...)
+            dimensionality and type must match that of x
+
+    Returns:
+        pearsonr: ndarray or torch tensor (...)
+            shape will be the 
+
     """
+    shape = None if len(x.shape) == 1 else x.shape[1:]
+    assert type(x) == type(y)
+    if type(x) == type(np.array([])):
+        sqrt = np.sqrt
+    else:
+        sqrt = torch.sqrt
     x = x.reshape(len(x), -1)
     y = y.reshape(len(y), -1)
     try:
-        mux = x.mean()
-        muy = y.mean()
+        mux = x.mean(0)
+        muy = y.mean(0)
         # STD calculation ensures same calculation is performed for
         # ndarrays and torch tensors. Torch tensor .std() uses n-1 
         # correction
-        sigx = (x**2).mean()-mux**2
-        sigy = (y**2).mean()-muy**2
+        sigx = sqrt((x**2).mean(0)-mux**2)
+        sigy = sqrt((y**2).mean(0)-muy**2)
     except MemoryError as e:
-        mux = get_mean(x) 
-        muy = get_mean(y) 
-        sigx = get_std(x,mean=mux)
-        sigy = get_std(y,mean=muy)
+        mux = get_mean(x,axis=0)
+        muy = get_mean(y,axis=0)
+        sigx = get_std(x,mean=mux,axis=0)
+        sigy = get_std(y,mean=muy,axis=0)
     x = x-mux
     y = y-muy
-    numer = (x*y).mean()
+    numer = (x*y).mean(0)
     denom = sigx*sigy
     r = numer/denom
+    if shape is not None:
+        r = r.reshape(shape)
     return r
 
 def mtx_cor(X, Y, batch_size=500, to_numpy=False):
