@@ -80,14 +80,9 @@ class Trainer:
         torch.cuda.empty_cache()
         batch_size = hyps['batch_size']
 
-        if 'skip_nums' in hyps and hyps['skip_nums'] is not None\
-                              and len(hyps['skip_nums']) > 0 and\
-                              hyps['exp_num'] in hyps['skip_nums']:
-            print("Skipping", hyps['save_folder'])
-            results = {"save_folder":hyps['save_folder'], 
-                                "Loss":None, "ValAcc":None, 
-                                "ValLoss":None, "TestPearson":None}
-            return results
+        hyps['exp_num'] = get_exp_num(hyps['exp_name'])
+        hyps['save_folder'] = get_save_folder(hyps)
+        print("Beginning training for {}".format(hyps['save_folder']))
 
         # Get Data, Make Model, Record Initial Hyps and Model
         train_data, test_data = get_data(hyps)
@@ -108,8 +103,10 @@ class Trainer:
         # Training
         if hyps['exp_name'] == "test":
             hyps['n_epochs'] = 2
-        for epoch in range(hyps['n_epochs']):
-            print("Beginning Epoch",epoch," -- ",hyps['save_folder'])
+        n_epochs = hyps['n_epochs']
+        for epoch in range(n_epochs):
+            print("Beginning Epoch {}/{} -- ".format(epoch,n_epochs),
+                                                 hyps['save_folder'])
             print()
             n_loops = data_distr.n_loops
             model.train(mode=True)
@@ -274,6 +271,45 @@ class Trainer:
             s = "\n" + s + '\n'
             f.write(s)
         return results
+
+def get_exp_num(exp_name):
+    """
+    Finds the next open experiment id number.
+
+    exp_name: str
+        path to the main experiment folder that contains the model
+        folders
+    """
+    exp_folder = os.path.expanduser(exp_name)
+    _, dirs, _ = next(os.walk(exp_folder))
+    exp_nums = set()
+    for d in dirs:
+        splt = d.split("_")
+        if len(splt) >= 2 and splt[0] == exp_name:
+            try:
+                exp_nums.add(int(splt[1]))
+            except:
+                pass
+    for i in range(len(exp_nums)):
+        if i not in exp_nums:
+            return i
+    return len(exp_nums)
+
+def get_save_folder(hyps):
+    """
+    Creates the save name for the model.
+
+    hyps: dict
+        keys:
+            exp_name: str
+            exp_num: int
+            search_keys: str
+    """
+    save_folder = "{}/{}_{}".format(hyps['exp_name'],
+                                    hyps['exp_name'],
+                                    hyps['exp_num'])
+    save_folder += hyps['search_keys']
+    return save_folder
 
 def print_train_update(error, l1, model, n_loops, i):
     loss = error +  l1
@@ -470,23 +506,13 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
     """
     # Base call, runs the training and saves the result
     if idx >= len(keys):
-        if 'exp_num' not in hyps:
-            if 'starting_exp_num' not in hyps or\
-                     hyps['starting_exp_num'] is None or\
-                          hyps['starting_exp_num'] == []:
-                hyps['starting_exp_num'] = 0
-            hyps['exp_num'] = hyps['starting_exp_num']
         if 'n_repeats' not in hyps: hyps['n_repeats'] = 1
         for i in range(hyps['n_repeats']):
-            hyps['save_folder'] = hyps['exp_name'] + "/" +\
-                                    hyps['exp_name'] +"_"+\
-                                    str(hyps['exp_num']) 
-            for k in keys:
-                hyps['save_folder'] += "_" + str(k)+str(hyps[k])
-
             # Load q
+            hyps['search_keys'] = ""
+            for k in keys:
+                hyps['search_keys'] += "_" + str(k)+str(hyps[k])
             hyper_q.put({k:v for k,v in hyps.items()})
-            hyps['exp_num'] += 1
 
     # Non-base call. Sets a hyperparameter to a new search value and
     # passes down the dict.
