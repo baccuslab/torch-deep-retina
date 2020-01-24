@@ -241,7 +241,7 @@ def get_intrneuron_rfs(stims, mem_pots, filt_len=40,verbose=False):
         rfs[cell_file][stim_key] =np.asarray(rfs[cell_file][stim_key])
     return rfs
 
-def sample_model_rfs(model, layers=[0,1], verbose=False):
+def sample_model_rfs(model, layers=[], verbose=False):
     """
     Returns a receptive field of the central unit of each channel
     in each layer of the model.
@@ -264,6 +264,8 @@ def sample_model_rfs(model, layers=[0,1], verbose=False):
         "col":[]
     }
 
+    if len(layers) == 0:
+        layers = tdrutils.get_conv_layer_names(model)
     if isinstance(layers[0],int):
         layer_names = tdrutils.get_conv_layer_names(model)
         layers = [layer_names[i] for i in layers]
@@ -286,7 +288,8 @@ def sample_model_rfs(model, layers=[0,1], verbose=False):
     rfs = get_model_rfs(model, df, verbose=verbose)
     return rfs
 
-def get_model_rfs(model, data_frame, use_grad=False, verbose=False):
+def get_model_rfs(model, data_frame, contrast=1, use_grad=False,
+                                                  verbose=False):
     """
     Searches through each entry in the data frame and computes an STA
     for the model unit in that entry. Returns a dict containing the
@@ -299,6 +302,9 @@ def get_model_rfs(model, data_frame, use_grad=False, verbose=False):
             'chan',
             'row',
             'col'
+    contrast: float
+        the standard deviation of the whitenoise used for calculating
+        the sta
     use_grad: bool
         determines method by which to calculate receptive fields
 
@@ -310,50 +316,51 @@ def get_model_rfs(model, data_frame, use_grad=False, verbose=False):
                 the sta of the model unit
     """
     rfs = dict()
-    layer1_dups = set() # Used to prevent duplicate calculations
-    layer1_names = {'sequential.'+str(i) for i in range(6)}
+    rf_dups = set() # Used to prevent duplicate calculations
+    keys = ['layer','chan','row','col']
+
     rng = range(len(data_frame))
     if verbose:
         print("Calculating Model Receptive Fields")
         rng = tqdm(rng)
     for i in rng:
-        keys = ['layer','chan','row','col']
         layer, chan, row, col = data_frame.loc[:,keys].iloc[i]
+        layer_idx = tdrutils.get_layer_idx(model, layer)
         cell_idx = (chan,row,col)
         unit_id = (layer,chan,row,col)
-        if unit_id in rfs or (layer in layer1_names and (layer,chan)\
-                                                     in layer1_dups):
+        if (layer,chan) in rf_dups:
             continue
-        elif layer in layer1_names:
-            layer1_dups.add((layer,chan))
+        rf_dups.add((layer,chan))
         chans = model.chans
         shapes = model.shapes
-        layer_shape = (chans[0],*shapes[0]) if layer in layer1_names\
-                                           else (chans[1],*shapes[1])
+        layer_shape = (chans[layer_idx],*shapes[layer_idx])
         if use_grad:
             sta = compute_sta(model, layer=layer, cell_index=cell_idx,
                                               layer_shape=layer_shape,
                                               n_samples=10000,
-                                              contrast=1,
+                                              contrast=contrast,
                                               to_numpy=True,
                                               verbose=False)
         else:
             sta = get_sta(model, layer=layer, cell_index=cell_idx,
                                           layer_shape=layer_shape,
                                           n_samples=15000,
+                                          contrast=contrast,
                                           to_numpy=True,
                                           verbose=False)
 
         rfs[unit_id] = sta
     return rfs
 
-def get_model2model_cors(model1, model2,
-                       model1_layers={"sequential.0", "sequential.6"},
-                       model2_layers={"sequential.0", "sequential.6"},
-                       contrast=1, n_samples=5000, use_ig=False,
-                       ret_model1_rfs=False, ret_model2_rfs=False,
-                       row_stride=1, col_stride=1, only_max=False,
-                       verbose=True):
+def get_model2model_cors(model1, model2, model1_layers=[],
+                                         model2_layers=[],
+                                         contrast=1, n_samples=5000,
+                                         use_ig=False,
+                                         ret_model1_rfs=False,
+                                         ret_model2_rfs=False,
+                                         row_stride=1, col_stride=1,
+                                         only_max=False,
+                                         verbose=True):
     """
     Gets and returns a DataFrame of the best activation correlations
     between the two models.
@@ -377,6 +384,14 @@ def get_model2model_cors(model1, model2,
     """
     model1.eval()
     model2.eval()
+    if len(model1_layers) == 0:
+        model1_layers = get_conv_layer_names(model1)
+    if len(model2_layers) == 0:
+        model2_layers = get_conv_layer_names(model2)
+    if verbose:
+        print("Correlating Model Layers")
+        print("Model1:", model1_layers)
+        print("Model2:", model2_layers)
     table = tdrintr.model2model_cors(model1,model2,
                                         model1_layers=model1_layers,
                                         model2_layers=model2_layers,
@@ -531,11 +546,10 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
         print("GC Cor:", gc_cor,"  Loss:", gc_loss)
 
     layers = []
+    bnorms = {nn.BatchNorm2d, nn.BatchNorm1d, custmods.AbsBatchNorm2d,
+                                              custmods.AbsBatchNorm1d}
     for name,modu in model.named_modules():
-        if isinstance(modu, nn.BatchNorm2d) or\
-            isinstance(modu, nn.BatchNorm1d) or\
-            isinstance(modu, custmods.AbsBatchNorm2d) or\
-            isinstance(modu, custmods.AbsBatchNorm1d):
+        if len(name.split(".")) == 2 and type(modu) in bnorms:
             layers.append(name)
     layers = sorted(layers, key=lambda x: int(x.split(".")[-1]))
     layers = layers[:2]
@@ -619,56 +633,51 @@ def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
     model_folders = tdrio.get_model_folders(main_folder)
     csvs = ['model_data.csv', 'intr_data.csv']
     dfs = dict()
+    save_folders = dict()
     for csv in csvs:
         csv_path = os.path.join(main_folder,csv)
         if os.path.exists(csv_path):
             dfs[csv] = pd.read_csv(csv_path, sep="!")
+            save_folders[csv] = set(dfs[csv]['save_folder'])
         else:
             dfs[csv] = {"empty":True}
+            save_folders[csv] = set()
+    print("1:", save_folders[csvs[0]])
+    print("2:", save_folders[csvs[1]])
     for folder in model_folders:
         save_folder = os.path.join(main_folder, folder)
-        if "save_folder" in dfs[csvs[0]] and save_folder\
-                                in set(dfs[csvs[0]]['save_folder']):
-            intr_save_folders = set(dfs[csvs[1]]['save_folder'])
-            if "save_folder" in dfs[csvs[1]] and save_folder in\
-                                              intr_save_folders:
-                if verbose:
-                    print("Skipping",folder," due to previous record")
-                continue
+        if save_folder in save_folders[csvs[0]] and\
+                                save_folder in save_folders[csvs[1]]:
+            if verbose:
+                print("Skipping",folder," due to previous record")
+            continue
         if verbose:
             print("\n\nAnalyzing", folder)
         
-        df, intr_df = analyze_model(save_folder, make_figs=make_figs,
+        anal_dfs = analyze_model(save_folder, make_figs=make_figs,
                                         make_model_rfs=make_model_rfs,
                                         slide_steps=slide_steps,
                                         verbose=verbose)
-        if not("save_folder" in dfs[csvs[0]] and save_folder in\
-                                    set(dfs[csvs[0]]['save_folder'])):
-            if 'empty' in dfs[csvs[0]]:
-                dfs[csvs[0]] = df
-            else:
-                dfs[csvs[0]] = dfs[csvs[0]].append(df, sort=True)
-        if not("save_folder" in dfs[csvs[1]] and save_folder in\
-                               set(dfs[csvs[1]]['save_folder'])):
-            if 'empty' in dfs[csvs[1]]:
-                dfs[csvs[1]] = intr_df
-            else:
-                dfs[csvs[1]] = dfs[csvs[1]].append(intr_df,sort=True)
+        for i,csv in enumerate(csvs):
+            if save_folder not in save_folders[csv]:
+                if 'empty' in dfs[csv]:
+                    dfs[csv] = anal_dfs[i]
+                else:
+                    dfs[csv] = dfs[csv].append(anal_dfs[i], sort=True)
+
         if save_dfs:
-            for k in dfs.keys():
-                path = os.path.join(main_folder,k)
+            for i,csv in enumerate(dfs.keys()):
+                path = os.path.join(main_folder,csv)
                 # Append data if interneuron data
-                if k == csvs[1] and os.path.exists(path):
-                    dfs[k].to_csv(path, sep="!", index=False,
+                if os.path.exists(path):
+                    temp = pd.read_csv(path,sep="!",nrows=10)
+                    dfs[csv][temp.columns].to_csv(path, sep="!",
+                                                index=False,
                                                 header=False,
                                                 mode='a')
-                    dfs[k] = dfs[k].iloc[:0]
-                elif k == csvs[1]:
-                    dfs[k].to_csv(path, sep="!", index=False,
-                                                 header=True)
-                    dfs[k] = dfs[k].iloc[:0]
+                    dfs[csv] = dfs[csv].iloc[:0]
                 else:
-                    dfs[k].to_csv(path, sep="!", index=False,
+                    dfs[csv].to_csv(path, sep="!", index=False,
                                                  header=True)
     return dfs
 

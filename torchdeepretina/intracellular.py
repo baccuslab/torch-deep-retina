@@ -327,20 +327,23 @@ def model2model_get_response_helper(model, stim, model_layers,
                                                verbose=verbose)
     return response
 
-def model2model_cors(model1, model2,
-                    model1_layers={"sequential.0", "sequential.6"},
-                    model2_layers={"sequential.0", "sequential.6"},
-                    batch_size=500,  contrast=1.0, n_samples=5000, 
-                    n_repeats=3, use_ig=True, verbose=True):
+def model2model_cors(model1, model2, model1_layers=[],
+                                            model2_layers=[],
+                                            batch_size=500,
+                                            contrast=1.0,
+                                            n_samples=5000,
+                                            n_repeats=3,
+                                            use_ig=True,
+                                            verbose=True):
     """
     Takes two models and correlates the activations at each layer.
     Returns a dict of correlation marices.
 
     model1 - torch Module
     model2 - torch Module
-    model1_layers - set of strs
+    model1_layers - set or list of strs
         the layers of model 1 to be correlated
-    model2_layers - set of strs
+    model2_layers - set or list of strs
         the layers of model 2 to be correlated
     batch_size: int
         size of batches when performing computations on GPU
@@ -370,6 +373,10 @@ def model2model_cors(model1, model2,
                 - contrast: list
                 - cor: list
     """
+    if len(model1_layers) == 0:
+        model1_layers = get_conv_layer_names(model1)
+    if len(model2_layers) == 0:
+        model2_layers = get_conv_layer_names(model2)
     model1_cuda = next(model1.parameters()).is_cuda
     model2_cuda = next(model2.parameters()).is_cuda
     model2.cpu()

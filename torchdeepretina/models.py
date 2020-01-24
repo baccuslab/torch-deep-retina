@@ -23,7 +23,7 @@ class TDRModel(nn.Module):
                                                 softplus=True,
                                                 inference_exp=False,
                                                 img_shape=(40,50,50),
-                                                ksizes=(15,11),
+                                                ksizes=(15,11,11),
                                                 recurrent=False,
                                                 kinetic=False,
                                                 convgc=False,
@@ -99,10 +99,10 @@ class TDRModel(nn.Module):
         This function is used in the pytorch model printing. Gives
         details about the model's member variables.
         """
-        s = 'n_units={}, noise={}, bias={}, gc_bias={}, chans={},\
-                                     bn_moment={}, softplus={},\
-                                     inference_exp={}, img_shape={},\
-                                     ksizes={}'
+        s = ['n_units={}', 'noise={}', 'bias={}', 'gc_bias={}',
+             'chans={}', 'bn_moment={}', 'softplus={}',
+             'inference_exp={}', 'img_shape={}', 'ksizes={}']
+        s = ", ".join(s)
         return s.format(self.n_units, self.noise, self.bias,
                                     self.gc_bias, self.chans,
                                     self.bn_moment, self.softplus,
@@ -295,15 +295,13 @@ class LinearStackedBNCNN(TDRModel):
         if self.bnorm_d == 1:
             modules.append(Flatten())
             size = self.chans[0]*shape[0]*shape[1]
-            bnorm = AbsBatchNorm1d(size, eps=1e-3,
-                                    momentum=self.bn_moment)
-            modules.append(bnorm)
+            modules.append(AbsBatchNorm1d(size, eps=1e-3,
+                                    momentum=self.bn_moment))
             modules.append(Reshape((-1,self.chans[0],shape[0],
                                                    shape[1])))
         else:
-            bnorm = AbsBatchNorm2d(self.chans[0], eps=1e-3,
-                                        momentum=self.bn_moment)
-            modules.append(bnorm)
+            modules.append(AbsBatchNorm2d(self.chans[0], eps=1e-3,
+                                        momentum=self.bn_moment))
         # Noise and ReLU
         modules.append(GaussianNoise(std=self.noise))
         modules.append(nn.ReLU())
@@ -335,18 +333,17 @@ class LinearStackedBNCNN(TDRModel):
             size = self.chans[1]*shape[0]*shape[1]
             modules.append(AbsBatchNorm1d(size, eps=1e-3,
                                 momentum=self.bn_moment))
+            modules.append(Reshape((-1,self.chans[1],shape[0],
+                                                   shape[1])))
         else:
             modules.append(AbsBatchNorm2d(self.chans[1], eps=1e-3,
                                          momentum=self.bn_moment))
-            modules.append(Flatten())
         # Noise and ReLU
         modules.append(GaussianNoise(std=self.noise))
         modules.append(nn.ReLU())
 
         ##### Final Layer
         if self.convgc:
-            modules.append(Reshape((-1,self.chans[1],shape[0],
-                                                   shape[1])))
             modules.append(nn.Conv2d(self.chans[1],self.n_units,
                                      kernel_size=self.ksizes[2],
                                      bias=self.gc_bias))
@@ -355,6 +352,7 @@ class LinearStackedBNCNN(TDRModel):
             modules.append(GrabUnits(self.centers, self.ksizes,
                                                self.img_shape))
         else:
+            modules.append(Flatten())
             modules.append(nn.Linear(self.chans[1]*shape[0]*shape[1],
                                     self.n_units, bias=self.gc_bias))
         modules.append(AbsBatchNorm1d(self.n_units, eps=1e-3,
