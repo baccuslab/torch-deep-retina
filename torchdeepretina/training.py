@@ -10,6 +10,7 @@ import torch.nn.functional as F
 import os.path as path
 import torchdeepretina.utils as tdrutils
 import torchdeepretina.io as tdrio
+import torchdeepretina.pruning as tdrprune
 from torchdeepretina.datas import loadexpt, DataContainer,\
                                             DataDistributor
 from torchdeepretina.models import *
@@ -91,6 +92,7 @@ class Trainer:
         model, data_distr = get_model_and_distr(hyps, train_data)
         print("train shape:", data_distr.train_shape)
         print("val shape:", data_distr.val_shape)
+
         record_session(hyps, model)
 
         # Make optimization objects (lossfxn, optimizer, scheduler)
@@ -103,8 +105,17 @@ class Trainer:
         # Training
         if hyps['exp_name'] == "test":
             hyps['n_epochs'] = 2
+            hyps['prune_intvl'] = 1
         n_epochs = hyps['n_epochs']
-        for epoch in range(n_epochs):
+        if hyps['prune_layers'] == 'all':
+            layers = tdrutils.get_conv_layer_names(model)
+            hyps['prune_layers'] = layers[:-1]
+        zero_dict ={d:set() for d in hyps['prune_layers']}
+        epoch = -1
+        stop_training = False
+        while not stop_training:
+            epoch += 1
+            stop_training = epoch > n_epochs and not hyps['prune']
             print("Beginning Epoch {}/{} -- ".format(epoch,n_epochs),
                                                  hyps['save_folder'])
             print()
@@ -135,6 +146,8 @@ class Trainer:
                 loss = error + activity_l1
                 loss.backward()
                 optimizer.step()
+                # Only prunes if hyps['prune'] is true
+                tdrprune.zero_chans(model, zero_dict)
 
                 epoch_loss += loss.item()
                 if verbose:
@@ -235,7 +248,9 @@ class Trainer:
                 "exp_val_acc":exp_val_acc,
                 "test_pearson":avg_pearson,
                 "norm_stats":train_data.stats,
-                "y_stats":{'mean':data_distr.y_mean, 'std':data_distr.y_std}
+                "zero_dict":zero_dict,
+                "y_stats":{'mean':data_distr.y_mean,
+                             'std':data_distr.y_std}
             }
             for k in hyps.keys():
                 if k not in save_dict:
@@ -258,6 +273,24 @@ class Trainer:
                 f.write(str(stats_string)+'\n')
             if math.isnan(avg_loss) or math.isinf(avg_loss) or stop:
                 break
+
+            # Integrated Gradient Pruning
+            prune = hyps['prune'] and epoch > n_epochs
+            if prune and epoch % hyps['prune_intvl'] == 0:
+                if epoch <= (n_epochs+hyps['prune_intvl']):
+                    prune_dict = {"zero_dict":zero_dict,
+                                   "prev_state_dict":None,
+                                   "prev_min_chan":-1,
+                                   "intg_idx":0,
+                                   "prev_acc":-1}
+
+                prune_dict = tdrprune.prune_channels(model, hyps,
+                                                    data_distr,
+                                                    val_acc=val_acc,
+                                                    **prune_dict)
+                stop_training = prune_dict['stop_pruning']
+                zero_dict = prune_dict['zero_dict']
+                tdrprune.zero_chans(model, zero_dict)
 
         # Final save
         results = {"save_folder":hyps['save_folder'], 
@@ -506,7 +539,14 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
     """
     # Base call, runs the training and saves the result
     if idx >= len(keys):
+        # Ensure necessary hyps are present
         if 'n_repeats' not in hyps: hyps['n_repeats'] = 1
+        # Pruning parameters
+        if 'prune' not in hyps: hyps['prune'] = False
+        if 'prune_layers' not in hyps: hyps['prune_layers'] = []
+        if 'prune_intvl' not in hyps: hyps['prune_intvl'] = 10
+        if 'alpha_steps' not in hyps: hyps['alpha_steps'] = 5
+        if 'intg_bsize' not in hyps: hyps['intg_bsize'] = 500
         for i in range(hyps['n_repeats']):
             # Load q
             hyps['search_keys'] = ""
