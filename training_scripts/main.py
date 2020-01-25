@@ -77,8 +77,8 @@ if __name__ == "__main__":
             path = os.path.join(hyps['exp_name'], dirs[-1])
             shutil.rmtree(path, ignore_errors=True)
     else:
-        print("You have {} seconds to cancel experiment name "+\
-                    "{}: ".format(sleep_time, hyps['exp_name']))
+        s = "You have {} seconds to cancel experiment name {}:"
+        print(s.format(sleep_time, hyps['exp_name']))
         i,_,_ = select.select([sys.stdin], [],[],sleep_time)
     print()
 
