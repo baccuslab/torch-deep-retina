@@ -513,7 +513,7 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
     interneuron correlations.
 
     folder: str
-        the folder full of checkpoints
+        complete path to the model folder full of checkpoints
     make_figs: bool
     make_model_rfs: bool
         returns a dict of model receptive fields if set to true. Can
@@ -527,6 +527,8 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
     """
     hyps = tdrio.get_hyps(folder)
     table = get_analysis_table(folder, hyps=hyps)
+    if 'save_folder' in table:
+        table['save_folder'] = folder
 
     model = tdrio.load_model(folder)
     metrics = get_metrics(folder)
@@ -661,12 +663,11 @@ def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
                 if 'empty' in dfs[csv]:
                     dfs[csv] = anal_dfs[i]
                 else:
-                    dfs[csv] = dfs[csv].append(anal_dfs[i], sort=True)
+                    dfs[csv] = dfs[csv].append(anal_dfs[i],sort=True)
 
         if save_dfs:
-            for i,csv in enumerate(dfs.keys()):
+            for i,csv in enumerate(csvs):
                 path = os.path.join(main_folder,csv)
-                # Append data if interneuron data
                 if os.path.exists(path):
                     temp = pd.read_csv(path,sep="!",nrows=10)
                     dfs[csv][temp.columns].to_csv(path, sep="!",
@@ -676,7 +677,8 @@ def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
                     dfs[csv] = dfs[csv].iloc[:0]
                 else:
                     dfs[csv].to_csv(path, sep="!", index=False,
-                                                 header=True)
+                                                 header=True,
+                                                 mode='w')
     return dfs
 
 
