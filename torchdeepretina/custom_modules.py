@@ -66,7 +66,7 @@ class Poly1d:
                 cumu_sum = cumu_sum + fit[i]*(x**(len(fit)-i-1))
             return cumu_sum
         return poly
-    
+
     def __call__(self, x):
         return self.poly(x)
 
@@ -80,10 +80,10 @@ class GrabUnits(nn.Module):
         centers: list of tuples of ints
             this should be a list of (row,col) coordinates of the
             receptive field centers for each of the ganglion cells.
-        ksizes: list of ints 
+        ksizes: list of ints
             the kernel sizes of each of the layers. len(ksizes)==3
         img_shape: tuple (chan, height, width)
-            the shape of the original image 
+            the shape of the original image
         """
         super().__init__()
         assert len(ksizes) > 2 and centers is not None
@@ -101,10 +101,10 @@ class GrabUnits(nn.Module):
         centers: list of tuples of ints
             this should be a list of (row,col) coordinates of the
             receptive field centers for each of the ganglion cells.
-        ksizes: list of ints 
+        ksizes: list of ints
             the kernel sizes of each of the layers. len(ksizes)==3
         img_shape: tuple (chan, height, width)
-            the shape of the original image 
+            the shape of the original image
         """
         # Each quantity is even, thus the final half_effective_ksize is odd
         half_effective_ksize = (ksizes[0]-1) + (ksizes[1]-1) +\
@@ -144,7 +144,7 @@ class Exponential(nn.Module):
         """
         super(Exponential, self).__init__()
         self.train_off = train_off
-    
+
     def forward(self, x):
         if self.training and self.train_off:
             return x
@@ -157,7 +157,7 @@ class GaussRegularizer:
     def __init__(self, model, conv_idxs, std=1):
         """
         Regularizes a model such that weights further from the spatial
-        center of the model have a greater regularizing effect, 
+        center of the model have a greater regularizing effect,
         encouraging a large center with weaker edges.
 
         model - torch nn Module
@@ -183,7 +183,7 @@ class GaussRegularizer:
             inverted = (inverted-np.min(inverted))/np.max(inverted)
             full_gauss = np.asarray([gauss for i in range(shape[0])])
             self.gaussians.append(torch.FloatTensor(full_gauss))
-    
+
     def get_loss(self):
         """
         Calculates the loss associated with the regularizer.
@@ -206,7 +206,7 @@ class GaussianNoise(nn.Module):
             set the std to based of the std of the activations.
             gauss_std = activ_std*std
         trainable - bool
-            If trainable is set to True, then the std is turned into 
+            If trainable is set to True, then the std is turned into
             a learned parameter. Cannot be set to true if adapt is True
         adapt - bool
             adapts the gaussian std to a proportion of the
@@ -226,7 +226,7 @@ class GaussianNoise(nn.Module):
                             requires_grad=trainable)
         self.running_std = 1
         self.momentum = momentum if adapt else None
-    
+
     def forward(self, x):
         if not self.training or self.std == 0:
             return x
@@ -315,7 +315,7 @@ class AbsScaleShift(nn.Module):
 class DaleActivations(nn.Module):
     """
     Constrains the activations so that a portion of the
-    channels are positive and a portion of the channels are 
+    channels are positive and a portion of the channels are
     negative.
 
     For the full Dale effect, will also need to use AbsConv2d
@@ -473,7 +473,7 @@ class AbsBatchNorm2d(nn.Module):
         s = 'bias={}, abs_bias={}, momentum={}, eps={}'
         return s.format(self.bias, self.abs_bias, self.momentum,
                                                        self.eps)
-                                            
+
 class AbsConvTranspose2d(nn.Module):
     """
     A convolution transpose that restricts it's parameters to
@@ -556,7 +556,7 @@ class AbsLinear(nn.Module):
             if self.abs_bias:
                 bias = bias.abs()
         return nn.functional.linear(x, weight, bias)
-    
+
     def extra_repr(self):
         return 'bias={}, abs_bias={}'.format(self.bias, self.abs_bias)
 
@@ -695,7 +695,7 @@ class LinearStackedConv2d(nn.Module):
             if drop_p > 0:
                 convs.append(nn.Dropout(drop_p))
             for i in range(n_filters-1):
-                if i < n_filters-2: 
+                if i < n_filters-2:
                     pad = min(pad_inc,padding) if padding > 0 else 0
                     padding -= pad
                     convs.append(nn.Conv2d(self.stack_chan,
@@ -840,7 +840,7 @@ class ShakeShakeModule(nn.Module):
             output = torch.einsum(einstring, output, self.alphas[:,i])
             fx += output
         # Post update is used to randomize gradients
-        self.update_alphas(is_training=self.train, batch_size=len(x)) 
+        self.update_alphas(is_training=self.train, batch_size=len(x))
         return fx
 
 class ConvGRUCell(nn.Module):
@@ -872,12 +872,12 @@ class ConvGRUCell(nn.Module):
                               stride, self.rnn_padding,
                               bias=True)
         self.tan_conv = nn.Sequential(temp_conv, nn.Tanh())
-    
+
     def forward(self, x, h):
         """
         x: torch tensor (B, IN_CHAN, H, W)
             the new input
-        h: torch tensor (B, RNN_CHAN, H, W) 
+        h: torch tensor (B, RNN_CHAN, H, W)
             the recurrent input
         """
         ins = torch.cat([x,h], dim=1)
@@ -1013,13 +1013,13 @@ class SplitConv2d(nn.Module):
             for fx in fxs[1:]:
                 cumu_sum = cumu_sum + fx
             return cumu_sum
-        
+
     def extra_repr(self):
         return 'ret_stacked={}'.format(self.ret_stacked)
 
 class SkipConnection(nn.Module):
     """
-    Performs a conv2d and returns the output stacked with  
+    Performs a conv2d and returns the output stacked with
     the original input.
     """
     def __init__(self, in_channels, out_channels, kernel_size,
@@ -1037,7 +1037,7 @@ class SkipConnection(nn.Module):
 
 class SkipConnectionBN(nn.Module):
     """
-    Performs a conv2d and returns the output stacked with  
+    Performs a conv2d and returns the output stacked with
     the original input.
     """
     def __init__(self, in_channels, out_channels, kernel_size,
@@ -1106,5 +1106,96 @@ class Kinetics(nn.Module):
         new_pop[:,3] = pop[:,3] + dt*(-ksr + ksi)
         return new_pop[:,1], new_pop
 
+# For retinotopic models
+class OneHot(nn.Module):
+    """
+    Layer to choose a single output activation as a cell's response
+
+    shape: list-like or int
+        the height/width of the activations
+
+    Attributes:
+        w - Actual weights for each filters
+        prob - normed probabilities of w (normed in the forward pass)
+    """
+    def __init__(self,shape):
+        super(OneHot, self).__init__()
+        self.shape = shape
+        self.w = nn.Parameter(torch.rand(shape[0],shape[1]*shape[2]))
+        self.prob = None
 
 
+    def forward(self, x):
+        positive = self.w - torch.min(self.w,1)[0][:,None]
+        normed = positive.permute(1,0) / positive.sum(-1)
+        self.prob = normed.permute(1,0)
+
+        x = x.reshape(*x.shape[:2],-1)
+        out = torch.sum(x*self.prob,dim=-1)
+
+        return out
+
+class ConsolidatedOneHot(nn.Module):
+    """
+    Generates a new one-hot layer that works that works for collapsed filters
+        Example: If you trained a model with 4 cells, then look at similarites,
+        and find that 2 are of cell-type A, and 2 are of cell-type B, you would
+        'collapse' those filters into 2, one for A, one for B, but there still
+        needs to be 4 one-hot layers that point to their respective filters
+
+    IMPORTANT: This implementation initializes one-hot layers as one-hots, as
+        opposed to randomly initializing like we did in the beginnign.
+
+    shape: list-like or int
+        the height/width of the activations
+
+    locations: locations that previous epoch has 'chosen' to be 1.0,
+        this is only one way to initialize, could also randomize, or just take
+        the previous one-hot weights and probabilities
+
+    labels: cluster assignments (i.e.) which filters should each one-hot be
+        corresponded too
+
+
+    """
+    def __init__(self,shape,locations,labels):
+        super().__init__()
+        self.shape=shape
+        self.labels = labels
+        self.w = nn.Parameter(torch.zeros(shape[0],shape[1]*shape[2]))
+        for i,loc in enumerate(locations):
+            self.w[i,loc] = 1.0
+        self.prob = None
+
+    def forward(self,x):
+        positive = self.w - torch.min(self.w,1)[0][:,None]
+        normed = positive.permute(1,0)/positive.sum(-1)
+        self.prob = normed.permute(1,0)
+
+        x = x.reshape(*x.shape[:2],-1)
+        resps = []
+
+        for i,l in enumerate(self.labels):
+            out = torch.sum(self.prob[i]*x[:,l,:],dim=-1)
+            resps.append(out)
+        out = torch.stack(resps)
+        return out.transpose(1,0)
+
+def semantic_loss(prob):
+    """
+    Loss fxn that encourages one-hot vectorization
+
+    prob: from OneHot.prob - will be of shape [NUMBER_OF_CHANNELS x KERNEL_SIZE^2] (because its flattened)
+
+    I tried many implementations and this is the fastest
+
+    """
+    wmc_tmp = torch.zeros_like(prob)
+
+    for i in range(prob.shape[1]):
+        one_situation = torch.ones_like(prob).scatter_(1,torch.zeros_like(prob[:,0]).fill_(i).unsqueeze(-1).long(),0)
+        wmc_tmp[:,i] = torch.abs((one_situation - prob).prod(dim=1))
+
+    wmc_tmp = -1.0*torch.log(wmc_tmp.sum(dim=1))
+    total_loss = torch.sum(wmc_tmp)
+    return total_loss
