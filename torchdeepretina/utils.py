@@ -11,6 +11,20 @@ import pyret.filtertools as ft
 
 DEVICE = torch.device("cuda:0")
 
+def try_key(dict_, key, default):
+    """
+    If the key is in the dict, then the corresponding value is
+    returned. If the key is not in the dict, then the default value
+    is returned.
+
+    dict_: dict
+    key: any hashable object
+    default: anything
+    """
+    if key in dict_:
+        return dict_[key]
+    return default
+
 def load_json(file_name):
     """
     Loads a json file as a python dict
@@ -535,9 +549,11 @@ def pearsonr(x,y):
     calculation for torch tensors.
 
     Inputs:
-        x: ndarray or torch tensor (N, ...)
+        x: ndarray or torch tensor (T, ...)
+            the dimension that will be averaged must be the first.
             dimensionality and type must match that of y
-        y: ndarray or torch tensor (N, ...)
+        y: ndarray or torch tensor (T, ...)
+            the dimension that will be averaged must be the first.
             dimensionality and type must match that of x
 
     Returns:
