@@ -260,25 +260,17 @@ class Trainer:
             tdrio.save_checkpoint(save_dict, hyps['save_folder'],
                                        'test', del_prev=del_prev)
 
-            # Print Epoch Stats
-            gc.collect()
-            max_mem_used = resource.getrusage(resource.RUSAGE_SELF)
-            max_mem_used = max_mem_used.ru_maxrss/1024
-            s = "Memory Used: {:.2f} mb\n"
-            stats_string += s.format(max_mem_used)
-            print(stats_string)
-            # If loss is nan, training is futile
-            log = os.path.join(hyps['save_folder'],"training_log.txt")
-            with open(log,'a') as f:
-                f.write(str(stats_string)+'\n')
-            if math.isnan(avg_loss) or math.isinf(avg_loss) or stop:
-                break
-
             # Integrated Gradient Pruning
             prune = hyps['prune'] and epoch > n_epochs
             if prune and epoch % hyps['prune_intvl'] == 0:
+                s = "Zeroed Channels:\n"
+                keys = sorted(list(zero_dict.keys()))
+                for k in keys:
+                    chans = [str(c) for c in zero_dict[k]]
+                    s += "{}: {}\n".format(k,",".join(chans))
+                stats_string += s
                 if epoch <= (n_epochs+hyps['prune_intvl']):
-                    prune_dict = {"zero_dict":zero_dict,
+                    prune_dict = { "zero_dict":zero_dict,
                                    "prev_state_dict":None,
                                    "prev_min_chan":-1,
                                    "intg_idx":0,
@@ -292,6 +284,24 @@ class Trainer:
                 zero_dict = prune_dict['zero_dict']
                 tdrprune.zero_chans(model, zero_dict)
 
+            # Print Epoch Stats
+            gc.collect()
+            max_mem_used = resource.getrusage(resource.RUSAGE_SELF)
+            max_mem_used = max_mem_used.ru_maxrss/1024
+            s = "Memory Used: {:.2f} mb\n"
+            stats_string += s.format(max_mem_used)
+            print(stats_string)
+
+            # Log progress to txt file
+            log = os.path.join(hyps['save_folder'],"training_log.txt")
+            with open(log,'a') as f:
+                f.write(str(stats_string)+'\n')
+
+            # If loss is nan, training is futile
+            if math.isnan(avg_loss) or math.isinf(avg_loss) or stop:
+                break
+
+
         # Final save
         results = {"save_folder":hyps['save_folder'], 
                     "Loss":avg_loss, 
@@ -301,6 +311,12 @@ class Trainer:
         with open(hyps['save_folder'] + "/hyperparams.txt",'a') as f:
             s = " ".join([str(k)+":"+str(results[k]) for k in\
                                       sorted(results.keys())])
+            if hyps['prune']:
+                s += "\nZeroed Channels:\n"
+                keys = sorted(list(zero_dict.keys()))
+                for k in keys:
+                    chans = [str(c) for c in zero_dict[k]]
+                    s += "{}: {}\n".format(k,",".join(chans))
             s = "\n" + s + '\n'
             f.write(s)
         return results

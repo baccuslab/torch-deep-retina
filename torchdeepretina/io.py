@@ -185,6 +185,10 @@ def load_model(path):
             print(i,"State Dict:", sk)
             print(i,"Model:", mk)
     model.norm_stats = data['norm_stats']
+    if "zero_dict" in data:
+        model.zero_dict = data['zero_dict']
+    else:
+        model.zero_dict = dict()
     return model
 
 def get_hyps(folder):
