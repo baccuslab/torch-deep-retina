@@ -71,11 +71,17 @@ if __name__ == "__main__":
             if len(splt) >= 2 and splt[0] == hyps['exp_name']:
                 dirs.append(d)
         dirs = sorted(dirs, key=lambda x: int(x.split("_")[1]))
-        print("Overwrite last folder {}? (No/yes)".format(dirs[-1]))
-        i,_,_ = select.select([sys.stdin], [],[],sleep_time)
-        if i and "y" in sys.stdin.readline().strip().lower():
-            path = os.path.join(hyps['exp_name'], dirs[-1])
-            shutil.rmtree(path, ignore_errors=True)
+        if len(dirs) > 0:
+            s = "Overwrite last folder {}? (No/yes)".format(dirs[-1])
+            print(s)
+            i,_,_ = select.select([sys.stdin], [],[],sleep_time)
+            if i and "y" in sys.stdin.readline().strip().lower():
+                path = os.path.join(hyps['exp_name'], dirs[-1])
+                shutil.rmtree(path, ignore_errors=True)
+        else:
+            s = "You have {} seconds to cancel experiment name {}:"
+            print(s.format(sleep_time, hyps['exp_name']))
+            i,_,_ = select.select([sys.stdin], [],[],sleep_time)
     else:
         s = "You have {} seconds to cancel experiment name {}:"
         print(s.format(sleep_time, hyps['exp_name']))
@@ -87,7 +93,9 @@ if __name__ == "__main__":
     print("Total Execution Time:", time.time() - start_time)
     print("\n\nBeginning Analysis..")
     exp_folder = hyps['exp_name']
-    dfs = analysis_pipeline(exp_folder, make_figs=True, make_model_rfs=True, verbose=True)
+    dfs = analysis_pipeline(exp_folder, make_figs=True,
+                            make_model_rfs=True, verbose=True)
     for k in dfs.keys():
-        dfs[k].to_csv(os.path.join(exp_folder,k),sep="!",header=True,index=False)
+        dfs[k].to_csv(os.path.join(exp_folder,k),sep="!",header=True,
+                                                         index=False)
 
