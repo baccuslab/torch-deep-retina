@@ -677,7 +677,8 @@ class RetinotopicModel(TDRModel):
                                         one2one=False,
                                         stack_ksizes=[3,3],
                                         stack_chans=[None,None],
-                                        paddings=None, **kwargs):
+                                        paddings=None,
+                                        rand_onehot=False, **kwargs):
         super().__init__(**kwargs)
         """
         n_layers: int
@@ -701,6 +702,10 @@ class RetinotopicModel(TDRModel):
         paddings: list of ints
             the padding for each conv layer. If none,
             defaults to 0.
+        rand_onehot: bool
+            if true, the onehot vector is initialized as random values
+            between 0 and 1. Otherwise all values are initialized to
+            1/length
         """
         self.name = 'VaryNet'
         self.n_layers = n_layers
@@ -776,7 +781,8 @@ class RetinotopicModel(TDRModel):
         self.shapes.append(tuple(shape))
 
         modules.append(nn.Softplus())
-        modules.append(OneHot((self.n_units,*shape)))
+        modules.append(OneHot((self.n_units,*shape),
+                        rand_init=self.rand_onehot))
 
         self.sequential = nn.Sequential(*modules)
 

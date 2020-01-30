@@ -34,8 +34,10 @@ The hyperparams.json should have a list of all the desired user setting for the 
     * if true, convolutions are trained using linear convolution stacking
 * `convgc`: bool
     * if true, ganglion cell layer is convolutional
+* `rand_onehot`: bool
+    * if true, the onehot layer in retinotopic models is randomly initialized to values between 0 and 1. If false, the values are inititialized as `1/(height*width)` in which the height and width are the last dims of the incoming activations.
 
-* `training_loop`: str
+* `train_loop`: str
     * the name of the training loop to be used. Availble options are the training loop member methods in the `Train` class.
 * `dataset`: str
     * the name of the dataset to be used for training. code assumes the datasets are located in `~/experiments/data/`. The dataset should be a folder that contains h5 files.
@@ -76,3 +78,5 @@ The hyperparams.json should have a list of all the desired user setting for the 
 
 * `semantic_scale`: float
     * the weighting of the semantic loss in the total loss
+* `semantic_l1`: float
+    * the scaling of an l1 penalty applied to the weight matrix of the onehot layer.

@@ -1111,27 +1111,40 @@ class OneHot(nn.Module):
     """
     Layer to choose a single output activation as a cell's response
 
-    shape: list-like or int
-        the height/width of the activations
+    shape: list-like or int (num channels, hieght, width)
+        the shape of the incoming activations without the batch size.
 
     Attributes:
-        w - Actual weights for each filters
-        prob - normed probabilities of w (normed in the forward pass)
+        w: nn Parameter (C,L)
+            actual weights for each channel
+        prob: FloatTensor (C,L)
+            probability form of w (normed before every forward pass)
     """
-    def __init__(self,shape):
+    def __init__(self,shape, rand_init=False):
         super(OneHot, self).__init__()
+        assert len(shape) == 3, "Shape must have 3 dimensions"
         self.shape = shape
-        self.w = nn.Parameter(torch.rand(shape[0],shape[1]*shape[2]))
+        l = shape[1]*shape[2]
+        if rand_init:
+            tensor = torch.rand(shape[0],l)
+        else:
+            tensor = torch.ones(shape[0],l)/l
+        self.w = nn.Parameter(tensor)
         self.prob = None
 
 
     def forward(self, x):
-        positive = self.w - torch.min(self.w,1)[0][:,None]
-        normed = positive.permute(1,0) / positive.sum(-1)
-        self.prob = normed.permute(1,0)
+        """
+        x: FloatTensor (B,C,H,W)
+        """
+        mins = torch.min(self.w,dim=-1)[0][:,None] # (C,1)
+        positive = self.w - mins # all vals are positive (L,C)
+        # Create probabilities for each channel (C,L)
+        self.prob = torch.einsum("cl,c->cl",positive,positive.sum(-1))
 
         x = x.reshape(*x.shape[:2],-1)
-        out = torch.sum(x*self.prob,dim=-1)
+        # Multiply by probabilities and sum accross channels
+        out = torch.einsum("bcl,cl->bc",x,self.prob)
 
         return out
 
@@ -1185,7 +1198,8 @@ def semantic_loss(prob):
     """
     Loss fxn that encourages one-hot vectorization
 
-    prob: from OneHot.prob - will be of shape [NUMBER_OF_CHANNELS x KERNEL_SIZE^2] (because its flattened)
+    prob: from OneHot.prob - will be of shape
+        [NUMBER_OF_CHANNELS x KERNEL_SIZE^2] (because its flattened)
 
     I tried many implementations and this is the fastest
 
@@ -1199,3 +1213,5 @@ def semantic_loss(prob):
     wmc_tmp = -1.0*torch.log(wmc_tmp.sum(dim=1))
     total_loss = torch.sum(wmc_tmp)
     return total_loss
+
+
