@@ -712,6 +712,7 @@ class RetinotopicModel(TDRModel):
         self.stackconvs = stackconvs
         self.drop_p = drop_p
         self.one2one = one2one
+        self.rand_onehot = rand_onehot
         if isinstance(stack_ksizes, int):
             stack_ksizes=[stack_ksizes for i in\
                                         range(len(self.ksizes))]

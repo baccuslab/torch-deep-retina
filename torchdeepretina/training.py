@@ -381,7 +381,7 @@ class Trainer:
 
                 # Error Evaluation
                 y,error = static_eval(x, label, model, loss_fn)
-                if hyps['l1']<=0:
+                if hyps['l1'] <= 0:
                     activity_l1 = torch.zeros(1).to(DEVICE)
                 else:
                     activity_l1 = hyps['l1']*torch.norm(y, 1).float()
@@ -399,7 +399,7 @@ class Trainer:
                 semantic_l1 = utils.try_key(hyps,'semantic_l1',0)
                 if semantic_l1 > 0:
                     w = model.sequential[-1].w
-                    l = torch.norm(p, 1, dim=-1).float()
+                    l = torch.norm(w, 1, dim=-1).float()
                     one_hot_loss += semantic_l1*l.mean()
                 loss = error + activity_l1 + one_hot_loss
 

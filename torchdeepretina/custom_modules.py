@@ -1124,28 +1124,24 @@ class OneHot(nn.Module):
         super(OneHot, self).__init__()
         assert len(shape) == 3, "Shape must have 3 dimensions"
         self.shape = shape
-        l = shape[1]*shape[2]
         if rand_init:
-            tensor = torch.rand(shape[0],l)
+            tensor = torch.rand(shape[0],shape[1]*shape[2])
         else:
-            tensor = torch.ones(shape[0],l)/l
+            tensor = torch.ones(shape[0],shape[1]*shape[2])
         self.w = nn.Parameter(tensor)
         self.prob = None
-
 
     def forward(self, x):
         """
         x: FloatTensor (B,C,H,W)
         """
-        mins = torch.min(self.w,dim=-1)[0][:,None] # (C,1)
-        positive = self.w - mins # all vals are positive (L,C)
+        positive = self.w.abs() + 1e-4 # all vals are positive (C,L)
         # Create probabilities for each channel (C,L)
-        self.prob = torch.einsum("cl,c->cl",positive,positive.sum(-1))
-
+        self.prob = torch.einsum("cl,c->cl",positive,
+                                  1/positive.sum(-1))
         x = x.reshape(*x.shape[:2],-1)
         # Multiply by probabilities and sum accross channels
         out = torch.einsum("bcl,cl->bc",x,self.prob)
-
         return out
 
 class ConsolidatedOneHot(nn.Module):
