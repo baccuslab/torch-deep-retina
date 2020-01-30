@@ -27,7 +27,6 @@ class TDRModel(nn.Module):
                                                 recurrent=False,
                                                 kinetic=False,
                                                 convgc=False,
-                                                retinotopic=False,
                                                 centers=None,
                                                 bnorm_d=1,
                                                 **kwargs):
@@ -64,9 +63,6 @@ class TDRModel(nn.Module):
         convgc: bool
             if true, final layer is convolutional. If false, final layer
             is fully connected.
-        retinotopic: bool
-            denotes fully convolutional model trained with semantic
-            loss function and filter collapsing.
         centers: list of tuples of ints
             the list should have a row, col coordinate for the center
             of each ganglion cell receptive field.
@@ -92,7 +88,6 @@ class TDRModel(nn.Module):
         self.convgc = convgc
         self.centers = centers
         self.bnorm_d = bnorm_d
-        self.retinotopic = retinotopic
         assert bnorm_d == 1 or bnorm_d == 2, "Only 1 and 2 dim\
                              batchnorm are currently supported"
 
@@ -523,7 +518,6 @@ class VaryModel(TDRModel):
                                         one2one=False,
                                         stack_ksizes=[3,3],
                                         stack_chans=[None,None],
-                                        final_bias=False,
                                         paddings=None, **kwargs):
         super().__init__(**kwargs)
         """
@@ -545,9 +539,6 @@ class VaryModel(TDRModel):
         stack_chans: list of ints
             the channel size of the stacked convolutions. If none,
             defaults to channel size of main convolution
-        final_bias: bool
-            if true, a final bias term is used after the final
-            non-linearity for the ganglion cell layer
         paddings: list of ints
             the padding for each conv layer. If none,
             defaults to 0.
@@ -567,7 +558,6 @@ class VaryModel(TDRModel):
         self.stack_chans = stack_chans
         self.paddings = [0 for x in stack_ksizes] if paddings is None\
                                                          else paddings
-        self.final_bias = final_bias
         shape = self.img_shape[1:] # (H, W)
         self.shapes = []
         modules = []
@@ -641,8 +631,6 @@ class VaryModel(TDRModel):
             modules.append(nn.Softplus())
         else:
             modules.append(Exponential(train_off=True))
-        if self.final_bias:
-            modules.append(Add(0,trainable=True))
 
         self.sequential = nn.Sequential(*modules)
 
@@ -665,8 +653,8 @@ class VaryModel(TDRModel):
         if not self.convgc:
             return self.forward(x)
         # Remove GrabUnits layer
-        fx = self.sequential[:-3-self.final_bias](x) 
-        bnorm = self.sequential[-2-self.final_bias]
+        fx = self.sequential[:-3](x) 
+        bnorm = self.sequential[-2]
         # Perform 2dbatchnorm using 1d parameters
         fx =torch.nn.functional.batch_norm(fx,bnorm.running_mean.data,
                                             bnorm.running_var.data,
@@ -675,7 +663,7 @@ class VaryModel(TDRModel):
                                             eps=bnorm.eps,
                                             momentum=bnorm.momentum,
                                             training=self.training)
-        fx = self.sequential[-1-self.final_bias:](fx)
+        fx = self.sequential[-1:](fx)
         if not self.training and self.infr_exp:
             return torch.exp(fx)
         return fx
@@ -689,7 +677,6 @@ class RetinotopicModel(TDRModel):
                                         one2one=False,
                                         stack_ksizes=[3,3],
                                         stack_chans=[None,None],
-                                        final_bias=False,
                                         paddings=None, **kwargs):
         super().__init__(**kwargs)
         """
@@ -711,9 +698,6 @@ class RetinotopicModel(TDRModel):
         stack_chans: list of ints
             the channel size of the stacked convolutions. If none,
             defaults to channel size of main convolution
-        final_bias: bool
-            if true, a final bias term is used after the final
-            non-linearity for the ganglion cell layer
         paddings: list of ints
             the padding for each conv layer. If none,
             defaults to 0.
@@ -733,7 +717,6 @@ class RetinotopicModel(TDRModel):
         self.stack_chans = stack_chans
         self.paddings = [0 for x in stack_ksizes] if paddings is None\
                                                          else paddings
-        self.final_bias = final_bias
         shape = self.img_shape[1:] # (H, W)
         self.shapes = []
         modules = []
@@ -781,32 +764,19 @@ class RetinotopicModel(TDRModel):
             modules.append(nn.ReLU())
 
         ##### Final Layer
-        if self.retinotopic:
-            modules.append(nn.Conv2d(self.chans[-1],
-            self.n_units,
-            kernel_size=self.ksizes[-1],
-            bias=self.bias))
+        modules.append(nn.Conv2d(self.chans[-1],
+        self.n_units,
+        kernel_size=self.ksizes[-1],
+        bias=self.bias))
 
-            modules.append(AbsBatchNorm2d(self.n_units, eps=1e-3,
-                                        momentum=self.bn_moment))
+        modules.append(AbsBatchNorm2d(self.n_units, eps=1e-3,
+                                    momentum=self.bn_moment))
 
-            shape = update_shape(shape, self.ksizes[-1])
-            self.shapes.append(tuple(shape))
+        shape = update_shape(shape, self.ksizes[-1])
+        self.shapes.append(tuple(shape))
 
-            modules.append(nn.Softplus())
-            modules.append(OneHot((self.n_units,*shape)))
-
-        else:
-            modules.append(Flatten())
-            modules.append(nn.Linear(temp_chans[-1]*shape[0]*shape[1],
-                                                 self.n_units,
-                                                 bias=False))
-            modules.append(AbsBatchNorm1d(self.n_units, eps=1e-3,
-                                        momentum=self.bn_moment))
-            if self.softplus:
-                modules.append(nn.Softplus())
-            else:
-                modules.append(Exponential(train_off=True))
+        modules.append(nn.Softplus())
+        modules.append(OneHot((self.n_units,*shape)))
 
         self.sequential = nn.Sequential(*modules)
 
@@ -828,9 +798,9 @@ class RetinotopicModel(TDRModel):
         """
         if not self.convgc:
             return self.forward(x)
-        # Remove GrabUnits layer
-        fx = self.sequential[:-3-self.final_bias](x)
-        bnorm = self.sequential[-2-self.final_bias]
+        # Remove One-Hot layer
+        fx = self.sequential[:-1](x)
+        bnorm = self.sequential[-2]
         # Perform 2dbatchnorm using 1d parameters
         fx =torch.nn.functional.batch_norm(fx,bnorm.running_mean.data,
                                             bnorm.running_var.data,
@@ -839,7 +809,12 @@ class RetinotopicModel(TDRModel):
                                             eps=bnorm.eps,
                                             momentum=bnorm.momentum,
                                             training=self.training)
-        fx = self.sequential[-1-self.final_bias:](fx)
+        fx = self.sequential[-1:](fx)
         if not self.training and self.infr_exp:
             return torch.exp(fx)
         return fx
+
+
+
+
+

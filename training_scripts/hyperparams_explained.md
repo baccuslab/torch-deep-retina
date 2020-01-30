@@ -30,6 +30,8 @@ This is a list of descriptions for each of the possible hyperparameters.
 * `convgc`: bool
     * if true, ganglion cell layer is convolutional
 
+* `training_loop`: str
+    * the name of the training loop to be used. Availble options are the training loop member methods in the `Train` class.
 * `dataset`: str
     * the name of the dataset to be used for training. code assumes the datasets are located in `~/experiments/data/`. The dataset should be a folder that contains h5 files.
 * `cells`: str or list of int
@@ -67,3 +69,5 @@ This is a list of descriptions for each of the possible hyperparameters.
 * `prune_layers`: list of str
     * enumerates the layers that should be pruned. If empty list, all intermediary convolutional layers are pruned.
 
+* `semantic_scale`: float
+    * the weighting of the semantic loss in the total loss

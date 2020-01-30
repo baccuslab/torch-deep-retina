@@ -388,7 +388,7 @@ class Trainer:
                     activity_l1 = activity_l1 .mean()
 
                 # One Hot Loss
-                scale = utils.try_key(hyps, 'semantic_loss_scale', 10)
+                scale = utils.try_key(hyps, 'semantic_scale', 10)
                 one_hot_prob = model.sequential[-1].prob
                 one_hot_loss = semantic_loss(one_hot_prob)*scale
                 loss = error + activity_l1 + one_hot_loss
