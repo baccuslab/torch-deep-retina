@@ -52,7 +52,7 @@ class Trainer:
         self.prev_acc = None
 
     def train(self,hyps,verbose=True):
-        loop_type = hyps['train_loop']
+        loop_type = utils.try_key(hyps,'train_loop','train_loop')
         train_method = getattr(self,loop_type)
         train_method(hyps,verbose)
 
@@ -77,19 +77,19 @@ class Trainer:
         self.prev_acc = acc
         return False
 
-    def prune_loop(self, hyps, verbose=False):
+    def train_loop(self, hyps, verbose=False):
         """
         hyps: dict
             dict of relevant hyperparameters
         """
-        # Initialize miscellaneous parameters
+        # Initialize miscellaneous parameters 
         torch.cuda.empty_cache()
         batch_size = hyps['batch_size']
-    
+
         hyps['exp_num'] = get_exp_num(hyps['exp_name'])
         hyps['save_folder'] = get_save_folder(hyps)
         print("Beginning training for {}".format(hyps['save_folder']))
-    
+
         # Get Data, Make Model, Record Initial Hyps and Model
         train_data, test_data = get_data(hyps)
         hyps["n_units"] = train_data.y.shape[-1]
@@ -97,23 +97,23 @@ class Trainer:
         model, data_distr = get_model_and_distr(hyps, train_data)
         print("train shape:", data_distr.train_shape)
         print("val shape:", data_distr.val_shape)
-    
+
         record_session(hyps, model)
-    
+
         # Make optimization objects (lossfxn, optimizer, scheduler)
         optimizer, scheduler, loss_fn = get_optim_objs(hyps, model,
                                                 train_data.centers)
         if 'gauss_reg' in hyps and hyps['gauss_reg'] > 0:
             gauss_reg = tdrmods.GaussRegularizer(model, [0,6],
                                           std=hyps['gauss_reg'])
-    
+
         # Training
         if hyps['exp_name'] == "test":
             hyps['n_epochs'] = 2
             hyps['prune_intvl'] = 1
         n_epochs = hyps['n_epochs']
         if hyps['prune_layers'] == 'all':
-            layers = utils.get_conv_layer_names(model)
+            layers = tdrutils.get_conv_layer_names(model)
             hyps['prune_layers'] = layers[:-1]
         zero_dict ={d:set() for d in hyps['prune_layers']}
         epoch = -1
@@ -130,30 +130,30 @@ class Trainer:
             sf = hyps['save_folder']
             stats_string = 'Epoch {} -- {}\n'.format(epoch, sf)
             starttime = time.time()
-    
+
             # Train Loop
             for i,(x,label) in enumerate(data_distr.train_sample()):
                 optimizer.zero_grad()
                 label = label.float().to(DEVICE)
-    
+
                 # Error Evaluation
                 y,error = static_eval(x, label, model, loss_fn)
                 if hyps['l1']<=0:
                     activity_l1 = torch.zeros(1).to(DEVICE)
-                else:
+                else: 
                     activity_l1 = hyps['l1']*torch.norm(y, 1).float()
                     activity_l1 = activity_l1 .mean()
                 if 'gauss_reg' in hyps and hyps['gauss_reg'] > 0:
                     g_coef = hyps['gauss_loss_coef']
                     activity_l1 += g_coef*gauss_reg.get_loss()
-    
+
                 # Backwards Pass
                 loss = error + activity_l1
                 loss.backward()
                 optimizer.step()
                 # Only prunes if hyps['prune'] is true
                 tdrprune.zero_chans(model, zero_dict)
-    
+
                 epoch_loss += loss.item()
                 if verbose:
                     print_train_update(error, activity_l1, model,
@@ -161,7 +161,7 @@ class Trainer:
                 if math.isnan(epoch_loss) or math.isinf(epoch_loss)\
                                         or hyps['exp_name']=="test":
                     break
-    
+
             # Clean Up Train Loop
             avg_loss = epoch_loss/n_loops
             s = 'Avg Loss: {} -- Time: {}\n'
@@ -170,7 +170,7 @@ class Trainer:
             del x
             del y
             del label
-    
+
             # Validation
             model.eval()
             with torch.no_grad():
@@ -180,7 +180,7 @@ class Trainer:
                 if verbose:
                     print()
                     print("Validating")
-    
+
                 # Validation Block
                 tup = validate_static(hyps,model,data_distr,
                                      loss_fn, step_size=step_size,
@@ -191,18 +191,32 @@ class Trainer:
                 n_units = data_distr.val_y.shape[-1]
                 val_preds = np.concatenate(val_preds, axis=0)
                 val_targs = np.concatenate(val_targs, axis=0)
-                pearsons = utils.pearsonr(val_preds,val_targs)
+                pearsons = []
+                for cell in range(val_preds.shape[-1]):
+                    p = pearsonr(val_preds[:,cell], val_targs[:,cell])
+                    pearsons.append(p[0])
                 s = " | ".join([str(p) for p in pearsons])
                 stats_string += "Val Cell Cors:" + s +'\n'
                 val_acc = np.mean(pearsons)
                 stop = self.stop_early(val_acc)
-    
+
+                # Exponential Validation
+                exp_val_acc = None
+                if hyps["log_poisson"] and hyps['softplus'] and\
+                                             not model.infr_exp:
+                    val_preds = np.exp(val_preds)
+                    for cell in range(val_preds.shape[-1]):
+                        pearsons.append(pearsonr(val_preds[:, cell],
+                                              val_targs[:,cell])[0])
+                    exp_val_acc = np.mean(pearsons)
+
                 # Clean Up
-                s = "Val Cor: {} | Val Loss: {}\n"
-                stats_string += s.format(val_acc, val_loss)
+                s = "Val Cor: {} | Val Loss: {} | Exp Val: {}\n"
+                stats_string += s.format(val_acc, val_loss,
+                                               exp_val_acc)
                 scheduler.step(val_loss)
                 del val_preds
-    
+
                 # Validation on Test Subset (Nonrecurrent Models Only)
                 avg_pearson = 0
                 if test_data is not None:
@@ -210,8 +224,12 @@ class Trainer:
                     test_obs = model(test_x.to(DEVICE)).cpu()
                     test_obs = test_obs.detach().numpy()
                     rng = range(test_obs.shape[-1])
-                    pearsons = utils.pearsonr(test_obs,test_data.y)
-                    for cell,r in enumerate(pearsons):
+                    if verbose:
+                        rng = tqdm(rng)
+                    for cell in rng:
+                        obs = test_obs[:,cell]
+                        lab = test_data.y[:,cell]
+                        r,p = pearsonr(obs,lab)
                         avg_pearson += r
                         s = 'Cell ' + str(cell) + ': ' + str(r)+"\n"
                         stats_string += s
@@ -220,7 +238,7 @@ class Trainer:
                     s = "Avg Test Pearson: "+ str(avg_pearson) + "\n"
                     stats_string += s
                     del test_obs
-    
+
             # Save Model Snapshot
             optimizer.zero_grad()
             save_dict = {
@@ -232,6 +250,7 @@ class Trainer:
                 "epoch":epoch,
                 "val_loss":val_loss,
                 "val_acc":val_acc,
+                "exp_val_acc":exp_val_acc,
                 "test_pearson":avg_pearson,
                 "norm_stats":train_data.stats,
                 "zero_dict":zero_dict,
@@ -245,7 +264,7 @@ class Trainer:
                                         not hyps['save_every_epoch']
             tdrio.save_checkpoint(save_dict, hyps['save_folder'],
                                        'test', del_prev=del_prev)
-    
+
             # Integrated Gradient Pruning
             prune = hyps['prune'] and epoch > n_epochs
             if prune and epoch % hyps['prune_intvl'] == 0:
@@ -282,19 +301,27 @@ class Trainer:
             log = os.path.join(hyps['save_folder'],"training_log.txt")
             with open(log,'a') as f:
                 f.write(str(stats_string)+'\n')
+
             # If loss is nan, training is futile
             if math.isnan(avg_loss) or math.isinf(avg_loss) or stop:
                 break
-    
+
+
         # Final save
-        results = {"save_folder":hyps['save_folder'],
-                    "Loss":avg_loss,
-                    "ValAcc":val_acc,
-                    "ValLoss":val_loss,
+        results = {"save_folder":hyps['save_folder'], 
+                    "Loss":avg_loss, 
+                    "ValAcc":val_acc, 
+                    "ValLoss":val_loss, 
                     "TestPearson":avg_pearson}
         with open(hyps['save_folder'] + "/hyperparams.txt",'a') as f:
             s = " ".join([str(k)+":"+str(results[k]) for k in\
                                       sorted(results.keys())])
+            if hyps['prune']:
+                s += "\nZeroed Channels:\n"
+                keys = sorted(list(zero_dict.keys()))
+                for k in keys:
+                    chans = [str(c) for c in zero_dict[k]]
+                    s += "{}: {}\n".format(k,",".join(chans))
             s = "\n" + s + '\n'
             f.write(s)
         return results
