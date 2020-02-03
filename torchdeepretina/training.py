@@ -252,12 +252,6 @@ class Trainer:
             # Integrated Gradient Pruning
             prune = hyps['prune'] and epoch > n_epochs
             if prune and epoch % hyps['prune_intvl'] == 0:
-                s = "Zeroed Channels:\n"
-                keys = sorted(list(zero_dict.keys()))
-                for k in keys:
-                    chans = [str(c) for c in zero_dict[k]]
-                    s += "{}: {}\n".format(k,",".join(chans))
-                stats_string += s
                 if epoch <= (n_epochs+hyps['prune_intvl']):
                     prune_dict = { "zero_dict":zero_dict,
                                    "prev_state_dict":None,
@@ -274,6 +268,13 @@ class Trainer:
                 tdrprune.zero_chans(model, zero_dict)
 
             # Print Epoch Stats
+            if prune:
+                s = "Zeroed Channels:\n"
+                keys = sorted(list(zero_dict.keys()))
+                for k in keys:
+                    chans = [str(c) for c in zero_dict[k]]
+                    s += "{}: {}\n".format(k,",".join(chans))
+                stats_string += s
             gc.collect()
             max_mem_used = resource.getrusage(resource.RUSAGE_SELF)
             max_mem_used = max_mem_used.ru_maxrss/1024
