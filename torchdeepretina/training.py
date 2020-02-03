@@ -52,8 +52,10 @@ class Trainer:
         self.prev_acc = None
 
     def train(self,hyps,verbose=True):
-        loop_type = utils.try_key(hyps,'train_loop','train_loop')
-        train_method = getattr(self,loop_type)
+        if utils.try_key(hyps, "retinotopic", False):
+            train_method = getattr(self, "retinotopic_loop")
+        else:
+            train_method = self.train_loop
         return train_method(hyps,verbose)
 
     def stop_early(self, acc):
@@ -113,7 +115,7 @@ class Trainer:
             hyps['prune_intvl'] = 1
         n_epochs = hyps['n_epochs']
         if hyps['prune_layers'] == 'all':
-            layers = tdrutils.get_conv_layer_names(model)
+            layers = utils.get_conv_layer_names(model)
             hyps['prune_layers'] = layers[:-1]
         zero_dict ={d:set() for d in hyps['prune_layers']}
         epoch = -1
@@ -191,29 +193,15 @@ class Trainer:
                 n_units = data_distr.val_y.shape[-1]
                 val_preds = np.concatenate(val_preds, axis=0)
                 val_targs = np.concatenate(val_targs, axis=0)
-                pearsons = []
-                for cell in range(val_preds.shape[-1]):
-                    p = pearsonr(val_preds[:,cell], val_targs[:,cell])
-                    pearsons.append(p[0])
+                pearsons = utils.pearsonr(val_preds, val_targs)
                 s = " | ".join([str(p) for p in pearsons])
                 stats_string += "Val Cell Cors:" + s +'\n'
                 val_acc = np.mean(pearsons)
                 stop = self.stop_early(val_acc)
 
-                # Exponential Validation
-                exp_val_acc = None
-                if hyps["log_poisson"] and hyps['softplus'] and\
-                                             not model.infr_exp:
-                    val_preds = np.exp(val_preds)
-                    for cell in range(val_preds.shape[-1]):
-                        pearsons.append(pearsonr(val_preds[:, cell],
-                                              val_targs[:,cell])[0])
-                    exp_val_acc = np.mean(pearsons)
-
                 # Clean Up
-                s = "Val Cor: {} | Val Loss: {} | Exp Val: {}\n"
-                stats_string += s.format(val_acc, val_loss,
-                                               exp_val_acc)
+                s = "Val Cor: {} | Val Loss: {}\n"
+                stats_string += s.format(val_acc, val_loss)
                 scheduler.step(val_loss)
                 del val_preds
 
@@ -224,12 +212,8 @@ class Trainer:
                     test_obs = model(test_x.to(DEVICE)).cpu()
                     test_obs = test_obs.detach().numpy()
                     rng = range(test_obs.shape[-1])
-                    if verbose:
-                        rng = tqdm(rng)
-                    for cell in rng:
-                        obs = test_obs[:,cell]
-                        lab = test_data.y[:,cell]
-                        r,p = pearsonr(obs,lab)
+                    pearsons = utils.pearsonr(test_obs,test_data.y)
+                    for cell,r in enumerate(pearsons):
                         avg_pearson += r
                         s = 'Cell ' + str(cell) + ': ' + str(r)+"\n"
                         stats_string += s
@@ -250,7 +234,6 @@ class Trainer:
                 "epoch":epoch,
                 "val_loss":val_loss,
                 "val_acc":val_acc,
-                "exp_val_acc":exp_val_acc,
                 "test_pearson":avg_pearson,
                 "norm_stats":train_data.stats,
                 "zero_dict":zero_dict,

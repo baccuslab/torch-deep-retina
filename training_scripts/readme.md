@@ -37,8 +37,6 @@ The hyperparams.json should have a list of all the desired user setting for the 
 * `rand_onehot`: bool
     * if true, the onehot layer in retinotopic models is randomly initialized to values between 0 and 1. If false, the values are inititialized as `1/(height*width)` in which the height and width are the last dims of the incoming activations.
 
-* `train_loop`: str
-    * the name of the training loop to be used. Availble options are the training loop member methods in the `Train` class.
 * `dataset`: str
     * the name of the dataset to be used for training. code assumes the datasets are located in `~/experiments/data/`. The dataset should be a folder that contains h5 files.
 * `cells`: str or list of int
@@ -76,6 +74,15 @@ The hyperparams.json should have a list of all the desired user setting for the 
 * `prune_layers`: list of str
     * enumerates the layers that should be pruned. If empty list, all intermediary convolutional layers are pruned.
 
+* `prune_intvl`: int
+    * the number of epochs to train for when trying a new dropped channel
+* `alpha_steps`: int
+    * the number of integration steps when calculating the integrated gradient
+* `intg_bsize`: int
+    * batch size of integrated gradient calculations
+* 
+* `retinotopic`: bool
+    * determines if retinotopic training. Overwritten by `prune`
 * `semantic_scale`: float
     * the weighting of the semantic loss in the total loss
 * `semantic_l1`: float
