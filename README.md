@@ -1,19 +1,38 @@
 # Torch Deep Retina
- 
-## Summary
+This repo contains the code used to produce the figures in [The dynamic neural code of the retina for natural scenes](https://www.biorxiv.org/content/10.1101/340943v5).
 
-### Current Models 
-- BatchNorm CNN (Lane and Niru)
+### Training
+To train a model you will need to have a hyperparameters json and a hyperranges json. The hyperparameters json details the values of each of the training parameters that will be used for the training. See the [training_scripts readme](training_scripts/readme.md) for parameter details. The hyperranges json contains a subset of the hyperparameter keys each coupled to a list of values that will be cycled through for training. Every combination of the hyperranges key value pairs will be scheduled for training. This allows for easy hyperparameter searches. For example, if `lr` is the only key in the hyperranges json, then trainings for each listed value of the learning rate will be queued and processed in order. If `lr` and `l2` each are in the hyperranges json, then every combination of the `lr` and `l2` values will be queued for training.
 
-### Current Training Scripts
-- Salamander data
+To run a training session, navigate to the `training_scripts` folder:
 
-### Utils
-- retio: saving and loading the model
-- physiology: inspection, injection using hooks
-- retinal phenomena/stimuli: code to generate stimulus and responses for retinal phenomena (lifted from drone)
-- intracellular: methods to compare internal units with interneuron recordings
-- batch compute: batch compute a model response (if the GPU runs out of memory)
+```
+$ cd training_scripts
+```
+
+And then select the cuda device index you will want to use (in this case 0) and type the following command:
+
+```
+$ CUDA_VISIBLE_DEVICES=0 python3 main.py path_to_hyperparameters.json path_to_hyperranges.json
+```
+### Analysis
+##### Full Model Analyses
+It is perhaps best for each user to do their own analyses. This will reduce the risk of misinterpretations of results. There is, however, an automated analysis pipeline that can be used if your model falls in the categories below. To use this automated analysis tool, simply argue the name of the main experiment folder to the `analysis_pipeline.py` script within the `training_scripts/` folder:
+
+```
+$ python3 analysis_pipeline.py path_to_experiment_folder
+```
+
+This will create figures in each of the model folders contained within the experiment folder. It will also create a csv in the experiment folder that details a number of high level results for each of the models that can be used with pandas.
+
+##### Interneuron Analyses
+For doing interneuron analyses, it is best to use the `get_intr_cors()` function in the `torchdeepretina/analysis.py` package. This will return a pandas dataframe with the correlation for each interneuron cell recording with each unit in the model. This is automatically generated if using `analysis_pipeline.py`.
+
+### Current Models
+- BNCNN: the model architecture used for the model in [Deep Learning Models of the Retinal Response to Natural Scenes](https://papers.nips.cc/paper/6388-deep-learning-models-of-the-retinal-response-to-natural-scenes).
+- LinearStackedBNCNN: the training architecture used for the model in [The dynamic neural code of the retina for natural scenes](https://www.biorxiv.org/content/10.1101/340943v5)
+- Vary Model: a class that can take on the BNCNN (slight difference in that the batchnorm layers are constrained to be positive) or the LinearStackedBNCNN architectures.
+- RetinotopicModel: a class that is similar to the VaryModel, but uses a one-hot layer to allow for fully convolutional training
 
 ## Setup
 After cloning the repo and copying to your @deepretina.stanford.edu account. All requirements should be already installed globally in deepretina. If not, to install a package locally:
