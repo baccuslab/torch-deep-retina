@@ -13,6 +13,7 @@ from scipy.stats import zscore
 import pyret.filtertools as ft
 import torch
 import torchdeepretina.stimuli as tdrstim
+import torchdeepretina.utils as utils
 
 NUM_BLOCKS = {
     '15-10-07': 6,
@@ -114,7 +115,7 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0,
     assert train_or_test in ('train', 'test'), "train_or_test must\
                                               be 'train' or 'test'"
     if type(cells) == type(str()) and cells=="all":
-        cells = CELLS[expt]
+        cells = utils.try_key(CELLS,expt,default=None)
 
     # load the hdf5 file
     with _loadexpt_h5(expt, filename, root=data_path) as f:
@@ -127,6 +128,7 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0,
             stim = stim.astype('float32')
         else:
             arr = np.asarray(f[train_or_test]['stimulus'])
+            assert len(cells) == 1, "only 1 cell allowed for cutout"
             center = CENTERS_DICT[expt][cells[0]]
             stim = tdrstim.get_cutout(arr, center=center,
                                        span=cutout_width,
@@ -145,8 +147,8 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0,
         stim = (stim-stats['mean'])/stats['std']
 
         # apply clipping to remove the stimulus just after transitions
-        num_blocks = NUM_BLOCKS[expt] if train_or_test == 'train'\
-                                                and nskip > 0 else 1
+        num_blocks = 1 if not (train_or_test=='train' and nskip>0)\
+                              else utils.try_key(NUM_BLOCKS,expt,1)
         valid_indices = np.arange(expt_length).reshape(num_blocks, -1)
         valid_indices = valid_indices[:, nskip:].ravel()
 
@@ -158,7 +160,10 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0,
                                                          time_axis=0)
 
         # get the response for this cell (nsamples, ncells)
-        stream = f[train_or_test]['response/firing_rate_10ms'][cells]
+        s = 'response/firing_rate_10ms'
+        if cells is None:
+            cells = list(range(f[train_or_test][s].shape[0]))
+        stream = f[train_or_test][s][cells]
         resp = np.array(stream).T[valid_indices]
         if history is not None and history > 0:
             resp = resp[history:]

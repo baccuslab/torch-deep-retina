@@ -1,14 +1,14 @@
 {
-    "exp_name":"retino",
-    "n_repeats":1,
+    "exp_name":"verification",
+    "n_repeats":3,
     "save_every_epoch":false,
 
-    "dataset":"15-10-07",
+    "dataset":"19-12-21a",
     "cells":"all",
     "stim_type":"naturalscene",
     "lossfxn":"PoissonNLLLoss",
     "log_poisson":false,
-    "model_type":"RetinotopicModel",
+    "model_type":"VaryModel",
     "bias":true,
     "bnorm":true,
     "bnorm_d":2,
@@ -22,7 +22,7 @@
 
     "shuffle":true,
     "batch_size":5000,
-    "n_epochs":45,
+    "n_epochs":75,
     "lr":0.005,
     "l1":1e-4,
     "l2":1e-3,
