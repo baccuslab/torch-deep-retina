@@ -12,9 +12,10 @@ import torchdeepretina.io as tdrio
 import torchdeepretina.pruning as tdrprune
 from torchdeepretina.datas import loadexpt, DataContainer,\
                                             DataDistributor
-from torchdeepretina.custom_modules import semantic_loss
+from torchdeepretina.custom_modules import semantic_loss,NullScheduler
 from torchdeepretina.models import *
 import torchdeepretina.analysis as analysis
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 import time
 from tqdm import tqdm
 import math
@@ -784,8 +785,13 @@ def get_optim_objs(hyps, model, centers=None):
 
     optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'],
                                            weight_decay=hyps['l2'])
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,
-                                                   'min', factor=0.1)
+    hyps['scheduler'] = utils.try_kwarg(hyps,'scheduler',
+                                     'ReduceLROnPlateau')
+    if hyps['scheduler'] is None:
+        scheduler = NullScheduler()
+    else:
+        scheduler = globals()[hyps['scheduler']](optimizer, 'min',
+                                                       factor=0.1)
     return optimizer, scheduler, loss_fn
 
 def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
