@@ -1203,11 +1203,20 @@ def semantic_loss(prob):
     wmc_tmp = torch.zeros_like(prob)
 
     for i in range(prob.shape[1]):
-        one_situation = torch.ones_like(prob).scatter_(1,torch.zeros_like(prob[:,0]).fill_(i).unsqueeze(-1).long(),0)
+        zeros = torch.zeros_like(prob[:,0]).fill_(i).unsqueeze(-1)
+        one_situation = torch.ones_like(prob).scatter_(1,
+                                                       zeros.long(),
+                                                       0)
         wmc_tmp[:,i] = torch.abs((one_situation - prob).prod(dim=1))
 
     wmc_tmp = -1.0*torch.log(wmc_tmp.sum(dim=1))
     total_loss = torch.sum(wmc_tmp)
     return total_loss
 
+class NullScheduler:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def step(self, *args, **kwargs):
+        pass
 

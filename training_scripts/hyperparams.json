@@ -30,6 +30,7 @@
     "drop_p":0.05,
     "gc_bias":false,
     "bn_moment":0.01,
+    "scheduler": "ReduceLROnPlateau",
 
     "prune":false,
     "prune_layers":[],

@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import torchdeepretina.utils as tdrutils
+from torchdeepretina.custom_modules import LinearStackedConv2d
 
 if torch.cuda.is_available():
     DEVICE = torch.device('cuda:0')
@@ -21,8 +22,14 @@ def zero_chans(model, chan_dict):
         # Assumes layer name is of form 'sequential.<idx>'
         idx = int(layer.split(".")[-1])
         for chan in chan_dict[layer]:
-            shape = model.sequential[idx].weight.data[chan].shape
-            model.sequential[idx].weight.data[chan] =\
+            if isinstance(model.sequential[idx],LinearStackedConv2d):
+                modu = model.sequential[idx].convs[-1]
+                shape = modu.weight.data[chan].shape
+                model.sequential[idx].convs[-1].weight.data[chan] =\
+                                  torch.zeros(*shape[1:]).to(DEVICE)
+            else:
+                shape = model.sequential[idx].weight.data[chan].shape
+                model.sequential[idx].weight.data[chan] =\
                                     torch.zeros(*shape[1:]).to(DEVICE)
 
 def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
