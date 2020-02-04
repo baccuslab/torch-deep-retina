@@ -786,7 +786,7 @@ def get_optim_objs(hyps, model, centers=None):
 
     optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'],
                                            weight_decay=hyps['l2'])
-    hyps['scheduler'] = utils.try_kwarg(hyps,'scheduler',
+    hyps['scheduler'] = utils.try_key(hyps,'scheduler',
                                      'ReduceLROnPlateau')
     if hyps['scheduler'] is None:
         scheduler = NullScheduler()

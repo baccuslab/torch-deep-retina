@@ -780,6 +780,9 @@ def get_intr_cors(model, stim_dict, mem_pot_dict,
                                 n_row=model.img_shape[1],
                                 n_col=model.img_shape[2])
             for xshift, yshift in shifts:
+                if verbose:
+                    print("Shift x:{}, Shift y:{}".format(xshift,
+                                                          yshift))
                 x,y = model.img_shape[1], model.img_shape[2]
                 stim = stim_dict[cell_file][stim_type]
                 if not (xshift == 0 and yshift == 0):
@@ -799,10 +802,13 @@ def get_intr_cors(model, stim_dict, mem_pot_dict,
                 response = tdrutils.inspect(model, stim,
                                        insp_keys=layers,
                                        batch_size=batch_size,
-                                       to_numpy=True)
+                                       to_numpy=True,
+                                       verbose=verbose)
                 pots = mem_pot_dict[cell_file][stim_type]
 
                 for layer in layers:
+                    if verbose:
+                        print("Calculating cors for layer:", layer)
                     resp = response[layer]
                     resp = resp.reshape(len(resp),-1)
                     # Retrns ndarray (Model Neurons, Potentials)
@@ -818,6 +824,8 @@ def get_intr_cors(model, stim_dict, mem_pot_dict,
                         best_mtxs[layer]["xshift"] = xshift
                         best_mtxs[layer]["yshift"] = yshift
 
+            if verbose:
+                print("Recording best shifts")
             for layer in best_mtxs.keys():
                 layer_idx = tdrutils.get_layer_idx(model, layer=layer)
                 assert layer_idx >= 0,\

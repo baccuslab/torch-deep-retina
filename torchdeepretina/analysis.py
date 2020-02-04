@@ -674,11 +674,11 @@ def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
                                                 index=False,
                                                 header=False,
                                                 mode='a')
-                    dfs[csv] = dfs[csv].iloc[:0]
                 else:
                     dfs[csv].to_csv(path, sep="!", index=False,
                                                  header=True,
                                                  mode='w')
+                dfs[csv] = dfs[csv].iloc[:0]
     return dfs
 
 
