@@ -53,6 +53,9 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
                 alpha_steps: int
                     the number of integration steps performed when
                     calculating the integrated gradient
+                prune_tolerance: float
+                    the maximum drop in accuracy willing to be
+                    tolerated for a channel removal
         data_distr: DataDistributor
             the training data distributor
         zero_dict: dict of sets
@@ -92,7 +95,8 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
     new_drop_layer = False
     stop_pruning = False
     prune_layers = hyps['prune_layers']
-    if intg_idx<len(prune_layers) and val_acc<prev_acc:
+    tolerance = hyps['prune_tolerance']
+    if intg_idx<len(prune_layers) and val_acc<prev_acc-tolerance:
         print("Validation decrease detected. "+\
                         "Returning to Previous Model")
         layer = prune_layers[intg_idx]

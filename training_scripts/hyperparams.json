@@ -35,6 +35,7 @@
     "prune":false,
     "prune_layers":[],
     "prune_intvl":15,
+    "prune_tolerance":0,
     "alpha_steps":5,
     "intg_bsize": 500,
 

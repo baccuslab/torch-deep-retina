@@ -115,9 +115,11 @@ class Trainer:
             hyps['n_epochs'] = 2
             hyps['prune_intvl'] = 1
         n_epochs = hyps['n_epochs']
-        if hyps['prune_layers'] == 'all':
-            layers = utils.get_conv_layer_names(model)
-            hyps['prune_layers'] = layers[:-1]
+        if hyps['prune']:
+            if hyps['prune_layers'] == 'all' or\
+                                             hyps['prune_layers']==[]:
+                layers = utils.get_conv_layer_names(model)
+                hyps['prune_layers'] = layers[:-1]
         zero_dict ={d:set() for d in hyps['prune_layers']}
         epoch = -1
         stop_training = False
@@ -154,7 +156,7 @@ class Trainer:
                 loss = error + activity_l1
                 loss.backward()
                 optimizer.step()
-                # Only prunes if hyps['prune'] is true
+                # Only prunes if zero_dict contains values
                 tdrprune.zero_chans(model, zero_dict)
 
                 epoch_loss += loss.item()
@@ -250,7 +252,7 @@ class Trainer:
                                        'test', del_prev=del_prev)
 
             # Integrated Gradient Pruning
-            prune = hyps['prune'] and epoch > n_epochs
+            prune = hyps['prune'] and epoch >= n_epochs
             if prune and epoch % hyps['prune_intvl'] == 0:
                 if epoch <= (n_epochs+hyps['prune_intvl']):
                     prune_dict = { "zero_dict":zero_dict,
@@ -786,7 +788,7 @@ def get_optim_objs(hyps, model, centers=None):
 
     optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'],
                                            weight_decay=hyps['l2'])
-    hyps['scheduler'] = utils.try_kwarg(hyps,'scheduler',
+    hyps['scheduler'] = utils.try_key(hyps,'scheduler',
                                      'ReduceLROnPlateau')
     if hyps['scheduler'] is None:
         scheduler = NullScheduler()

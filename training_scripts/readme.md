@@ -72,8 +72,9 @@ The hyperparams.json should have a list of all the desired user setting for the 
 * `prune`: bool
     * if true, layers are pruned
 * `prune_layers`: list of str
-    * enumerates the layers that should be pruned. If empty list, all intermediary convolutional layers are pruned.
-
+    * enumerates the layers that should be pruned. If empty list or string "all", all intermediary convolutional layers are pruned.
+* `prune_tolerance`: float
+    * the maximum drop in accuracy willing to be tolerated for a channel removal
 * `prune_intvl`: int
     * the number of epochs to train for when trying a new dropped channel
 * `alpha_steps`: int
