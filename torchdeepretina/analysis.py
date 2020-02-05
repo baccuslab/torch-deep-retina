@@ -15,6 +15,7 @@ import torchdeepretina.intracellular as tdrintr
 import torchdeepretina.io as tdrio
 from torchdeepretina.retinal_phenomena import retinal_phenomena_figs
 import torchdeepretina.stimuli as tdrstim
+import torchdeepretina.pruning as pruning
 import torchdeepretina.visualizations as tdrvis
 import pyret.filtertools as ft
 import scipy
@@ -535,11 +536,23 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
     hyps['norm_stats'] = metrics['norm_stats']
     model.eval()
     model.to(DEVICE)
+    # Pruning
+    if hasattr(model, "zero_dict"):
+        zero_dict = model.zero_dict
+        pruning.zero_chans(model, zero_dict)
+        if verbose:
+            s = "Pruned Channels:"
+            keys = sorted(list(zero_dict.keys()))
+            for k in keys:
+                chans = [str(c) for c in zero_dict[k]]
+                s += "\n{}: {}".format(k,",".join(chans))
+            print(s)
+    # Figs
     if make_figs:
         if verbose:
             print("Making figures")
         get_analysis_figs(folder, model, metrics, verbose=verbose)
-
+    # GC Testing
     gc_loss, gc_cor = test_model(model, hyps)
     table['test_acc'] = [gc_cor]
     table['test_loss'] = [gc_loss]
