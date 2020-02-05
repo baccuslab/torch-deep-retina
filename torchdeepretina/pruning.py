@@ -25,12 +25,17 @@ def zero_chans(model, chan_dict):
             if isinstance(model.sequential[idx],LinearStackedConv2d):
                 modu = model.sequential[idx].convs[-1]
                 shape = modu.weight.data[chan].shape
-                model.sequential[idx].convs[-1].weight.data[chan] =\
+                modu.convs[-1].weight.data[chan] =\
                                   torch.zeros(*shape[1:]).to(DEVICE)
+                if hasattr(modu, 'bias'):
+                    modu.convs[-1].bias[chan] = 0
             else:
-                shape = model.sequential[idx].weight.data[chan].shape
-                model.sequential[idx].weight.data[chan] =\
-                                    torch.zeros(*shape[1:]).to(DEVICE)
+                modu = model.sequential[idx]
+                shape = modu.weight.data[chan].shape
+                modu.weight.data[chan] =\
+                                   torch.zeros(*shape[1:]).to(DEVICE)
+                if hasattr(modu, 'bias'):
+                    modu.convs[-1].bias.data[chan] = 0
 
 def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
                                                 prev_state_dict,
