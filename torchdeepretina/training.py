@@ -113,7 +113,7 @@ class Trainer:
         # Training
         if hyps['exp_name'] == "test":
             hyps['n_epochs'] = 2
-            hyps['prune_intvl'] = 1
+            hyps['prune_intvl'] = 2
         n_epochs = hyps['n_epochs']
         if hyps['prune']:
             if hyps['prune_layers'] == 'all' or\
@@ -163,8 +163,9 @@ class Trainer:
                 if verbose:
                     print_train_update(error, activity_l1, model,
                                                       n_loops, i)
-                if math.isnan(epoch_loss) or math.isinf(epoch_loss)\
-                                        or hyps['exp_name']=="test":
+                if math.isnan(epoch_loss) or math.isinf(epoch_loss):
+                    break
+                if hyps['exp_name']=="test" and i >= 5:
                     break
 
             # Clean Up Train Loop
