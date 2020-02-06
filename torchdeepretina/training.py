@@ -32,6 +32,7 @@ if torch.cuda.is_available():
 else:
     DEVICE = torch.device("cpu")
 
+
 class Trainer:
     def __init__(self, run_q=None, return_q=None, early_stopping=10,
                                                stop_tolerance=0.01):
@@ -53,6 +54,10 @@ class Trainer:
         self.prev_acc = None
 
     def train(self,hyps,verbose=True):
+        hyps['seed'] = utils.try_key(hyps,'seed',int(time.time()))
+
+        torch.manual_seed(hyps['seed'])
+        np.random.seed(hyps['seed'])
         if utils.try_key(hyps, "retinotopic", False):
             train_method = getattr(self, "retinotopic_loop")
         else:
@@ -85,7 +90,7 @@ class Trainer:
         hyps: dict
             dict of relevant hyperparameters
         """
-        # Initialize miscellaneous parameters 
+        # Initialize miscellaneous parameters
         torch.cuda.empty_cache()
         batch_size = hyps['batch_size']
 
@@ -145,7 +150,7 @@ class Trainer:
                 y,error = static_eval(x, label, model, loss_fn)
                 if hyps['l1']<=0:
                     activity_l1 = torch.zeros(1).to(DEVICE)
-                else: 
+                else:
                     activity_l1 = hyps['l1']*torch.norm(y, 1).float()
                     activity_l1 = activity_l1 .mean()
                 if 'gauss_reg' in hyps and hyps['gauss_reg'] > 0:
@@ -296,10 +301,10 @@ class Trainer:
 
 
         # Final save
-        results = {"save_folder":hyps['save_folder'], 
-                    "Loss":avg_loss, 
-                    "ValAcc":val_acc, 
-                    "ValLoss":val_loss, 
+        results = {"save_folder":hyps['save_folder'],
+                    "Loss":avg_loss,
+                    "ValAcc":val_acc,
+                    "ValLoss":val_loss,
                     "TestPearson":avg_pearson}
         with open(hyps['save_folder'] + "/hyperparams.txt",'a') as f:
             s = " ".join([str(k)+":"+str(results[k]) for k in\
@@ -389,7 +394,9 @@ class Trainer:
                     w = model.sequential[-1].w
                     l = torch.norm(w, 1, dim=-1).float()
                     one_hot_loss += semantic_l1*l.mean()
+
                 loss = error + activity_l1 + one_hot_loss
+
 
                 loss.backward()
                 optimizer.step()
@@ -399,14 +406,16 @@ class Trainer:
                 if verbose:
                     print_train_update(error, activity_l1, model,
                                                       n_loops, i)
+                    
+
                 if math.isnan(epoch_loss) or math.isinf(epoch_loss)\
                                         or hyps['exp_name']=="test":
                     break
 
             # Clean Up Train Loop
             avg_loss = epoch_loss/n_loops
-            s = 'Avg Loss: {} -- Time: {}\n'
-            stats_string += s.format(avg_loss, time.time()-starttime)
+            s = 'Avg Loss: {} -- Time: {}\n -- One Hot Loss: {}'
+            stats_string += s.format(avg_loss, time.time()-starttime,one_hot_loss)
             # Deletions for memory reduction
             del x
             del y
@@ -791,11 +800,23 @@ def get_optim_objs(hyps, model, centers=None):
                                            weight_decay=hyps['l2'])
     hyps['scheduler'] = utils.try_key(hyps,'scheduler',
                                      'ReduceLROnPlateau')
+
+    hyps['scheduler_thresh'] = utils.try_key(hyps,'scheduler_thresh',
+                                     1e-4)
+
+
+    hyps['scheduler_patience'] = utils.try_key(hyps,'scheduler_patience',
+                                     10)
     if hyps['scheduler'] is None:
         scheduler = NullScheduler()
     else:
         scheduler = globals()[hyps['scheduler']](optimizer, 'min',
-                                                       factor=0.1)
+                                        factor=0.1,
+                                        patience=hyps['scheduler_patience'],
+                                        threshold=hyps['scheduler_thresh'],
+                                        verbose=True)
+
+
     return optimizer, scheduler, loss_fn
 
 def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
