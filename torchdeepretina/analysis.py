@@ -681,17 +681,17 @@ def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
         if save_dfs:
             for i,csv in enumerate(csvs):
                 path = os.path.join(main_folder,csv)
-                if os.path.exists(path):
+                if i==1 and os.path.exists(path):
                     temp = pd.read_csv(path,sep="!",nrows=10)
                     dfs[csv][temp.columns].to_csv(path, sep="!",
                                                 index=False,
                                                 header=False,
                                                 mode='a')
+                    dfs[csv] = dfs[csv].iloc[:0]
                 else:
                     dfs[csv].to_csv(path, sep="!", index=False,
                                                  header=True,
                                                  mode='w')
-                dfs[csv] = dfs[csv].iloc[:0]
     return dfs
 
 
