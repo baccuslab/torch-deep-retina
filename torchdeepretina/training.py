@@ -211,10 +211,7 @@ class Trainer:
                 # Clean Up
                 s = "Val Cor: {} | Val Loss: {}\n"
                 stats_string += s.format(val_acc, val_loss)
-                if hyps['scheduler'] == 'MultiStepLR':
-                    scheduler.step()
-                else:
-                    scheduler.step(val_acc)
+                scheduler.step(val_acc)
                 del val_preds
 
                 # Validation on Test Subset (Nonrecurrent Models Only)
@@ -418,11 +415,14 @@ class Trainer:
             # Clean Up Train Loop
             avg_loss = epoch_loss/n_loops
             print('Random Seed: {}'.format(hyps['seed']))
-            s = 'Avg Loss: {} -- Time: {}\n -- One Hot Loss: {} -- LR:{}'
+            s = 'Avg Loss: {} -- Time: {}\n -- One Hot Loss: {}'
 
             LRs = []
             for LR_val in optimizer.param_groups:
                 LRs.append(LR_val['lr'])
+
+            for lll in LRs:
+                print('\n Learning Rate {} \n'.format(lll))
 
             stats_string += s.format(avg_loss, time.time()-starttime,one_hot_loss,LRs)
             # Deletions for memory reduction
@@ -461,7 +461,11 @@ class Trainer:
                 # Clean Up
                 s = "Val Cor: {} | Val Loss: {}\n"
                 stats_string += s.format(val_acc, val_loss)
-                scheduler.step(np.squeeze(avg_loss))
+                if hyps['scheduler'] == 'MultiStepLR':
+                    print('Stepping MultiStepLR')
+                    scheduler.step()
+                else:
+                    scheduler.step(val_acc)
                 del val_preds
 
                 # Validation on Test Subset (Nonrecurrent Models Only)
@@ -831,9 +835,8 @@ def get_optim_objs(hyps, model, centers=None):
 
     elif hyps['scheduler'] == 'MultiStepLR':
         milestones = utils.try_key(hyps,'scheduler_milestones',[10,20,30])
-        print('You are using the MultiStepLR optimizer')
         print(milestones)
-        scheduler = globals()[hyps['scheduler']](optimizer, milestones=milestones,
+        scheduler = globals()[hyps['scheduler']](optimizer, milestones,
                                         gamma=0.1)
 
 

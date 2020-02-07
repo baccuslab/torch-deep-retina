@@ -1,5 +1,5 @@
 {
-    "exp_name":"old_scheduled_2",
+    "exp_name":"old_scheduled_1",
     "n_repeats":1,
     "model_type":"RetinotopicModel",
     "dataset":"15-10-07",
