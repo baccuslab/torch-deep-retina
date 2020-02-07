@@ -211,7 +211,10 @@ class Trainer:
                 # Clean Up
                 s = "Val Cor: {} | Val Loss: {}\n"
                 stats_string += s.format(val_acc, val_loss)
-                scheduler.step(val_acc)
+                if hyps['scheduler'] == 'MultiStepLR':
+                    scheduler.step()
+                else:
+                    scheduler.step(val_acc)
                 del val_preds
 
                 # Validation on Test Subset (Nonrecurrent Models Only)
@@ -342,13 +345,13 @@ class Trainer:
 
         record_session(hyps, model)
 
-        # Make optimization objects (lossfxn, optimizer, 
+        # Make optimization objects (lossfxn, optimizer,
         optimizer, scheduler, loss_fn = get_optim_objs(hyps, model,
                                                 train_data.centers)
 
         # Training
         if hyps['exp_name'] == "test":
-            hyps['n_epochs'] = 2
+            hyps['n_epochs'] = 4
 
         n_epochs = hyps['n_epochs']
 
@@ -458,7 +461,7 @@ class Trainer:
                 # Clean Up
                 s = "Val Cor: {} | Val Loss: {}\n"
                 stats_string += s.format(val_acc, val_loss)
-                scheduler.step(avg_loss)
+                scheduler.step(np.squeeze(avg_loss))
                 del val_preds
 
                 # Validation on Test Subset (Nonrecurrent Models Only)
@@ -764,9 +767,13 @@ def get_data(hyps):
     cutout_size = None if 'cutout_size' not in hyps else\
                                       hyps['cutout_size']
     img_depth, img_height, img_width = hyps['img_shape']
+
+    data_path = utils.try_key(hyps,'datapath','~/experiments/data')
+
     train_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],
                                 hyps['stim_type'],'train',img_depth,0,
-                                cutout_width=cutout_size))
+                                cutout_width=cutout_size,
+                                data_path=data_path))
     norm_stats = [train_data.stats['mean'], train_data.stats['std']]
 
     try:
@@ -810,7 +817,7 @@ def get_optim_objs(hyps, model, centers=None):
                                      1e-2)
 
     hyps['scheduler_patience'] = utils.try_key(hyps,'scheduler_patience',
-                                     10)  
+                                     10)
 
     if hyps['scheduler'] is None:
         scheduler = NullScheduler()
@@ -824,8 +831,9 @@ def get_optim_objs(hyps, model, centers=None):
 
     elif hyps['scheduler'] == 'MultiStepLR':
         milestones = utils.try_key(hyps,'scheduler_milestones',[10,20,30])
+        print('You are using the MultiStepLR optimizer')
         print(milestones)
-        scheduler = globals()[hyps['scheduler']](optimizer, milestones,
+        scheduler = globals()[hyps['scheduler']](optimizer, milestones=milestones,
                                         gamma=0.1)
 
 
