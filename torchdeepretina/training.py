@@ -15,7 +15,7 @@ from torchdeepretina.datas import loadexpt, DataContainer,\
 from torchdeepretina.custom_modules import semantic_loss,NullScheduler
 from torchdeepretina.models import *
 import torchdeepretina.analysis as analysis
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau,StepLR,MultiStepLR
 import time
 from tqdm import tqdm
 import math
@@ -214,7 +214,7 @@ class Trainer:
                 # Clean Up
                 s = "Val Cor: {} | Val Loss: {}\n"
                 stats_string += s.format(val_acc, val_loss)
-                scheduler.step(val_loss)
+                scheduler.step(val_acc)
                 del val_preds
 
                 # Validation on Test Subset (Nonrecurrent Models Only)
@@ -345,7 +345,7 @@ class Trainer:
 
         record_session(hyps, model)
 
-        # Make optimization objects (lossfxn, optimizer, scheduler)
+        # Make optimization objects (lossfxn, optimizer, 
         optimizer, scheduler, loss_fn = get_optim_objs(hyps, model,
                                                 train_data.centers)
 
@@ -409,7 +409,7 @@ class Trainer:
                 if verbose:
                     print_train_update(error, activity_l1, model,
                                                       n_loops, i)
-                    
+
 
                 if math.isnan(epoch_loss) or math.isinf(epoch_loss)\
                                         or hyps['exp_name']=="test":
@@ -417,8 +417,14 @@ class Trainer:
 
             # Clean Up Train Loop
             avg_loss = epoch_loss/n_loops
-            s = 'Avg Loss: {} -- Time: {}\n -- One Hot Loss: {}'
-            stats_string += s.format(avg_loss, time.time()-starttime,one_hot_loss)
+            print('Random Seed: {}'.format(hyps['seed']))
+            s = 'Avg Loss: {} -- Time: {}\n -- One Hot Loss: {} -- LR:{}'
+
+            LRs = []
+            for LR_val in optimizer.param_groups:
+                LRs.append(LR_val['lr'])
+
+            stats_string += s.format(avg_loss, time.time()-starttime,one_hot_loss,LRs)
             # Deletions for memory reduction
             del x
             del y
@@ -455,7 +461,7 @@ class Trainer:
                 # Clean Up
                 s = "Val Cor: {} | Val Loss: {}\n"
                 stats_string += s.format(val_acc, val_loss)
-                scheduler.step(val_loss)
+                scheduler.step(avg_loss)
                 del val_preds
 
                 # Validation on Test Subset (Nonrecurrent Models Only)
@@ -773,13 +779,12 @@ def get_data(hyps):
                                             'test',img_depth,0,
                                             norm_stats=norm_stats,
                                             cutout_width=cutout_size))
-        test_data.X = test_data.X[:500]
-        test_data.y = test_data.y[:500]
     except:
         test_data = None
     return train_data, test_data
 
 def get_optim_objs(hyps, model, centers=None):
+    print(hyps['scheduler'])
     """
     Returns the optimization objects for the training.
 
@@ -805,19 +810,27 @@ def get_optim_objs(hyps, model, centers=None):
                                      'ReduceLROnPlateau')
 
     hyps['scheduler_thresh'] = utils.try_key(hyps,'scheduler_thresh',
-                                     1e-4)
-
+                                     1e-2)
 
     hyps['scheduler_patience'] = utils.try_key(hyps,'scheduler_patience',
-                                     10)
+                                     10)  
+
     if hyps['scheduler'] is None:
         scheduler = NullScheduler()
-    else:
+
+    elif hyps['scheduler'] == 'ReduceLROnPlateau':
         scheduler = globals()[hyps['scheduler']](optimizer, 'min',
                                         factor=0.1,
                                         patience=hyps['scheduler_patience'],
                                         threshold=hyps['scheduler_thresh'],
                                         verbose=True)
+
+    elif hyps['scheduler'] == 'MultiStepLR':
+        milestones = utils.try_key(hyps,'scheduler_milestones',[10,20,30])
+        print(milestones)
+        scheduler = globals()[hyps['scheduler']](optimizer, milestones,
+                                        gamma=0.1)
+
 
 
     return optimizer, scheduler, loss_fn
