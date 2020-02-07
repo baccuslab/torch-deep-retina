@@ -806,32 +806,29 @@ def get_optim_objs(hyps, model, centers=None):
 
     optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'],
                                            weight_decay=hyps['l2'])
-    hyps['scheduler'] = utils.try_key(hyps,'scheduler',
+    hyps['scheduler'] = utils.try_key(hyps,
+                                     'scheduler',
                                      'ReduceLROnPlateau')
+    hyps['scheduler_thresh'] = utils.try_key(hyps,
+                                             'scheduler_thresh',
+                                             1e-2)
+    hyps['scheduler_patience'] = utils.try_key(hyps,
+                                               'scheduler_patience',
+                                               10)
 
-    hyps['scheduler_thresh'] = utils.try_key(hyps,'scheduler_thresh',
-                                     1e-2)
-
-    hyps['scheduler_patience'] = utils.try_key(hyps,'scheduler_patience',
-                                     10)  
-
-    if hyps['scheduler'] is None:
-        scheduler = NullScheduler()
-
-    elif hyps['scheduler'] == 'ReduceLROnPlateau':
+    if hyps['scheduler'] == 'ReduceLROnPlateau':
         scheduler = globals()[hyps['scheduler']](optimizer, 'min',
                                         factor=0.1,
                                         patience=hyps['scheduler_patience'],
                                         threshold=hyps['scheduler_thresh'],
                                         verbose=True)
-
     elif hyps['scheduler'] == 'MultiStepLR':
         milestones = utils.try_key(hyps,'scheduler_milestones',[10,20,30])
         print(milestones)
         scheduler = globals()[hyps['scheduler']](optimizer, milestones,
                                         gamma=0.1)
-
-
+    else:
+        scheduler = NullScheduler()
 
     return optimizer, scheduler, loss_fn
 
