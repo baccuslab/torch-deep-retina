@@ -795,7 +795,6 @@ def get_data(hyps):
     return train_data, test_data
 
 def get_optim_objs(hyps, model, centers=None):
-    print(hyps['scheduler'])
     """
     Returns the optimization objects for the training.
 
