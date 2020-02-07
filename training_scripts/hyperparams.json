@@ -1,5 +1,5 @@
 {
-    "exp_name":"old_data_sched",
+    "exp_name":"old_scheduled_1",
     "n_repeats":1,
     "model_type":"RetinotopicModel",
     "dataset":"15-10-07",
@@ -10,7 +10,7 @@
     "lossfxn":"PoissonNLLLoss",
     "log_poisson":false,
     "softplus":true,
-    "batch_size":2600,
+    "batch_size":4000,
     "n_epochs":40,
     "lr":0.01,
     "l1":0.001,

@@ -345,13 +345,13 @@ class Trainer:
 
         record_session(hyps, model)
 
-        # Make optimization objects (lossfxn, optimizer, 
+        # Make optimization objects (lossfxn, optimizer,
         optimizer, scheduler, loss_fn = get_optim_objs(hyps, model,
                                                 train_data.centers)
 
         # Training
         if hyps['exp_name'] == "test":
-            hyps['n_epochs'] = 2
+            hyps['n_epochs'] = 4
 
         n_epochs = hyps['n_epochs']
 
@@ -418,11 +418,14 @@ class Trainer:
             # Clean Up Train Loop
             avg_loss = epoch_loss/n_loops
             print('Random Seed: {}'.format(hyps['seed']))
-            s = 'Avg Loss: {} -- Time: {}\n -- One Hot Loss: {} -- LR:{}'
+            s = 'Avg Loss: {} -- Time: {}\n -- One Hot Loss: {}'
 
             LRs = []
             for LR_val in optimizer.param_groups:
                 LRs.append(LR_val['lr'])
+
+            for lll in LRs:
+                print('\n Learning Rate {} \n'.format(lll))
 
             stats_string += s.format(avg_loss, time.time()-starttime,one_hot_loss,LRs)
             # Deletions for memory reduction
@@ -461,7 +464,11 @@ class Trainer:
                 # Clean Up
                 s = "Val Cor: {} | Val Loss: {}\n"
                 stats_string += s.format(val_acc, val_loss)
-                scheduler.step(avg_loss)
+                if hyps['scheduler'] == 'MultiStepLR':
+                    print('Stepping MultiStepLR')
+                    scheduler.step()
+                else:
+                    scheduler.step(val_acc)
                 del val_preds
 
                 # Validation on Test Subset (Nonrecurrent Models Only)
@@ -767,9 +774,13 @@ def get_data(hyps):
     cutout_size = None if 'cutout_size' not in hyps else\
                                       hyps['cutout_size']
     img_depth, img_height, img_width = hyps['img_shape']
+
+    data_path = utils.try_key(hyps,'datapath','~/experiments/data')
+
     train_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],
                                 hyps['stim_type'],'train',img_depth,0,
-                                cutout_width=cutout_size))
+                                cutout_width=cutout_size,
+                                data_path=data_path))
     norm_stats = [train_data.stats['mean'], train_data.stats['std']]
 
     try:
