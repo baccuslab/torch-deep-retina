@@ -51,13 +51,6 @@ if __name__ == "__main__":
     print("\n".join(["{}: {}".format(k,v) for k,v in\
                                 hyp_ranges.items()]))
 
-    # Random Seeds
-    seed = 3
-    if "rand_seed" in hyps:
-        seed = hyps['rand_seed']
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-
     if "shift_labels" in hyps and hyps['shift_labels']:
         s = "{} WARNING: YOU ARE USING SHIFTED LABELS {}"
         print(s.format("!"*5))
