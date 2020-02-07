@@ -54,10 +54,13 @@ class Trainer:
         self.prev_acc = None
 
     def train(self,hyps,verbose=True):
-        hyps['seed'] = utils.try_key(hyps,'seed',int(time.time()))
-
+        # Set manual seed
+        hyps['seed'] = utils.try_key(hyps,'seed',None)
+        if hyps['seed'] is None:
+            hyps['seed'] = int(time.time())
         torch.manual_seed(hyps['seed'])
         np.random.seed(hyps['seed'])
+
         if utils.try_key(hyps, "retinotopic", False):
             train_method = getattr(self, "retinotopic_loop")
         else:
