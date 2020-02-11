@@ -1,6 +1,0 @@
-exp_id: 'channel_noNorm'
-gpu: 0
-epoch: 150
-Model:
-    name: 'KineticsChannelModel2'
-    checkpoint: ''

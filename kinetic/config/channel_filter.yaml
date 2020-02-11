@@ -1,0 +1,5 @@
+exp_id: 'channel_filter'
+gpu: 2
+Model:
+    name: 'KineticsChannelModelFilter'
+    checkpoint: ''

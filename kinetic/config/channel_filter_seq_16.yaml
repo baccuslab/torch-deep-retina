@@ -1,0 +1,8 @@
+exp_id: 'channel_filter_seq_10'
+gpu: 4
+Model:
+    name: 'KineticsChannelModelFilter'
+    checkpoint: ''
+    recur_seq_len: 10
+Data:
+    trunc_int: 8

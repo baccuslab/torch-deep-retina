@@ -1,6 +1,0 @@
-exp_id: 'channel'
-gpu: 1
-epoch: 150
-Model:
-    name: 'KineticsChannelModel'
-    checkpoint: '/home/xhding/saved_model/channel/epoch_055_loss_-3.06_pearson_0.3979.pth'

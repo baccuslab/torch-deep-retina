@@ -1176,7 +1176,7 @@ class Kinetics_channel(nn.Module):
                 2: I1
                 3: I2
         """
-        self.clamp_params(-.99999, .99999)
+        #self.clamp_params(-.99999, .99999)
         dt = self.dt
         ka  = self.ka.abs() * rate * pop[:, 0]
         kfi = self.kfi.abs() * pop[:,1]

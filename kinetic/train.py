@@ -2,6 +2,7 @@ import os
 import torch
 import torch.nn as nn
 from torch.utils.data.dataloader import DataLoader
+from torch.utils.data.sampler import SequentialSampler
 import numpy as np
 from tqdm import tqdm
 from collections import deque
@@ -12,39 +13,29 @@ from kinetic.config import get_default_cfg, get_custom_cfg
 
 def train(cfg):
     
-    if not os.path.exists(os.path.join(cfg.save_path, cfg.exp_id)):
-        os.mkdir(os.path.join(cfg.save_path, cfg.exp_id))
-        
-    with open(os.path.join(cfg.save_path, cfg.exp_id, 'cfg'), 'w') as f:
-        f.write(str(cfg))
-    
     device = torch.device('cuda:'+str(cfg.gpu))
     
     model = select_model(cfg, device)
     
     start_epoch = 0
         
+    model.train()
+    
     loss_fn = nn.PoissonNLLLoss(log_input=False).to(device)
+    
+    optimizer = torch.optim.Adam(model.parameters(), lr=cfg.Optimize.lr, 
+                                 weight_decay=cfg.Optimize.l2)
     
     if cfg.Model.checkpoint != '':
         checkpoint = torch.load(cfg.Model.checkpoint, map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
-        start_epoch = checkpoint['epoch'] + 1
-        
-    model.train()
-    
-    optimizer = torch.optim.Adam(model.parameters(), lr=cfg.Optimize.lr, 
-                                 weight_decay=cfg.Optimize.l2)
-    if cfg.Model.checkpoint != '':
-        checkpoint = torch.load(cfg.Model.checkpoint, map_location=device)
+        start_epoch = checkpoint['epoch']
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     
     train_dataset = TrainDataset(cfg)
     batch_sampler = BatchRnnSampler(length=len(train_dataset), batch_size=cfg.Data.batch_size,
-                                    seq_len=cfg.Data.seq_len)
+                                    seq_len=cfg.Data.trunc_int)
     train_data = DataLoader(dataset=train_dataset, batch_sampler=batch_sampler)
-    
-    validation_data =  DataLoader(dataset=ValidationDataset(cfg))
     
     for epoch in range(start_epoch, start_epoch + cfg.epoch):
         epoch_loss = 0
@@ -55,11 +46,11 @@ def train(cfg):
             y = y.double().to(device)
             out, hs = model(x, hs)
             loss += loss_fn(out.double(), y)
-            if idx % cfg.Data.seq_len == 0:
+            if idx % cfg.Data.trunc_int == 0:
                 h_0 = []
                 h_0.append(hs[0].detach())
                 h_0.append(deque([h.detach() for h in hs[1]], maxlen=model.seq_len))
-            if idx % cfg.Data.seq_len == (cfg.Data.seq_len - 1):
+            if idx % cfg.Data.trunc_int == (cfg.Data.trunc_int - 1):
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -68,15 +59,19 @@ def train(cfg):
                 hs[0] = h_0[0].detach()
                 hs[1] = deque([h.detach() for h in h_0[1]], maxlen=model.seq_len)
                 
-        epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size / cfg.Data.seq_len
+        epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size
         
-        pearson = pearsonr_eval(model, validation_data, cfg.Model.n_units, device)
+        validation_data =  DataLoader(dataset=ValidationDataset(cfg))
+        pearson = pearsonr_eval(model, validation_data, cfg.Model.n_units, 600, device)
         
         print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}'.format(epoch, epoch_loss, pearson))
         
-        update_eval_history(cfg, epoch, pearson, epoch_loss)
-        
-        if epoch % cfg.save_intvl == 0:
+        if epoch%cfg.save_intvl == 0:
+            try:
+                os.mkdir(os.path.join(cfg.save_path, cfg.exp_id))
+                print("Directory Created ") 
+            except FileExistsError:
+                pass
             save_path = os.path.join(cfg.save_path, cfg.exp_id, 
                                      'epoch_{:03d}_loss_{:.2f}_pearson_{:.4f}'
                                      .format(epoch, epoch_loss, pearson)+'.pth')
@@ -87,6 +82,6 @@ def train(cfg):
                         'loss': epoch_loss}, save_path)
     
 if __name__ == "__main__":
-    cfg = get_custom_cfg('channel_instance')
+    cfg = get_custom_cfg('channel_filter')
     print(cfg)
     train(cfg)

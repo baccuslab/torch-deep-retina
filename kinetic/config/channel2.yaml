@@ -1,5 +1,0 @@
-exp_id: 'channel2'
-epoch: 150
-Model:
-    name: 'KineticsChannelModelLayerNorm'
-    checkpoint: ''

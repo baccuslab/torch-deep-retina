@@ -1,0 +1,5 @@
+exp_id: 'channel_layer'
+gpu: 1
+Model:
+    name: 'KineticsChannelModelLayerNorm'
+    checkpoint: ''

@@ -1,0 +1,5 @@
+exp_id: 'channel_no_norm'
+gpu: 0
+Model:
+    name: 'KineticsChannelModelNoBatchnorm'
+    checkpoint: ''

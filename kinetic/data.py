@@ -15,7 +15,7 @@ class BatchRnnSampler(Sampler):
         batch_idx = 0
         count = 0
         while batch_idx < self.length // self.batch_size:
-            batch = [batch_idx + n * self.length // self.batch_size for n in range(self.batch_size)]
+            batch = [batch_idx + n * (self.length // self.batch_size) for n in range(self.batch_size)]
             yield batch
             batch_idx += 1
             count += 1
