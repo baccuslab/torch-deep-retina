@@ -9,14 +9,57 @@ from collections import deque
 from kinetic.data import *
 from kinetic.evaluation import pearsonr_eval
 from kinetic.utils import *
+from kinetic.models import *
 from kinetic.config import get_default_cfg, get_custom_cfg
 
 def train(cfg):
     
     device = torch.device('cuda:'+str(cfg.gpu))
     
-    model = select_model(cfg, device)
+    if cfg.Model.name == 'KineticsChannelModel':
+        model = KineticsChannelModel(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
+                                  recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
+                                  noise=cfg.Model.noise, bias=cfg.Model.bias, 
+                                  linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
+                                  bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
+                                  img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
+    if cfg.Model.name == 'KineticsChannelModelFilter':
+        model = KineticsChannelModelFilter(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
+                                  recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
+                                  noise=cfg.Model.noise, bias=cfg.Model.bias, 
+                                  linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
+                                  bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
+                                  img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
+    if cfg.Model.name == 'KineticsChannelModelNoBatchnorm':
+        model = KineticsChannelModelNoBatchnorm(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
+                                  recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
+                                  noise=cfg.Model.noise, bias=cfg.Model.bias, 
+                                  linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
+                                  softplus=cfg.Model.softplus, 
+                                  img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
+    if cfg.Model.name == 'KineticsChannelModelLayerNorm':
+        model = KineticsChannelModelLayerNorm(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
+                                  recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
+                                  bias=cfg.Model.bias, 
+                                  linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
+                                  softplus=cfg.Model.softplus, 
+                                  img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
+    if cfg.Model.name == 'KineticsChannelModelInstanceNorm':
+        model = KineticsChannelModelInstanceNorm(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
+                                  recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
+                                  bias=cfg.Model.bias, 
+                                  linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
+                                  softplus=cfg.Model.softplus, 
+                                  img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
+    if cfg.Model.name == 'KineticsModel':
+        model = KineticsModel(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
+                          recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
+                          noise=cfg.Model.noise, bias=cfg.Model.bias, 
+                          linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
+                          bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
+                          img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
     
+    #model = select_model(cfg, device)
     start_epoch = 0
         
     model.train()
@@ -64,7 +107,7 @@ def train(cfg):
         validation_data =  DataLoader(dataset=ValidationDataset(cfg))
         pearson = pearsonr_eval(model, validation_data, cfg.Model.n_units, 600, device)
         
-        print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}'.format(epoch, epoch_loss, pearson))
+        print('epoch: {}, loss: {}, pearson correlation: {}'.format(epoch, epoch_loss, pearson))
         
         if epoch%cfg.save_intvl == 0:
             try:
@@ -73,7 +116,7 @@ def train(cfg):
             except FileExistsError:
                 pass
             save_path = os.path.join(cfg.save_path, cfg.exp_id, 
-                                     'epoch_{:03d}_loss_{:.2f}_pearson_{:.4f}'
+                                     'epoch_{}_loss_{}_pearson_{}'
                                      .format(epoch, epoch_loss, pearson)+'.pth')
 
             torch.save({'epoch': epoch,

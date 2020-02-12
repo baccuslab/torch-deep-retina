@@ -57,14 +57,3 @@ def select_model(cfg, device):
                           img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
         
     return model
-
-def update_eval_history(cfg, epoch, pearson, epoch_loss):
-    eval_history_path = os.path.join(cfg.save_path, cfg.exp_id, 'eval.json')
-    if not os.path.exists(eval_history_path):
-        eval_history = []
-    else: 
-        with open(eval_history_path, 'r') as f:
-            eval_history = json.load(f)
-    eval_history.append({'epoch' : epoch, 'pearson': pearson, 'loss': epoch_loss})
-    with open(eval_history_path, 'w') as f:
-            json.dump(eval_history, f)
