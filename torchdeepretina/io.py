@@ -122,16 +122,20 @@ def get_model_folders(main_folder):
     sort_key = lambda x: int(x.split("/")[-1].split("_")[1])
     return sorted(folders, key=sort_key)
 
-def load_checkpoint(checkpt_path):
+def load_checkpoint(path):
     """
     Can load a specific model file both architecture and state_dict
     if the file contains a model_state_dict key, or can just load the
     architecture.
 
-    checkpt_path: str
+    path: str
         path to checkpoint file
     """
-    data = torch.load(checkpt_path, map_location=torch.device("cpu"))
+    if os.path.isdir(path):
+        checkpts = get_checkpoints(path)
+        hyps = get_hyps(path)
+        path = checkpts[-1]
+    data = torch.load(path, map_location=torch.device("cpu"))
     return data
 
 def load_model(path):
