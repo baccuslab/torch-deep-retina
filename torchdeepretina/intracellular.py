@@ -277,9 +277,10 @@ def argmax_correlation(mem_pot, model_layer, ret_max_cor=False,
         return best_idx, cors[argmax]
     return best_idx
 
-def model2model_get_response_helper(model, stim, model_layers,
-                                batch_size=500, filt_depth=40,
-                                use_ig=False, verbose=False):
+def get_response(model, stim, model_layers, batch_size=500,
+                                              use_ig=False,
+                                              to_numpy=False,
+                                              verbose=False):
     """
     Helper function to dry up code in model2model functions.
 
@@ -290,6 +291,13 @@ def model2model_get_response_helper(model, stim, model_layers,
     model_layers: set of str
     use_ig: bool
         indicates if integrated gradient should be used
+
+    Returns:
+        response: dict
+            keys: str
+                layer names
+            vals: FloatTensor
+                the activations for the layer
     """
     if verbose:
         if use_ig:
@@ -308,27 +316,30 @@ def model2model_get_response_helper(model, stim, model_layers,
                                                 stim,
                                                 batch_size=batch_size,
                                                 layer=layer,
-                                                to_numpy=False,
+                                                to_numpy=to_numpy,
                                                 verbose=verbose)
             response[layer] = intg_grad
         if "outputs" in model_layers:
             if gc_resps is None:
                 bsize = batch_size
                 temp = tdrutils.inspect(model, stim, batch_size=bsize,
-                                                      insp_keys={},
-                                                      to_numpy=False,
-                                                      verbose=verbose)
+                                                    insp_keys={},
+                                                    to_cpu=True,
+                                                    to_numpy=to_numpy,
+                                                    verbose=verbose)
                 gc_resps = temp['outputs']
             response['outputs'] = gc_resps
     else:
-        response = tdrutils.inspect(model, stim,batch_size=batch_size,
+        response = tdrutils.inspect(model,stim,batch_size=batch_size,
                                                insp_keys=model_layers,
-                                               to_numpy=False,
+                                               to_cpu=True,
+                                               to_numpy=to_numpy,
                                                verbose=verbose)
     return response
 
 def model2model_cors(model1, model2, model1_layers=[],
                                             model2_layers=[],
+                                            stim=None,
                                             batch_size=500,
                                             contrast=1.0,
                                             n_samples=5000,
@@ -341,6 +352,9 @@ def model2model_cors(model1, model2, model1_layers=[],
 
     model1 - torch Module
     model2 - torch Module
+    stim - ndarray (T,H,W) or None
+        optional argument to specify the stimulus. If none, stimulus
+        defaults to whitenoise
     model1_layers - set or list of strs
         the layers of model 1 to be correlated
     model2_layers - set or list of strs
@@ -373,6 +387,18 @@ def model2model_cors(model1, model2, model1_layers=[],
                 - contrast: list
                 - cor: list
     """
+    intr_cors = {
+        "mod1_layer":[],
+        "mod1_chan":[],
+        "mod1_row":[],
+        "mod1_col":[],
+        "mod2_layer":[],
+        "mod2_chan":[],
+        "mod2_row":[],
+        "mod2_col":[],
+        "contrast":[],
+        "cor":[],
+    }
     if len(model1_layers) == 0:
         model1_layers = get_conv_layer_names(model1)
     if len(model2_layers) == 0:
@@ -383,30 +409,25 @@ def model2model_cors(model1, model2, model1_layers=[],
 
     nx = min(model1.img_shape[1], model2.img_shape[1])
 
-    whitenoise = tdrstim.repeat_white(n_samples, nx=nx,
+    if stim is None:
+        stim = tdrstim.repeat_white(n_samples, nx=nx,
                                         contrast=contrast,
                                         n_repeats=n_repeats,
                                         rand_spat=True)
-    filt_depth = max(model1.img_shape[0], model2.img_shape[0])
 
     # Collect Responses
     model1.to(DEVICE)
-    response1 = model2model_get_response_helper(model1, whitenoise,
-                                        use_ig=use_ig,
+    response1 = get_response(model1, stim, use_ig=use_ig,
                                         model_layers=model1_layers,
                                         batch_size=batch_size,
                                         verbose=verbose)
     model1.cpu()
     model2.to(DEVICE)
-    response2 = model2model_get_response_helper(model2, whitenoise,
-                                           use_ig=use_ig,
+    response2 = get_response(model2, stim, use_ig=use_ig,
                                            model_layers=model2_layers,
                                            batch_size=batch_size,
                                            verbose=verbose)
     model2.cpu()
-
-    intr_cors ={m1_layer:{m2_layer:None for m2_layer in model2_layers}
-                                        for m1_layer in model1_layers}
 
     for mod1_layer in intr_cors.keys():
         resp1 = response1[mod1_layer]
@@ -443,8 +464,10 @@ def model2model_cors(model1, model2, model1_layers=[],
 def model2model_cor_mtxs(model1, model2,
                       model1_layers={"sequential.0", "sequential.6"},
                       model2_layers={"sequential.0", "sequential.6"},
-                      batch_size=500, contrast=1.0, n_samples=5000,
-                      n_repeats=3, use_ig=True, verbose=True):
+                      stim=None, response1=None, response2=None,
+                      batch_size=500, contrast=1.0,
+                      n_samples=5000, n_repeats=3, use_ig=True,
+                      verbose=True):
     """
     Takes two models and correlates the activations at each layer.
     Returns a dict of correlation marices.
@@ -455,6 +478,9 @@ def model2model_cor_mtxs(model1, model2,
         the layers of model 1 to be correlated
     model2_layers - set of strs
         the layers of model 2 to be correlated
+    stim - ndarray (T,H,W) or None
+        optional argument to specify the stimulus. If none, stimulus
+        defaults to whitenoise
     batch_size: int
         size of batches when performing computations on GPU
     contrast: float
@@ -472,16 +498,16 @@ def model2model_cor_mtxs(model1, model2,
 
     returns:
         intr_cors - dict
-                - keys: str
+                keys: str
                     model1 layer names
-                    val: dict
-                        - keys: str
-                            model2 layer names
-                            val: ndarray (M1, M2)
-                                where M1 is the flattened activations
-                                in model1 at that layer and M2 are the
-                                flattened activations for model2 at
-                                that layer
+                vals: dict
+                    keys: str
+                        model2 layer names
+                    vals: ndarray (M1, M2)
+                        where M1 is the flattened activations
+                        in model1 at that layer and M2 are the
+                        flattened activations for model2 at
+                        that layer
     """
     model1_cuda = next(model1.parameters()).is_cuda
     model2_cuda = next(model2.parameters()).is_cuda
@@ -489,27 +515,28 @@ def model2model_cor_mtxs(model1, model2,
 
     nx = min(model1.img_shape[1], model2.img_shape[1])
 
-    whitenoise = tdrstim.repeat_white(n_samples, nx=nx,
+    if stim is None and (response1 is None or response2 is None):
+        stim = tdrstim.repeat_white(n_samples, nx=nx,
                                      contrast=contrast,
                                      n_repeats=n_repeats,
                                      rand_spat=True)
-    filt_depth = max(model1.img_shape[0], model2.img_shape[0])
 
     # Collect responses
-    model1.to(DEVICE)
-    response1 = model2model_get_response_helper(model1, whitenoise,
-                                        use_ig=use_ig,
-                                        model_layers=model1_layers,
-                                        batch_size=batch_size,
-                                        verbose=verbose)
-    model1.cpu()
-    model2.to(DEVICE)
-    response2 = model2model_get_response_helper(model2, whitenoise,
-                                        use_ig=use_ig,
-                                        model_layers=model2_layers,
-                                        batch_size=batch_size,
-                                        verbose=verbose)
-    model2.cpu()
+    with torch.no_grad():
+        model1.to(DEVICE)
+        if response1 is None:
+            response1 = get_response(model1, stim, use_ig=use_ig,
+                                            model_layers=model1_layers,
+                                            batch_size=batch_size,
+                                            verbose=verbose)
+        model1.cpu()
+        model2.to(DEVICE)
+        if response2 is None:
+            response2 = get_response(model2, stim, use_ig=use_ig,
+                                            model_layers=model2_layers,
+                                            batch_size=batch_size,
+                                            verbose=verbose)
+        model2.cpu()
 
     intr_cors = {m1_layer:{m2_layer:None for m2_layer in\
                         model2_layers} for m1_layer in model1_layers}

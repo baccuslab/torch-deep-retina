@@ -5,11 +5,157 @@ import torch.nn as nn
 import json
 import os
 import torchdeepretina.stimuli as tdrstim
-from torchdeepretina.models import LinearStackedConv2d
+from torchdeepretina.custom_modules import LinearStackedConv2d,\
+                                            GrabUnits
 from tqdm import tqdm
 import pyret.filtertools as ft
+import time
+from sklearn.utils.extmath import randomized_svd
+import subprocess
 
 DEVICE = torch.device("cuda:0")
+
+def partial_whiten(X, alpha, eigval_tol=1e-7):
+    """
+    Return regularized whitening transform for a matrix X.
+
+    Parameters
+    ----------
+    X : ndarray
+        Matrix with shape `(m, n)` holding `m` observations
+        in `n`-dimensional feature space. Columns of `X` are
+        expected to be mean-centered so that `X.T @ X` is
+        the covariance matrix.
+
+    alpha : float
+        Regularization parameter, `0 <= alpha <= 1`.
+
+    eigval_tol : float
+        Eigenvalues of covariance matrix are clipped to this
+        minimum value.
+
+    Returns
+    -------
+    X_whitened : ndarray
+        Transformed data matrix.
+
+    Zx : ndarray
+        Matrix implementing the whitening transformation.
+        `X_whitened = X @ Zx`.
+    """
+
+    XtX = (1 - alpha) * (X.T @ X)
+    XtX[np.diag_indices_from(XtX)] += alpha
+
+    w, v = np.linalg.eigh(XtX)
+    w[w < eigval_tol] = eigval_tol  # clip minimum eigenvalue
+
+    # Matrix holding the whitening transformation.
+    Zx = np.linalg.multi_dot((v, np.diag(1 / np.sqrt(w)), v.T))
+
+    # Returned (partially) whitened data and whitening matrix.
+    return X @ Zx, Zx
+
+
+class RidgeCCA:
+    def __init__(
+            self, n_components=2, alpha=0.0,
+            center_data=True, svd_args=dict()):
+        """
+        n_components: int, (default 2).
+            Number of components to keep.
+
+        alpha : float within the interval [0, 1], (default 0.0)
+            Strength of regularization on a scale between zero
+            (unregularized CCA) and one (Partial Least Squares).
+
+        svd_args : dict
+            Specifies parameters for truncated SVD solver
+            (see sklearn.decomposition.TruncatedSVD).
+        """
+        self.n_components = n_components
+        self.alpha = alpha
+        self.center_data = center_data
+        self._svd_args = svd_args
+
+    def fit(self, X, Y):
+        """Fit model to data."""
+
+        # Mean-center data.
+        if self.center_data:
+            self.x_mean_ = x_mean = np.mean(X, axis=0)
+            self.y_mean_ = y_mean = np.mean(Y, axis=0)
+            self.x_std_ = x_std = np.std(X, axis=0)
+            self.y_std_ = y_std = np.std(Y, axis=0)
+            Xc = (X - x_mean[None, :])/(x_std[None,:]+1e-5)
+            Yc = (Y - y_mean[None, :])/(y_std[None,:]+1e-5)
+        else:
+            self.x_mean_ = None
+            self.y_mean_ = None
+            self.x_std_ = None
+            self.y_std_ = None
+            Xc, Yc = X, Y
+
+        # Partially whiten both datasets.
+        Xw, Zx = partial_whiten(Xc, self.alpha)
+        Yw, Zy = partial_whiten(Yc, self.alpha)
+
+        # Compute SVD of cross-covariance matrix.
+        Xw_t_Yw = Xw.T @ Yw
+        U, S, Vt = randomized_svd(
+            Xw_t_Yw, self.n_components, **self._svd_args)
+
+        # Undo the whitening transformation to obtain the transformations
+        # on X and Y.
+        self.x_weights_ = Zx @ U
+        self.y_weights_ = Zy @ Vt.T
+
+    def transform(self, X, Y):
+        """Apply the dimension reduction learned on the train data."""
+        if self.center_data:
+            Xc = (X - self.x_mean_[None, :])/(self.x_std_[None,:]+1e-5)
+            Yc = (Y - self.y_mean_[None, :])/(self.y_std_[None,:]+1e-5)
+            return (
+                Xc @ self.x_weights_,
+                Yc @ self.y_weights_
+            )
+        else:
+            return X @ self.x_weights_, Y @ self.y_weights_
+
+    def fit_transform(self, X, Y):
+        """Learn and apply the dimension reduction on the train data."""
+        self.fit(X, Y)
+        return self.transform(X, Y)
+
+    def canon_corrs(self, X, Y):
+        """Return the canonical correlation coefficients."""
+        tX, tY = self.transform(X, Y)
+        denom = np.linalg.norm(tX, axis=0) * np.linalg.norm(tY, axis=0)
+        numer = np.sum(tX * tY, axis=0)
+        return numer / denom
+
+def get_gpu_mem():
+    """
+    Taken from stack overflow post: https://stackoverflow.com/questions/49595663/find-a-gpu-with-enough-memory
+
+    Get the current gpu usage.
+
+    Returns
+    -------
+    usage: dict
+        Keys are device ids as integers.
+        Values are memory usage as integers in MB.
+    """
+    result = subprocess.check_output(
+        [
+            'nvidia-smi', '--query-gpu=memory.used',
+            '--format=csv,nounits,noheader'
+        ])
+    # Convert lines into a dictionary
+    result = result.decode('utf-8').strip().split("\n")
+    gpu_memory = [int(x.strip()) for x in result]
+    gpu_memory_map = dict(zip(range(len(gpu_memory)), gpu_memory))
+    return gpu_memory_map
 
 def try_key(dict_, key, default):
     """
@@ -85,6 +231,21 @@ def get_layer_name_sets(model, delimeters=[nn.ReLU,nn.Softplus,
     if len(layer_set) > 0:
         layer_names.append(layer_set)
     return layer_names
+
+def get_module_idx(model, modu_type):
+    """
+    Finds and returns the index of the first instance of the module
+    type. Assumes model has sequential member variable
+
+    model: torch Module
+        must contain sequential attribute
+    modu_type: torch Module class
+        the type of module being searched for
+    """
+    for i,modu in model.sequential:
+        if isinstance(modu,modu_type):
+            return i
+    return -1
 
 def get_layer_idx(model, layer, delimeters=[nn.ReLU, nn.Tanh,
                                                nn.Softplus]):
@@ -221,39 +382,46 @@ def inspect(model, X, insp_keys={}, batch_size=500, to_numpy=True,
         # do not need to calculate it.
         torch.set_grad_enabled(False)
 
-    if batch_size is None or batch_size > len(X):
-        if next(model.parameters()).is_cuda:
-            X = X.to(DEVICE)
-        preds = model(X)
-        if to_numpy:
-            layer_outs['outputs'] = preds.detach().cpu().numpy()
-        else:
-            layer_outs['outputs'] = preds.cpu()
-    else:
-        use_cuda = next(model.parameters()).is_cuda
-        batched_outs = {key:[] for key in insp_keys}
-        outputs = []
-        rnge = range(0,len(X), batch_size)
-        if verbose:
-            rnge = tqdm(rnge)
-        for batch in rnge:
-            x = X[batch:batch+batch_size]
-            if use_cuda:
-                x = x.to(DEVICE)
-            preds = model(x).cpu()
+    try:
+        if batch_size is None or batch_size > len(X):
+            if next(model.parameters()).is_cuda:
+                X = X.to(DEVICE)
+            preds = model(X)
             if to_numpy:
-                preds = preds.detach().numpy()
-            outputs.append(preds)
-            for k in layer_outs.keys():
-                batched_outs[k].append(layer_outs[k])
-        batched_outs['outputs'] = outputs
-        if to_numpy:
-            layer_outs = {k:np.concatenate(v,axis=0) for k,v in\
-                                           batched_outs.items()}
+                layer_outs['outputs'] = preds.detach().cpu().numpy()
+            else:
+                layer_outs['outputs'] = preds.cpu()
         else:
-            layer_outs = {k:torch.cat(v,dim=0) for k,v in\
-                                     batched_outs.items()}
-    
+            use_cuda = next(model.parameters()).is_cuda
+            batched_outs = {key:[] for key in insp_keys}
+            outputs = []
+            rnge = range(0,len(X), batch_size)
+            if verbose:
+                rnge = tqdm(rnge)
+            for batch in rnge:
+                x = X[batch:batch+batch_size]
+                if use_cuda:
+                    x = x.to(DEVICE)
+                preds = model(x).cpu()
+                if to_numpy:
+                    preds = preds.detach().numpy()
+                outputs.append(preds)
+                for k in layer_outs.keys():
+                    batched_outs[k].append(layer_outs[k])
+                    layer_outs[k] = None
+            batched_outs['outputs'] = outputs
+            if to_numpy:
+                layer_outs = {k:np.concatenate(v,axis=0) for k,v in\
+                                               batched_outs.items()}
+            else:
+                layer_outs = {k:torch.cat(v,dim=0) for k,v in\
+                                         batched_outs.items()}
+    except RuntimeError as e:
+        print("Runtime error. Check your batch size and try using",
+                "inspect with torch.no_grad() enabled")
+        raise RuntimeError(str(e))
+
+        
     # If we turned off the grad state, this will turn it back on.
     # Otherwise leaves it the same.
     torch.set_grad_enabled(prev_grad_state) 
@@ -366,8 +534,9 @@ def integrated_gradient(model, X, layer='sequential.2', gc_idx=None,
         model: PyTorch Deep Retina models
         X: Input stimuli ndarray or torch FloatTensor (T,D,H,W)
         layer: str layer name
-        gc_idx: ganglion cell of interest
-            if None, uses all cells
+        gc_idx: int or tuple of ints (chan, row, col)
+            ganglion cell of interest. if None, uses all cells. If
+            tuple, must argue chan, row, and column
         alpha_steps: int, integration steps
         batch_size: step size when performing computations on GPU
         y: torch FloatTensor or ndarray (T,N)
@@ -392,7 +561,20 @@ def integrated_gradient(model, X, layer='sequential.2', gc_idx=None,
                                   *model.shapes[layer_idx])
     gc_activs = None
     model.to(DEVICE)
-    if gc_idx is None:
+
+    # Handle convolutional Ganglion Cell output
+    prev_coord = None
+    if isinstance(gc_idx, tuple):
+        chan, row, col = gc_idx
+        idx = get_module_idx(model, GrabUnits)
+        assert idx >= 0, "not yet compatible with one-hot models"
+        grabber = model.sequential[idx]
+        prev_coord = grabber.coords[chan]
+        grabber.coords[chan,0] = row
+        grabber.coords[chan,1] = col
+        assert prev_coord != grabber.coords[chan]
+        gc_idx = chan
+    elif gc_idx is None:
         gc_idx = list(range(model.n_units))
     if batch_size is None:
         batch_size = len(X)
@@ -435,13 +617,15 @@ def integrated_gradient(model, X, layer='sequential.2', gc_idx=None,
                         else:
                             gc_activs =torch.zeros(len(X),len(gc_idx))
                     outs = response['outputs'][:,gc_idx]
-                    gc_activs[idx] = outs.detach().cpu()
+                    gc_activs[idx] = outs.data.cpu()
             prev_response={k:v.data.cpu() for k,v in response.items()}
     del response
     del grad
     if len(gc_activs.shape) == 1:
         gc_activs = gc_activs.unsqueeze(1) # Create new axis
 
+    if prev_coord is not None:
+        grabber.coords[gc_idx] = prev_coord
     # Return to previous gradient calculation state
     requires_grad(model, True)
     # return to previous grad calculation state
@@ -451,6 +635,273 @@ def integrated_gradient(model, X, layer='sequential.2', gc_idx=None,
         ndactivs = gc_activs.data.cpu().numpy()
         return ndgrad, ndactivs
     return intg_grad, gc_activs
+
+class CCA:
+    """
+    Recreated from Alex Williams' code accompanying his review on
+    model similarity metrics.
+    """
+    def __init__(self, n_components=1, eig_tol=1e-7, alpha=0.0):
+        """
+        n_components: int greater than 0
+            number of decomposition components to use
+        eig_tol: float
+            clipping value denoting the lowest desired eigen value
+        alpha: float
+            regularization parameter
+        """
+        self.n_components = n_components
+        assert n_components > 0
+        self.eig_tol = eig_tol
+        self.alpha = alpha
+
+    def get_H(self, M):
+        """
+        Returns the intermediary H matrix for fitting the CCA weight
+        matrices.
+
+        M: FloatTensor (T,N)
+            a centered data matrix. T is the dimension to be averaged
+            over.
+
+        Returns:
+            H: FloatTensor (N,N)
+        """
+        MtM = (1-self.alpha)*torch.einsum("tn,tm->nm",M, M)
+        rng = range(len(MtM))
+        MtM[rng,rng] += self.alpha
+        M = M.cpu()
+        vals, vecs = torch.symeig(MtM, eigenvectors=True)
+        vals[vals<self.eig_tol] = self.eig_tol
+        H = torch.einsum("xt,t->xt", vecs, 1/vals.sqrt())
+        H = torch.einsum("xt,wt->xw", H, vecs)
+        return H
+
+    def get_Ws(self, X_c, Y_c, Hx, Hy, verbose=True):
+        """
+        Constructs the weight matrices from the data and the 
+        intermediary H matrices.
+
+        X_c: FloatTensor (T,N)
+            a centered data matrix. T is the dimension to be averaged
+            over.
+        Y_c: FloatTensor (T,M)
+            a centered data matrix. T is the dimension to be averaged
+            over.
+        Hx: FloatTensor (N,N)
+            the matrix returned from `get_H`
+        Hy: FloatTensor (M,M)
+            the matrix returned from `get_H`
+        """
+        Zx = torch.einsum("nt,tm->mn", X_c, Hx)
+        Zy = torch.einsum("nt,tm->nm", Y_c, Hy)
+        svd_mtx = torch.einsum("mn,nl->ml", Zx,Zy)
+        del Zx
+        del Zy
+        if verbose:
+            print("Performing SVD")
+        u,s,v = randomized_svd(svd_mtx.cpu().numpy(),
+                                    self.n_components)
+        if self.Hx.is_cuda:
+            u = torch.FloatTensor(u).to(DEVICE)
+            v = torch.FloatTensor(v).to(DEVICE)
+            Wx = Hx.mm(u)
+            Wy = Hy.mm(v.T)
+        else:
+            Wx = Hx @ u
+            Wy = Hy @ v.T
+        return Wx,Wy
+
+    def fit(self, X, Y, batch_size=1000, cuda=True, verbose=True):
+        """
+        Computes the canonical correlation weight matrices for X and
+        Y.
+
+        X: torch FloatTensor or ndarray (T,N)
+            T should be the dimension to be averaged over. Likely this
+            is the temporal dimension. N is the number of features in
+            the matrix. Likely this is the number of neurons.
+        Y: torch FloatTensor or ndarray (T,N)
+            T should be the dimension to be averaged over. Likely
+            this is the temporal dimension. N is the number of
+            features in the matrix. Likely this is the number of
+            neurons.
+        batch_size: int
+            size of batching when calculating the matrix correlation
+        cuda: bool
+            determines if gpu should be used. True uses gpu.
+        """
+        X = torch.FloatTensor(X)
+        Y = torch.FloatTensor(Y)
+        assert len(X) == len(Y)
+
+        self.xmean = X.mean(0)
+        self.ymean = Y.mean(0)
+        self.xstd = get_std(X,axis=0,mean=self.xmean)
+        self.ystd = get_std(Y,axis=0,mean=self.ymean)
+        X_c = (X-self.xmean)/(self.xstd+1e-5)
+        Y_c = (Y-self.ymean)/(self.ystd+1e-5)
+        if cuda:
+            X_c = X_c.to(DEVICE)
+        self.cuda(state=cuda)
+
+        if verbose:
+            print("Calculating Hx..")
+        self.Hx = self.get_H(X_c)
+
+        if verbose:
+            print("Calculating Hy..")
+        if cuda:
+            Y_c = Y_c.to(DEVICE)
+        self.Hy = self.get_H(Y_c)
+
+        if verbose:
+            print("Calculating Wx and Wy..")
+        self.cuda(state=cuda)
+        if cuda:
+            X_c = X_c.to(DEVICE)
+        self.Wx,self.Wy = self.get_Ws(X_c, Y_c, self.Hx, self.Hy,
+                                                 verbose=verbose)
+        self.cuda(state=cuda)
+
+    def cca_cor(self, test_X, test_Y, cuda=True):
+        X_c = (test_X-self.xmean)/(self.xstd+1e-5)
+        Y_c = (test_Y-self.ymean)/(self.ystd+1e-5)
+        if cuda:
+            X_c = X_c.to(DEVICE)
+            Y_c = Y_c.to(DEVICE)
+        self.cuda(state=cuda)
+        x = X_c.mm(self.Wx)
+        y = Y_c.mm(self.Wy)
+        numer = (x*y).sum(0)
+        denom = x.norm(dim=0)*y.norm(dim=0)
+        ccor = numer/denom
+        return ccor
+
+    def cuda(self, state=True):
+        for attr in dir(self):
+            try:
+                var = getattr(self,attr)
+                if not (var.is_cuda == state):
+                    if state:
+                        getattr(self,attr).to(DEVICE)
+                    else:
+                        getattr(self,attr).cpu()
+            except:
+                pass
+
+    def cpu(self):
+        self.cuda(state=False)
+
+def np_cca(X,Y,test_X=None,test_Y=None, n_components=1, eig_tol=1e-7,
+                                            alpha=0.0,
+                                            verbose=True):
+    """
+    Computes the canonical correlation between two matrices. This is
+    a measure of similarity that is invariant to linear differences
+    between the rows of x and y.
+
+    X: ndarray (T,N)
+        T should be the dimension to be averaged over. Likely this is
+        the temporal dimension. N is the number of features in the
+        matrix. Likely this is the number of neurons.
+    Y: ndarray (T,N)
+        T should be the dimension to be averaged over. Likely this is
+        the temporal dimension. N is the number of features in the
+        matrix. Likely this is the number of neurons.
+    test_X: ndarray (T,N)
+        If None, 25% the X matrix is partitioned into a test set in
+        the T dimension
+    test_Y: ndarray (T,N)
+        If None, 25% the Y matrix is partitioned into a test set in
+        the T dimension
+    n_components: int greater than 0
+        number of decomposition components to use
+    eig_tol: float
+        clipping value denoting the lowest desired eigen value
+    alpha: float
+        regularization parameter
+    """
+    if test_X is None or test_Y is None:
+        if verbose:
+            print("Splitting data")
+        quart = int(len(X)*.25)
+        perm = np.random.permutation(len(X)).astype(np.int)
+        test_X = X[perm[-quart:]]
+        X = X[perm[:-quart]]
+        test_Y = Y[perm[-quart:]]
+        Y = Y[perm[:-quart]]
+    assert len(X) == len(Y) and len(test_X) == len(test_Y)
+
+    cca_obj = RidgeCCA(n_components=n_components, alpha=alpha)
+    if verbose:
+        print("Beggining fit")
+    cca_obj.fit(X, Y)
+    if verbose:
+        print("Calculating correlation")
+    ccor = cca_obj.canon_corrs(test_X, test_Y)
+    return ccor
+
+def cca(X,Y,test_X=None,test_Y=None, n_components=1, eig_tol=1e-7,
+                                            alpha=0.0,
+                                            cuda=True,
+                                            to_numpy=True,
+                                            verbose=True):
+    """
+    Computes the canonical correlation between two matrices. This is
+    a measure of similarity that is invariant to linear differences
+    between the rows of x and y.
+
+    X: torch FloatTensor or ndarray (T,N)
+        T should be the dimension to be averaged over. Likely this is
+        the temporal dimension. N is the number of features in the
+        matrix. Likely this is the number of neurons.
+    Y: torch FloatTensor or ndarray (T,N)
+        T should be the dimension to be averaged over. Likely this is
+        the temporal dimension. N is the number of features in the
+        matrix. Likely this is the number of neurons.
+    test_X: torch FloatTensor or ndarray (T,N)
+        If None, 25% the X matrix is partitioned into a test set in
+        the T dimension
+    test_Y: torch FloatTensor or ndarray (T,N)
+        If None, 25% the Y matrix is partitioned into a test set in
+        the T dimension
+    n_components: int greater than 0
+        number of decomposition components to use
+    eig_tol: float
+        clipping value denoting the lowest desired eigen value
+    alpha: float
+        regularization parameter
+    cuda: bool
+        determines if gpu should be used. True uses gpu.
+    to_numpy: bool
+        if true, cca correlation is returned as ndarray
+    """
+    X = torch.FloatTensor(X).cpu()
+    Y = torch.FloatTensor(Y).cpu()
+    if test_X is None or test_Y is None:
+        if verbose:
+            print("Splitting data")
+        quart = int(len(X)*.25)
+        perm = torch.randperm(len(X)).long()
+        test_X = X[perm[-quart:]]
+        X = X[perm[:-quart]]
+        test_Y = Y[perm[-quart:]]
+        Y = Y[perm[:-quart]]
+    assert len(X) == len(Y) and len(test_X) == len(test_Y)
+
+    cca_obj = CCA(n_components=n_components, eig_tol=eig_tol,
+                                                alpha=alpha)
+    if verbose:
+        print("Beggining fit")
+    cca_obj.fit(X, Y, cuda=cuda, verbose=verbose)
+    if verbose:
+        print("Calculating correlation")
+    ccor = cca_obj.cca_cor(test_X, test_Y, cuda=cuda)
+    if to_numpy:
+        return ccor.cpu().numpy()
+    del cca_obj
+    return ccor
 
 def compute_sta(model, layer, cell_index, layer_shape=None,
                                             batch_size=500,
@@ -915,7 +1366,6 @@ def get_grad(model, X, cell_idxs=None):
     if back_to_cpu:
         model.detach().cpu()
     return grad
-
 
 def conv_backwards(z, filt, xshape):
     """
