@@ -838,6 +838,7 @@ def get_optim_objs(hyps, model, centers=None):
         scheduler = globals()[hyps['scheduler']](optimizer, milestones,
                                         gamma=0.1)
     else:
+        hyps['scheduler'] = "NullScheduler"
         scheduler = NullScheduler()
 
     return optimizer, scheduler, loss_fn
