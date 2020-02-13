@@ -72,6 +72,8 @@ def train(cfg):
         
         print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}'.format(epoch, epoch_loss, pearson))
         
+        update_eval_history(cfg, epoch, pearson, epoch_loss)
+        
         if epoch%cfg.save_intvl == 0:
 
             save_path = os.path.join(cfg.save_path, cfg.exp_id, 
