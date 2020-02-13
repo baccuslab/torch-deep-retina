@@ -111,12 +111,21 @@ class GrabUnits(nn.Module):
                                             (ksizes[2]//2-1) + 1
         coords = []
         for center in centers:
-            row = min(max(0,center[0]-half_effective_ksize),
-                        img_shape[1]-2*(half_effective_ksize-1))
-            col = min(max(0,center[1]-half_effective_ksize),
-                        img_shape[2]-2*(half_effective_ksize-1))
+            row,col = self.center_to_coord(center,
+                                           half_effective_ksize,
+                                           img_shape)
             coords.append([row,col])
         return torch.LongTensor(coords)
+
+    def center_to_coord(self, center,half_effective_ksize,img_shape):
+        """
+        singular version of centers_to_coords
+        """
+        row = min(max(0,center[0]-half_effective_ksize),
+                    img_shape[1]-2*(half_effective_ksize-1))
+        col = min(max(0,center[1]-half_effective_ksize),
+                    img_shape[2]-2*(half_effective_ksize-1))
+        return [row,col]
 
     def forward(self, x):
         units = x[...,:,self.chans,self.coords[:,0],self.coords[:,1]]
