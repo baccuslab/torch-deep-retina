@@ -500,6 +500,7 @@ def get_model2model_cca(model1, model2, model1_layers=[],
     resp2 = []
     for key in keys:
         response1[key] =response1[key].reshape(len(response1[key]),-1)
+        response1[key] = torch.FloatTensor(response1[key])
         response2[key] =response2[key].reshape(len(response2[key]),-1)
         resp = torch.FloatTensor(response2[key])
         resp2.append(resp)

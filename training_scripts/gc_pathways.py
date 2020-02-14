@@ -7,6 +7,8 @@ import pandas as pd
 
 
 if __name__=="__main__":
+    n_samples = 10000
+    sim_type = 'cca'
     model_paths = sys.argv[1:]
     same_model = False
     if len(model_paths) == 1:
@@ -16,10 +18,8 @@ if __name__=="__main__":
     for mp in model_paths:
         chkpt = tdr.io.load_checkpoint(mp)
         save_file += chkpt['exp_name']+str(chkpt['exp_num'])+"_"
-    save_file += "gcpathsim.csv"
+    save_file += sim_type+"gcpathsim.csv"
 
-    n_samples = 5000
-    sim_type = 'dot'
     model1 = tdr.io.load_model(model_paths[0])
     model1.eval()
     model2 = tdr.io.load_model(model_paths[1])
