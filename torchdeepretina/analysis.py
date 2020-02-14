@@ -394,9 +394,9 @@ def get_model2model_cors(model1, model2, model1_layers=[],
     model1.eval()
     model2.eval()
     if len(model1_layers) == 0:
-        model1_layers = tdrutils.get_conv_layer_names(model1)[:2]
+        model1_layers = tdrutils.get_conv_layer_names(model1)[:-1]
     if len(model2_layers) == 0:
-        model2_layers = tdrutils.get_conv_layer_names(model2)[:2]
+        model2_layers = tdrutils.get_conv_layer_names(model2)[:-1]
     if verbose:
         print("Correlating Model Layers")
         print("Model1:", model1_layers)
@@ -472,7 +472,8 @@ def get_model2model_cca(model1, model2, model1_layers=[],
         model2.cpu()
         if response1 is None:
             if len(model1_layers) == 0:
-                model1_layers=tdrutils.get_conv_layer_names(model1)[:2]
+                model1_layers=tdrutils.get_conv_layer_names(model1)
+                model1_layers = model1_layers[:-1]
             response1 = tdrintr.get_response(model1, stim,
                                             model1_layers,
                                             batch_size=1000,
@@ -484,7 +485,8 @@ def get_model2model_cca(model1, model2, model1_layers=[],
         model1 = model1.cpu()
         if response2 is None:
             if len(model2_layers) == 0:
-                model2_layers=tdrutils.get_conv_layer_names(model2)[:2]
+                model2_layers=tdrutils.get_conv_layer_names(model2)
+                model2_layers = model2_layers[:-1]
             response2 = tdrintr.get_response(model2, stim,
                                             model2_layers,
                                             batch_size=1000,
@@ -902,6 +904,18 @@ def similarity_pipeline(model_paths, n_samples=20000,
                                             'train', history=0)
     stim = data.X[:n_samples]
     for i in range(len(model_paths)):
+        # Check if model has already been compared to all other models
+        idx = (main_df['model1']==model_paths[i])
+        prev_comps = set(main_df.loc[idx,'model2'])
+        missing_comp = False
+        for path in model_paths:
+            if path != model_paths[i] and path not in prev_comps:
+                missing_comp = True
+                break
+        if not missing_comp:
+            print("Skipping", model_paths[i],
+                    "due to previous records")
+            continue
         if verbose:
             print("Beginning model:", model_paths[i],"| {}/{}".format(
                                                   i,len(model_paths)))
@@ -911,7 +925,7 @@ def similarity_pipeline(model_paths, n_samples=20000,
         model1 = tdrio.load_model(model_paths[i])
         model1.eval()
         model1.to(DEVICE)
-        model1_layers = tdrutils.get_conv_layer_names(model1)[:2]
+        model1_layers = tdrutils.get_conv_layer_names(model1)[:-1]
         if verbose:
             print("Computing Responses")
         act_resp1, ig_resp1 = get_resps(model1, stim, model1_layers,
@@ -935,7 +949,7 @@ def similarity_pipeline(model_paths, n_samples=20000,
             model2 = tdrio.load_model(model_paths[j])
             model2.eval()
             model2.to(DEVICE)
-            model2_layers = tdrutils.get_conv_layer_names(model2)[:2]
+            model2_layers = tdrutils.get_conv_layer_names(model2)[:-1]
             if verbose:
                 print("Computing Responses")
             with torch.no_grad():
@@ -1043,7 +1057,109 @@ def similarity_pipeline(model_paths, n_samples=20000,
             s = ["gpu{}: {}".format(k,v) for k,v in gpu_mem.items()]
             s = "\n".join(s)
             print(s)
-    return pd.DataFrame(table)
+    return main_df
 
+def pathway_similarities(model1, model2, stim=None, layers=[],
+                                                m1_chans=[],
+                                                m2_chans=[],
+                                                batch_size=500,
+                                                n_samples=10000,
+                                                sim_type="dot",
+                                                same_model=False,
+                                                save_file=None):
+    """
+    Calcs the pairwise similarity of the integrated gradient pathway
+    between each channel of the output layer (each channel is compared
+    once to each other channel). Cells are sampled from each channel
+    at different locations for comparisons. One cell is held in a
+    fixed spatial location while the other cell is sampled from a
+    grid created in the window centered around the first cell with
+    the specified striding.
+
+    model: torch Module
+    stim: ndarray or FloatTensor (T,C,H,W) or (T,H,W)
+        optional stimulus argument. if None, whitenoise is used.
+    layers: list of str
+        optional argument specifying the model layers of interest.
+        if None, defaults to all intermediary layers.
+    channels: list of int
+        the output channels of interest. each pairwise channel
+        combination is compared including comparison with itself as a
+        control. thus there are N choose 2 plus N comparisons
+        where N is the number of argued channels.
+    n_samples: int
+        the number of samples to be used for the stimulus. Only
+        applies if stim is None
+    sim_type: str
+        denotes the similarity metric to be used. available options
+        are 'maximum', 'one2one', 'cca', 'np_cca', 'dot'
+
+    Returns:
+        pd DataFrame
+            sim_type: str
+            cell1: int
+            row1: int
+            col1: int
+            cell2: int
+            row2: int
+            col2: int
+            cor: float
+
+    """
+    table = {
+        "sim_type": [],
+        "cell1": [],
+        "row1": [],
+        "col1": [],
+        "cell2": [],
+        "row2": [],
+        "col2": [],
+        "cor": [],
+        "gc_cor": []
+    }
+    if save_file is not None and os.path.exists(save_file):
+        main_df = pd.read_csv(save_file, sep="!")
+    else:
+        main_df = pd.DataFrame(table)
+    if m1_chans is None or len(m1_chans)==0:
+        m1_chans = list(range(model1.n_units))
+    if m2_chans is None or len(m2_chans)==0:
+        m2_chans = list(range(model2.n_units))
+
+    for i,cell1 in enumerate(m1_chans):
+        if same_model: m2_chans = m1_chans[i:]
+        sim, gc_cors = tdrintr.compare_cell_pathways(model1, model2,
+                                            stim=stim,
+                                            layers=layers,
+                                            cell1=cell1,
+                                            comp_cells=m2_chans,
+                                            batch_size=batch_size,
+                                            n_samples=n_samples,
+                                            sim_type=sim_type)
+        for cell2 in sim.keys():
+            gc_cor = gc_cors[cell2]
+            for coords1 in sim[cell2].keys():
+                row1,col1 = coords1
+                for coords2,cor in sim[cell2][coords1].items():
+                    row2,col2 = coords2
+                    table["sim_type"].append(sim_type)
+                    table["cell1"].append(cell1)
+                    table["row1"].append(row1)
+                    table["col1"].append(col1)
+                    table["cell2"].append(cell2)
+                    table["row2"].append(row2)
+                    table["col2"].append(col2)
+                    table["cor"].append(cor)
+                    table["gc_cor"].append(gc_cor)
+                    if isinstance(save_file, str):
+                        df = pd.DataFrame(table)
+                        main_df = main_df.append(df, sort=True)
+                        main_df.to_csv(save_file, sep="!",
+                                            header=True, index=False)
+                        table = {k:[] for k in table.keys()}
+    if len(table['row1']) > 0:
+        df = pd.DataFrame(table)
+        main_df = main_df.append(df, sort=True)
+    return main_df
 
 
