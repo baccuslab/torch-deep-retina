@@ -31,4 +31,3 @@ if __name__=="__main__":
                                           n_samples=20000,
                                           save_file=save_name,
                                           verbose=True)
-    df.to_csv(save_name, sep="!", header=True, index=False)

@@ -415,7 +415,7 @@ class AbsBatchNorm1d(nn.Module):
         self.shift = nn.Parameter(torch.zeros(n_units).float())
 
     def forward(self, x):
-        assert len(x.shape) == 2
+        #assert len(x.shape) == 2
         self.shift.requires_grad = self.bias
         shift = self.shift
         if self.abs_bias:
@@ -1140,14 +1140,20 @@ class OneHot(nn.Module):
         self.w = nn.Parameter(tensor)
         self.prob = None
 
+    def get_prob(self):
+        """
+        Computes and returns the probability matrix from the weights.
+        """
+        positive = self.w.abs() + 1e-7 # all vals are positive (C,L)
+        # Create probabilities for each channel (C,L)
+        return torch.einsum("cl,c->cl",positive,
+                                  1/positive.sum(-1))
+
     def forward(self, x):
         """
         x: FloatTensor (B,C,H,W)
         """
-        positive = self.w.abs() + 1e-4 # all vals are positive (C,L)
-        # Create probabilities for each channel (C,L)
-        self.prob = torch.einsum("cl,c->cl",positive,
-                                  1/positive.sum(-1))
+        self.prob = self.get_prob()
         x = x.reshape(*x.shape[:2],-1)
         # Multiply by probabilities and sum accross channels
         out = torch.einsum("bcl,cl->bc",x,self.prob)

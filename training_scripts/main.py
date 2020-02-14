@@ -89,3 +89,4 @@ if __name__ == "__main__":
     dfs = analysis_pipeline(exp_folder, make_figs=True, save_dfs=True,
                             make_model_rfs=True, verbose=True)
 
+    print(exp_folder, "Training Complete")

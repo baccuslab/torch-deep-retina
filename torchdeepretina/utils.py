@@ -85,15 +85,11 @@ class RidgeCCA:
         if self.center_data:
             self.x_mean_ = x_mean = np.mean(X, axis=0)
             self.y_mean_ = y_mean = np.mean(Y, axis=0)
-            self.x_std_ = x_std = np.std(X, axis=0)
-            self.y_std_ = y_std = np.std(Y, axis=0)
-            Xc = (X - x_mean[None, :])/(x_std[None,:]+1e-5)
-            Yc = (Y - y_mean[None, :])/(y_std[None,:]+1e-5)
+            Xc = X - x_mean[None, :]
+            Yc = Y - y_mean[None, :]
         else:
             self.x_mean_ = None
             self.y_mean_ = None
-            self.x_std_ = None
-            self.y_std_ = None
             Xc, Yc = X, Y
 
         # Partially whiten both datasets.
@@ -113,8 +109,8 @@ class RidgeCCA:
     def transform(self, X, Y):
         """Apply the dimension reduction learned on the train data."""
         if self.center_data:
-            Xc = (X - self.x_mean_[None, :])/(self.x_std_[None,:]+1e-5)
-            Yc = (Y - self.y_mean_[None, :])/(self.y_std_[None,:]+1e-5)
+            Xc = X - self.x_mean_[None, :]
+            Yc = Y - self.y_mean_[None, :]
             return (
                 Xc @ self.x_weights_,
                 Yc @ self.y_weights_
@@ -187,7 +183,7 @@ def load_json(file_name):
 def get_conv_layer_names(model, conv_types=None):
     """
     Finds the layer names of convolutions in the model. Does not
-    return names of sublayers.
+    return names of sublayers. Linear layers are included by default.
 
     inputs:
         model: torch nn Module object
@@ -202,6 +198,7 @@ def get_conv_layer_names(model, conv_types=None):
         conv_types = set()
         conv_types.add(nn.Conv2d)
         conv_types.add(LinearStackedConv2d)
+        conv_types.add(nn.Linear)
     conv_names = []
     for i,(name,modu) in enumerate(model.named_modules()):
         if len(name.split(".")) == 2 and type(modu) in conv_types:
@@ -242,7 +239,7 @@ def get_module_idx(model, modu_type):
     modu_type: torch Module class
         the type of module being searched for
     """
-    for i,modu in model.sequential:
+    for i,modu in enumerate(model.sequential):
         if isinstance(modu,modu_type):
             return i
     return -1
@@ -250,19 +247,23 @@ def get_module_idx(model, modu_type):
 def get_layer_idx(model, layer, delimeters=[nn.ReLU, nn.Tanh,
                                                nn.Softplus]):
     """
-    Finds the layer index of the layer name. Returns -1 if the layer
-    does not exist in the argued model.
+    Finds the index of the layer with respect to the number of layers
+    in the model. Layers are denoted by the delimeters. Layers are by
+    default denoted by nonlinearities. Function returns -1 if the
+    arged layer does not exist in the argued model.
 
     model: torch nn Module object
     layer: str
-        name of the layer in question
-    delimeters: list of classes 
-        used to delineate the start of a new layer
+        name of the layer (torch Module) in the model
+    delimeters: list of Module classes
+        these classes are used to delineate the start of a new layer.
     """
     layer_names = get_layer_name_sets(model, delimeters=delimeters)
     for i,lnames in enumerate(layer_names):
         if layer in lnames:
             return i
+    if layer=="outputs":
+        return i
     return -1
 
 def get_hook(layer_dict, key, to_numpy=True, to_cpu=False):
@@ -334,6 +335,7 @@ def linear_response(filt, stim, batch_size=1000, to_numpy=True):
 
 def inspect(model, X, insp_keys={}, batch_size=500, to_numpy=True,
                                                       to_cpu=True,
+                                                      no_grad=False,
                                                       verbose=False):
     """
     Get the response from the argued layers in the model as np arrays.
@@ -343,13 +345,17 @@ def inspect(model, X, insp_keys={}, batch_size=500, to_numpy=True,
     model - torch Module or torch gpu Module
     X - ndarray or FloatTensor (T,C,H,W)
     insp_keys - set of str
-        name of layers activations to collect
+        name of layers activations to collect. if empty set, only
+        the final output is returned.
     to_numpy - bool
         if true, activations will all be ndarrays. Otherwise torch
         tensors
     to_cpu - bool
         if true, torch tensors will be on the cpu.
         only effective if to_numpy is false.
+    no_grad: bool
+        if true, gradients will not be calculated. if false, has
+        no impact on function.
 
     returns: 
         layer_outs: dict of np arrays or torch cpu tensors
@@ -376,7 +382,7 @@ def inspect(model, X, insp_keys={}, batch_size=500, to_numpy=True,
     # prev_grad_state is used to ensure we do not mess with an outer
     # "with torch.no_grad():" statement
     prev_grad_state = torch.is_grad_enabled() 
-    if to_numpy:
+    if to_numpy or no_grad:
         # Turns off all gradient calculations. When returning numpy
         # arrays, the computation graph is inaccessible, as such we
         # do not need to calculate it.
@@ -562,17 +568,17 @@ def integrated_gradient(model, X, layer='sequential.2', gc_idx=None,
     gc_activs = None
     model.to(DEVICE)
 
-    # Handle convolutional Ganglion Cell output
+    # Handle convolutional Ganglion Cell output by replacing GrabUnits
+    # coordinates for desired cell
     prev_coord = None
     if isinstance(gc_idx, tuple):
         chan, row, col = gc_idx
         idx = get_module_idx(model, GrabUnits)
         assert idx >= 0, "not yet compatible with one-hot models"
         grabber = model.sequential[idx]
-        prev_coord = grabber.coords[chan]
+        prev_coord = grabber.coords[chan].clone()
         grabber.coords[chan,0] = row
         grabber.coords[chan,1] = col
-        assert prev_coord != grabber.coords[chan]
         gc_idx = chan
     elif gc_idx is None:
         gc_idx = list(range(model.n_units))
@@ -737,10 +743,8 @@ class CCA:
 
         self.xmean = X.mean(0)
         self.ymean = Y.mean(0)
-        self.xstd = get_std(X,axis=0,mean=self.xmean)
-        self.ystd = get_std(Y,axis=0,mean=self.ymean)
-        X_c = (X-self.xmean)/(self.xstd+1e-5)
-        Y_c = (Y-self.ymean)/(self.ystd+1e-5)
+        X_c = X-self.xmean
+        Y_c = Y-self.ymean
         if cuda:
             X_c = X_c.to(DEVICE)
         self.cuda(state=cuda)
@@ -765,8 +769,8 @@ class CCA:
         self.cuda(state=cuda)
 
     def cca_cor(self, test_X, test_Y, cuda=True):
-        X_c = (test_X-self.xmean)/(self.xstd+1e-5)
-        Y_c = (test_Y-self.ymean)/(self.ystd+1e-5)
+        X_c = test_X-self.xmean
+        Y_c = test_Y-self.ymean
         if cuda:
             X_c = X_c.to(DEVICE)
             Y_c = Y_c.to(DEVICE)
@@ -1016,7 +1020,7 @@ def pearsonr(x,y):
     """
     shape = None if len(x.shape) == 1 else x.shape[1:]
     assert type(x) == type(y)
-    if type(x) == type(np.array([])):
+    if isinstance(x, np.ndarray):
         sqrt = np.sqrt
     else:
         sqrt = torch.sqrt
@@ -1044,7 +1048,7 @@ def pearsonr(x,y):
         r = r.reshape(shape)
     return r
 
-def mtx_cor(X, Y, batch_size=500, to_numpy=False):
+def mtx_cor(X, Y, batch_size=500, to_numpy=False, zscore=True):
     """
     Creates a correlation matrix for X and Y using the GPU
 
@@ -1054,6 +1058,8 @@ def mtx_cor(X, Y, batch_size=500, to_numpy=False):
         batches the calculation if this is not None
     to_numpy: bool
         if true, returns matrix as ndarray
+    zscore: bool
+        if true, both X and Y are normalized over the T dimension
 
     Returns:
         cor_mtx: (C,K)
@@ -1066,12 +1072,14 @@ def mtx_cor(X, Y, batch_size=500, to_numpy=False):
     to_numpy = type(X) == type(np.array([])) or to_numpy
     X = torch.FloatTensor(X)
     Y = torch.FloatTensor(Y)
-    xmean = X.mean(0)
-    xstd = torch.sqrt(((X-xmean)**2).mean(0))
-    ymean = Y.mean(0)
-    ystd = torch.sqrt(((Y-ymean)**2).mean(0))
-    X = ((X-xmean)/(xstd+1e-5)).permute(1,0)
-    Y = (Y-ymean)/(ystd+1e-5)
+    if zscore:
+        xmean = X.mean(0)
+        xstd = torch.sqrt(((X-xmean)**2).mean(0))
+        ymean = Y.mean(0)
+        ystd = torch.sqrt(((Y-ymean)**2).mean(0))
+        X = ((X-xmean)/(xstd+1e-5))
+        Y = (Y-ymean)/(ystd+1e-5)
+    X = X.permute(1,0)
 
     with torch.no_grad():
         if batch_size is None:
@@ -1401,3 +1409,132 @@ def conv_backwards(z, filt, xshape):
                                                   fs1)
                 dx[:,:,row:row+fs2, col:col+fs1] += matmul
     return dx
+
+def one2one_recurse(idx, mtx1, mtx2, bests1, bests2):
+    """
+    Recursively finds best matches using depth first search.
+
+    idx: int
+        index of unit in mtx1
+    mtx1: ndarray (M1, M2)
+        sorted indices of correlation matrix along dim 1
+    mtx2: ndarray (M2, M1)
+        sorted indices of transposed correlation matrix along dim 1
+    bests1: dict {int: int}
+        dict of row units for mtx1 to the best available row unit in
+        mtx2
+    bests2: dict {int: int}
+        dict of row units for mtx2 to the best available row unit in
+        mtx1
+    """
+    for c1 in mtx1[idx]:
+        if c1 not in bests2:
+            for c2 in mtx2[c1]:
+                if c2 not in bests1 and c1 not in bests2:
+                    if idx == c2: # Match!!
+                        bests1[c2] = c1
+                        bests2[c1] = c2
+                        return
+                    else:
+                        one2one_recurse(c1, mtx2, mtx1, bests2,bests1)
+                        if c1 in bests2:
+                            break
+        elif idx in bests1:
+            return
+
+def best_one2one_mapping(cor_mtx):
+    """
+    Given a correlation matrix, finds the best one to one mapping
+    between the units of the rows with the columns. Note that
+    bests1 and bests2 are the same except that the keys and values
+    have been switched
+
+    cor_mtx: ndarray (N, M)
+        correlation matrix
+
+    Returns:
+        bests1: dict (int, int)
+            keys: row index (int)
+            vals: best corresponding col index (int)
+        bests1: dict (int, int)
+            keys: col index (int)
+            vals: best corresponding row index (int)
+    """
+    arg_mtx1 = np.argsort(-cor_mtx, axis=1)
+    arg_mtx2 = np.argsort(-cor_mtx, axis=0).T
+    bests1 = dict()
+    bests2 = dict()
+    for idx in range(len(arg_mtx1)):
+        if idx not in bests1:
+            one2one_recurse(idx, arg_mtx1, arg_mtx2, bests1, bests2)
+    return bests1, bests2
+
+def get_similarity(X,Y,sim_type,batch_size=None,verbose=True):
+    """
+    Calculates the similarity between the two matrices X and Y.
+
+    X: ndarray or torch FloatTensor (T, ...)
+    Y: ndarray or torch FloatTensor (T, ...)
+    sim_type: str
+        the similarity metric to use for the measurement
+        Options: 'maximum', 'one2one', 'cca', 'np_cca', 'dot'
+    batch_size: int or None
+        if batch_size is not none, calculations are broken up into
+        chunks of the batch_size
+    """
+    if verbose:
+        print("Calculating", sim_type, "similarity")
+    sim_type = sim_type.lower()
+    assert sim_type in {'maximum', 'one2one', 'cca', 'np_cca','dot'}
+    if sim_type == 'maximum' or sim_type == 'one2one':
+        cor_mtx = mtx_cor(X,Y,batch_size=batch_size,to_numpy=True)
+        if sim_type == 'one2one':
+            bests1, _ = best_one2one_mapping(cor_mtx)
+            bests = []
+            for k,v in bests1.items():
+                bests.append(cor_mtx[k,v])
+            sim = np.mean(bests)
+        else:
+            sim = cor_mtx.max(-1).mean()
+    elif sim_type == "dot":
+        X = np.asarray(X)
+        Y = np.asarray(Y)
+        X = X-X.mean()
+        Y = Y-Y.mean()
+        sim = (X*Y).mean()/(X.std()*Y.std())
+    elif sim_type == "np_cca":
+        X = np.asarray(X)
+        Y = np.asarray(Y)
+        sim = np_cca(X,Y,n_components=2,alpha=.5,verbose=verbose)
+        sim = np.mean(sim)
+    elif sim_type == "cca":
+        X = torch.FloatTensor(X)
+        Y = torch.FloatTensor(Y)
+        sim = cca(X,Y,n_components=2,alpha=.5,verbose=verbose)
+        sim = np.mean(sim)
+    return sim
+
+def flatcat(dict_, axis=-1, sortfxn=lambda x: int(x.split(".")[-1])):
+    """
+    flattens the tensors contained within the dict and concatenates
+    them along the specified dimension.
+
+    dict_: dict
+        keys: str
+            keys are sorted according to sortfxn
+        vals: tensors or ndarrays (T,...)
+    axis: int
+        concatenation axis
+    sortfxn: function
+        the keys of the dict are sorted by this function
+    """
+    keys = list(dict_.keys())
+    keys = sorted(keys,key=sortfxn)
+    arrs = [dict_[k].reshape(len(dict_[k]),-1) for k in keys]
+    if isinstance(arrs[0],np.ndarray):
+        catflat = np.concatenate(arrs,axis=axis)
+    else:
+        catflat = torch.cat(arrs,dim=axis)
+    return catflat
+
+
