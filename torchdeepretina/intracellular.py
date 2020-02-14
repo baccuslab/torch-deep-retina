@@ -280,6 +280,8 @@ def get_response(model, stim, model_layers, batch_size=500,
     else:
         stim = tdrstim.spatial_pad(stim, H=model.img_shape[1],
                                          W=model.img_shape[2])
+    prev_cuda = next(model.parameters()).is_cuda
+    model.to(DEVICE)
     if use_ig:
         response = dict()
         gc_resps = None
@@ -311,6 +313,8 @@ def get_response(model, stim, model_layers, batch_size=500,
                                                no_grad=True,
                                                to_numpy=to_numpy,
                                                verbose=verbose)
+    if not prev_cuda:
+        model.cpu()
     return response
 
 def model2model_cors(model1, model2, model1_layers=[],
@@ -974,9 +978,12 @@ def compare_cell_pathways(model1, model2, stim=None, layers=[],
                             model1.sequential[grab_idx+1:])
     else:
         m = model1.sequential[:-1]
-    gc_activs = tdrutils.inspect(m,stim, batch_size=batch_size,
+    gc_activs = tdrutils.inspect(m.to(DEVICE),stim,
+                                        batch_size=batch_size,
                                         to_numpy=True,
                                         no_grad=True)['outputs']
+    del m
+    torch.cuda.empty_cache()
     c1_resp = gc_activs[:,cell1,center[0],center[1]]
     grab_idx = tdrutils.get_module_idx(model2, GrabUnits)
     if grab_idx >= 0:
@@ -984,9 +991,11 @@ def compare_cell_pathways(model1, model2, stim=None, layers=[],
                             model2.sequential[grab_idx+1:])
     else:
         m = model2.sequential[:-1]
-    gc_activs = tdrutils.inspect(m,stim, batch_size=batch_size,
+    gc_activs = tdrutils.inspect(m.to(DEVICE),stim, batch_size=batch_size,
                                         to_numpy=True,
                                         no_grad=True)['outputs']
+    del m
+    torch.cuda.empty_cache()
     gc_shape = gc_activs.shape[-2:]
 
     if verbose:
