@@ -417,17 +417,14 @@ class Trainer:
 
             # Clean Up Train Loop
             avg_loss = epoch_loss/n_loops
-            print('Random Seed: {}'.format(hyps['seed']))
             s = 'Avg Loss: {} -- Time: {}\n -- One Hot Loss: {}'
 
             LRs = []
             for LR_val in optimizer.param_groups:
                 LRs.append(LR_val['lr'])
 
-            for lll in LRs:
-                print('\n Learning Rate {} \n'.format(lll))
-
-            stats_string += s.format(avg_loss, time.time()-starttime,one_hot_loss,LRs)
+            stats_string += s.format(avg_loss, time.time()-starttime,
+                                                    one_hot_loss,LRs)
             # Deletions for memory reduction
             del x
             del y
