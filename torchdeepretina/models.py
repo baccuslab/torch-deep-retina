@@ -30,6 +30,7 @@ class TDRModel(nn.Module):
                                                 centers=None,
                                                 bnorm_d=1,
                                                 activ_fxn='ReLU',
+                                                finalstack=False,
                                                 **kwargs):
         """
         n_units: int
@@ -76,13 +77,15 @@ class TDRModel(nn.Module):
         activ_fxn: string
             the name of the activation function to be used at the
             intermediate layers.
+        finalstack: bool
+            if true, final convolution is a LinearStackedConv2d
         """
         super().__init__()
         self.n_units = n_units
         self.chans = chans 
         self.softplus = softplus 
         self.infr_exp = inference_exp 
-        self.bias = bias 
+        self.bias = bias
         self.img_shape = img_shape 
         self.ksizes = ksizes 
         self.gc_bias = gc_bias 
@@ -96,6 +99,7 @@ class TDRModel(nn.Module):
         assert bnorm_d == 1 or bnorm_d == 2, "Only 1 and 2 dim\
                              batchnorm are currently supported"
         self.activ_fxn = activ_fxn
+        self.finalstack = finalstack
 
     def forward(self, x):
         return x
@@ -350,9 +354,14 @@ class LinearStackedBNCNN(TDRModel):
 
         ##### Final Layer
         if self.convgc:
-            modules.append(nn.Conv2d(self.chans[1],self.n_units,
+            if self.finalstack:
+                conv_type = LinearStackedConv2d
+            else:
+                conv_type = nn.Conv2d
+            conv = conv_type(self.chans[1],self.n_units,
                                      kernel_size=self.ksizes[2],
-                                     bias=self.gc_bias))
+                                     bias=self.gc_bias)
+            modules.append(conv)
             shape = update_shape(shape, self.ksizes[2])
             self.shapes.append(tuple(shape))
             modules.append(GrabUnits(self.centers, self.ksizes,
@@ -618,9 +627,14 @@ class VaryModel(TDRModel):
 
         ##### Final Layer
         if self.convgc:
-            conv = nn.Conv2d(temp_chans[-1],self.n_units,
-                             kernel_size=self.ksizes[self.n_layers-1],
-                             bias=self.gc_bias)
+            ksize = self.ksizes[self.n_layers-1]
+            if self.finalstack:
+                conv_type = LinearStackedConv2d
+            else:
+                conv_type = nn.Conv2d
+            conv = conv_type(temp_chans[-1], self.n_units,
+                                            kernel_size=ksize,
+                                            bias=self.gc_bias)
             modules.append(conv)
             shape = update_shape(shape, self.ksizes[self.n_layers-1])
             self.shapes.append(tuple(shape))
@@ -776,10 +790,16 @@ class RetinotopicModel(TDRModel):
             modules.append(getattr(nn,self.activ_fxn)())
 
         ##### Final Layer
-        modules.append(nn.Conv2d(self.chans[-1],
-        self.n_units,
-        kernel_size=self.ksizes[-1],
-        bias=self.bias))
+        if self.finalstack:
+            modules.append(LinearStackedConv2d(self.chans[-1],
+                                        self.n_units,
+                                        kernel_size=self.ksizes[-1],
+                                        bias=self.bias))
+        else:
+            modules.append(nn.Conv2d(self.chans[-1],
+                                        self.n_units,
+                                        kernel_size=self.ksizes[-1],
+                                        bias=self.bias))
 
         modules.append(AbsBatchNorm2d(self.n_units, eps=1e-3,
                                     momentum=self.bn_moment))

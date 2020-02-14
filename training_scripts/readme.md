@@ -32,6 +32,8 @@ The hyperparams.json should have a list of all the desired user setting for the 
     * the shape of the incoming stimulus to the model (do not include batchsize but do include depth of images)
 * `stackconvs`: bool
     * if true, convolutions are trained using linear convolution stacking
+* `finalstack`: bool
+    * if true, final layer is trained using linear convolution stacking. only applies if fully convolutional model.
 * `convgc`: bool
     * if true, ganglion cell layer is convolutional
 * `rand_onehot`: bool

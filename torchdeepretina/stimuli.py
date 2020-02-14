@@ -897,8 +897,9 @@ def spatial_pad(stimulus, H, W=None):
 
     stimulus - ndarray (..., H1, W1)
     H - int
+        final desired spatial height of stimulus
     W - int
-        defaults to H if None
+        final desired spatial width of stimulus. defaults to H if None
     """
     if W is None:
         W = H

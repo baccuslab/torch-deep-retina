@@ -13,6 +13,7 @@ from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 import torchdeepretina.utils as tdrutils
 import torchdeepretina.stimuli as tdrstim
 import torchdeepretina.datas as tdrdatas
+from torchdeepretina.custom_modules import GrabUnits
 import torch.nn as nn
 import pandas as pd
 
@@ -153,10 +154,12 @@ def all_correlation_maps(mem_pot, model_response,
             for i in range(resp.shape[1]):
                 r,_ = pearsonr(mem_pot.squeeze(), resp[:,i])
                 r = r if not np.isnan(r) and r > -1 else 0
-                if np.log(np.abs(resp[:,i]).mean()) < ABS_MEAN_CUTOFF or np.log(resp[:,i].std()) < STD_CUTOFF:
+                if np.log(np.abs(resp[:,i]).mean()) < ABS_MEAN_CUTOFF\
+                              or np.log(resp[:,i].std()) < STD_CUTOFF:
                     if verbose and abs(r) > 0.1:
-                        s = "Extremely small layer values, pearson of {} can "+\
-                                          "not be trusted and is being set to 0"
+                        s = "Extremely small layer values, "+\
+                                "pearson of {} can not be "+\
+                                "trusted and is being set to 0"
                         print(s.format(r))
                     r = 0
                 cors.append(r)
@@ -207,50 +210,6 @@ def max_correlation(mem_pot, model_layer, abs_val=False, verbose=False):
         cor_maps = [np.absolute(m) for m in cor_maps]
     return np.max([np.max(m) for m in cor_maps])
 
-def argmax_correlation_recurse_helper(mem_pot, model_layer, shape, idx, abs_val=False,
-                                                                       verbose=False):
-    """
-    Recursively searches model_layer units to find the unit with the best pearsonr.
-
-    mem_pot: membrane potential ndarray (N,)
-    model_layer: ndarray (N,C) or (N,C,H,W)
-    shape: list
-    idx: int
-
-    Returns:
-        best_idx: tuple (chan, row, col)
-            most correlated idx
-    """
-    if len(shape) == 0: # base case
-        layer = model_layer[:,idx[0]]
-        # Does nothing if model_layer was originally (time, celltype) dims
-        # Otherwise sequentially widdles layer down to 1 dimension
-        for i in idx[1:]: 
-            # Sequentially selects dims of the model resulting in layer[:,idx[1],idx[2]...]
-            layer = layer[:,i] 
-        r, _ = pearsonr(mem_pot, layer)
-        if abs_val:
-            r = np.absolute(r)
-        if np.isnan(r) or np.isinf(r) or r <= -1: r = 0
-        if np.log(np.abs(layer).mean()) < ABS_MEAN_CUTOFF or\
-                                        np.log(layer.std()) < STD_CUTOFF:
-            if verbose and abs(r) > 0.1:
-                s = "Extremely small layer values, pearson of {} can not be"+\
-                                               "trusted and is being set to 0"
-                print(s.format(r))
-            r = 0
-        return r, idx
-    else:
-        max_r = -1
-        best_idx = None
-        for i in range(shape[0]):
-            args = (mem_pot, model_layer, shape[1:], (*idx, i), abs_val, verbose)
-            r, local_idx = argmax_correlation_recurse_helper(*args)
-            if not np.isnan(r) and r > max_r:
-                max_r = r
-                best_idx = local_idx
-        return max_r, best_idx
-
 def argmax_correlation(mem_pot, model_layer, ret_max_cor=False,
                                    abs_val=False, verbos=False):
     '''
@@ -279,7 +238,9 @@ def argmax_correlation(mem_pot, model_layer, ret_max_cor=False,
 
 def get_response(model, stim, model_layers, batch_size=500,
                                               use_ig=False,
+                                              cell_idx=None,
                                               to_numpy=False,
+                                              no_grad=True,
                                               verbose=False):
     """
     Helper function to dry up code in model2model functions.
@@ -287,10 +248,18 @@ def get_response(model, stim, model_layers, batch_size=500,
     See model2model functions for better descriptions of variables.
 
     model: torch nn Module
-    stim: ndarray (T,H,W)
+    stim: ndarray (T,H,W) or (T,C,H,W)
     model_layers: set of str
+        model activation/ig layers to be collected
     use_ig: bool
         indicates if integrated gradient should be used
+    cell_idx: int or tuple of ints (chan, row, col)
+        ganglion cell(s) of interest. if None, uses all cells. If
+        tuple, must argue chan, row, and column
+    to_numpy: bool
+        if true, all responses are converted to ndarrays
+    no_grad: bool
+        if true, no gradients are calculated. silent otherwise.
 
     Returns:
         response: dict
@@ -304,8 +273,13 @@ def get_response(model, stim, model_layers, batch_size=500,
             print("Collecting model integrated gradient")
         else:
             print("Collecting model response")
-    stim = tdrstim.spatial_pad(stim, model.img_shape[1])
-    stim = tdrstim.rolling_window(stim, model.img_shape[0])
+    if len(stim.shape) == 3:
+        stim = tdrstim.spatial_pad(stim, H=model.img_shape[1],
+                                         W=model.img_shape[2])
+        stim = tdrstim.rolling_window(stim, model.img_shape[0])
+    else:
+        stim = tdrstim.spatial_pad(stim, H=model.img_shape[1],
+                                         W=model.img_shape[2])
     if use_ig:
         response = dict()
         gc_resps = None
@@ -316,6 +290,7 @@ def get_response(model, stim, model_layers, batch_size=500,
                                                 stim,
                                                 batch_size=batch_size,
                                                 layer=layer,
+                                                gc_idx=cell_idx,
                                                 to_numpy=to_numpy,
                                                 verbose=verbose)
             response[layer] = intg_grad
@@ -324,8 +299,8 @@ def get_response(model, stim, model_layers, batch_size=500,
                 bsize = batch_size
                 temp = tdrutils.inspect(model, stim, batch_size=bsize,
                                                     insp_keys={},
-                                                    to_cpu=True,
                                                     to_numpy=to_numpy,
+                                                    no_grad=no_grad,
                                                     verbose=verbose)
                 gc_resps = temp['outputs']
             response['outputs'] = gc_resps
@@ -333,6 +308,7 @@ def get_response(model, stim, model_layers, batch_size=500,
         response = tdrutils.inspect(model,stim,batch_size=batch_size,
                                                insp_keys=model_layers,
                                                to_cpu=True,
+                                               no_grad=True,
                                                to_numpy=to_numpy,
                                                verbose=verbose)
     return response
@@ -556,65 +532,6 @@ def model2model_cor_mtxs(model1, model2,
         model2.to(DEVICE)
     return intr_cors
 
-def one2one_recurse(idx, mtx1, mtx2, bests1, bests2):
-    """
-    Recursively finds best matches using depth first search.
-
-    idx: int
-        index of unit in mtx1
-    mtx1: ndarray (M1, M2)
-        sorted indices of correlation matrix along dim 1
-    mtx2: ndarray (M2, M1)
-        sorted indices of transposed correlation matrix along dim 1
-    bests1: dict {int: int}
-        dict of row units for mtx1 to the best available row unit in
-        mtx2
-    bests2: dict {int: int}
-        dict of row units for mtx2 to the best available row unit in
-        mtx1
-    """
-    for c1 in mtx1[idx]:
-        if c1 not in bests2:
-            for c2 in mtx2[c1]:
-                if c2 not in bests1 and c1 not in bests2:
-                    if idx == c2: # Match!!
-                        bests1[c2] = c1
-                        bests2[c1] = c2
-                        return
-                    else:
-                        one2one_recurse(c1, mtx2, mtx1, bests2,bests1)
-                        if c1 in bests2:
-                            break
-        elif idx in bests1:
-            return
-
-def best_one2one_mapping(cor_mtx):
-    """
-    Given a correlation matrix, finds the best one to one mapping
-    between the units of the rows with the columns. Note that
-    bests1 and bests2 are the same except that the keys and values
-    have been switched
-
-    cor_mtx: ndarray (N, M)
-        correlation matrix
-
-    Returns:
-        bests1: dict (int, int)
-            keys: row index (int)
-            vals: best corresponding col index (int)
-        bests1: dict (int, int)
-            keys: col index (int)
-            vals: best corresponding row index (int)
-    """
-    arg_mtx1 = np.argsort(-cor_mtx, axis=1)
-    arg_mtx2 = np.argsort(-cor_mtx, axis=0).T
-    bests1 = dict()
-    bests2 = dict()
-    for idx in range(len(arg_mtx1)):
-        if idx not in bests1:
-            one2one_recurse(idx, arg_mtx1, arg_mtx2, bests1, bests2)
-    return bests1, bests2
-
 def model2model_one2one_cors(model1, model2,
                        model1_layers={"sequential.0", "sequential.6"},
                        model2_layers={"sequential.0", "sequential.6"},
@@ -646,20 +563,6 @@ def model2model_one2one_cors(model1, model2,
         if true, uses integrated gradient rather than activations for
         model correlations. if the specified layer is outputs, then
         use_ig is ignored
-
-    Returns:
-        intr_df: pandas DataFrame
-            - cell_file: string
-            - cell_idx: int
-            - stim_type: string
-            - cell_type: string
-            - cor: float
-            - layer: string
-            - chan: int
-            - row: int
-            - col: int
-            - xshift: int
-            - yshift: int
 
     This is ultimately a recursive algorithm. 
 
@@ -697,7 +600,7 @@ def model2model_one2one_cors(model1, model2,
         cor_mtx.append(mtx)
     cor_mtx = np.concatenate(cor_mtx, axis=0) # (N_m1units,N_m2units)
 
-    bests1, bests2 = best_one2one_mapping(cor_mtx)
+    bests1, bests2 = tdrutils.best_one2one_mapping(cor_mtx)
     return cor_mtx, bests1, bests2
 
 def get_shifts(row_steps=0, col_steps=0, n_row=50, n_col=50,
@@ -999,4 +902,128 @@ def get_cor_generalization(model, stim_dict, mem_pot_dict,
                                 table['row'].append(row)
                                 table['col'].append(col)
     return table
+
+def get_stim_attr(model, stim, cell_idx=None):
+    """
+    Computes the attribution of each pixel to the final output.
+    """
+    raise NotImplementedError
+
+def compare_cell_pathways(model1, model2, stim=None, layers=[],
+                                                 cell1=0,
+                                                 comp_cells=[],
+                                                 batch_size=500,
+                                                 n_samples=10000,
+                                                 sim_type="maximum",
+                                                 verbose=True):
+    """
+    Calcs the pairwise similarity of the integrated gradient pathway
+    between each channel of the output layer (each channel is compared
+    once to each other channel). Cells are sampled from each channel
+    at different locations for comparisons. One cell is held in a
+    fixed spatial location while the other cell is sampled from a
+    grid created in the window centered around the first cell with
+    the specified striding.
+
+    model: torch Module
+    stim: ndarray or FloatTensor (T,C,H,W) or (T,H,W)
+        optional stimulus argument. if None, whitenoise is used.
+    layers: list of str
+        optional argument specifying the model layers of interest.
+        if None, defaults to all intermediary layers.
+    cell1: int
+        the first output channel of interest.
+    comp_cells: list of ints
+        a list of the cells to be compared with cell1
+    n_samples: int
+        the number of samples to be used for the stimulus. Only
+        applies if stim is None
+    sim_type: str
+        denotes the similarity metric to be used. available options
+        are 'maximum', 'one2one', 'cca', 'np_cca', 'dot'
+
+    Returns:
+        similarities: dict of dicts
+            keys: int
+                the cell that was compared to cell1
+            vals: dict
+                keys: tuple of ints
+                    the row and col of the first channel
+                vals: dict
+                    keys: tuple of ints
+                        the row and col of the second channel
+                    vals: float
+                        the measured similarity between their integrated
+                        gradients
+    """
+    if layers is None or len(layers) == 0:
+        layers = tdrutils.get_conv_layer_names(model1)[:-1]
+    if stim is None:
+        stim = tdrstim.repeat_white(n_samples, nx=model1.img_shape[1],
+                                                    n_repeats=3,
+                                                    rand_spat=True)
+    similarities = dict()
+    gc_cors = dict()
+    shape = model1.shapes[-1]
+    center = (shape[0]//2, shape[1]//2)
+
+    cell_idx = (cell1, *center)
+    grab_idx = tdrutils.get_module_idx(model1, GrabUnits)
+    if grab_idx >= 0:
+        m = nn.Sequential(*model1.sequential[:grab_idx],
+                            model1.sequential[grab_idx+1:])
+    else:
+        m = model1.sequential[:-1]
+    gc_activs = tdrutils.inspect(m,stim, batch_size=batch_size,
+                                        to_numpy=True,
+                                        no_grad=True)['outputs']
+    c1_resp = gc_activs[:,cell1,center[0],center[1]]
+    grab_idx = tdrutils.get_module_idx(model2, GrabUnits)
+    if grab_idx >= 0:
+        m = nn.Sequential(*model2.sequential[:grab_idx],
+                            model2.sequential[grab_idx+1:])
+    else:
+        m = model2.sequential[:-1]
+    gc_activs = tdrutils.inspect(m,stim, batch_size=batch_size,
+                                        to_numpy=True,
+                                        no_grad=True)['outputs']
+    gc_shape = gc_activs.shape[-2:]
+
+    if verbose:
+        print("Collecting ig response at:", cell_idx)
+    resp1 = get_response(model1, stim, model_layers=layers,
+                                      batch_size=batch_size,
+                                      cell_idx=cell_idx,
+                                      use_ig=True,
+                                      to_numpy=False)
+    resp1 = tdrutils.flatcat(resp1)
+    for i,cell2 in enumerate(comp_cells):
+        flat = gc_activs[:,cell2].reshape(len(c1_resp),-1)
+        cor_mtx = tdrutils.mtx_cor(flat, c1_resp[:,None],to_numpy=True)
+        arg = np.argmax(cor_mtx[:,0])
+        (row,col) = np.unravel_index(arg,gc_shape)
+        row,col = int(row),int(col)
+        c2_resp = gc_activs[:,cell2,row,col]
+
+        cell_idx = (cell2, row, col)
+        if verbose:
+            s = "Comparing cell {} to {} | ".format(cell1, cell2)
+            s += " {} cells left".format(len(comp_cells)-i)
+            print(s)
+        resp2 = get_response(model2, stim, model_layers=layers,
+                                batch_size=batch_size,
+                                cell_idx=cell_idx,
+                                use_ig=True,
+                                to_numpy=False)
+        resp2 = tdrutils.flatcat(resp2)
+        sim = tdrutils.get_similarity(resp1, resp2, sim_type,
+                                       batch_size=batch_size)
+        similarities[cell2] = {center:dict()}
+        similarities[cell2][center][(row,col)] = sim
+        if verbose:
+            r = tdrutils.pearsonr(c1_resp,c2_resp)
+            gc_cors[cell2] = r[0]
+            print("Similarity:", sim, "| GC:", r[0])
+    return similarities, gc_cors
+
 
