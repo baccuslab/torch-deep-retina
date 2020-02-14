@@ -656,13 +656,19 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
     if hasattr(model, "zero_dict"):
         zero_dict = model.zero_dict
         pruning.zero_chans(model, zero_dict)
+        keys = sorted(list(zero_dict.keys()))
+        pruned_chans = []
+        s = ""
+        for pi, k in enumerate(keys):
+            diff = model.chans[pi]-len(zero_dict[k])
+            pruned_chans.append(diff)
+            chans = [str(c) for c in zero_dict[k]]
+            s += "\n{}: {}".format(k,",".join(chans))
         if verbose:
-            s = "Pruned Channels:"
-            keys = sorted(list(zero_dict.keys()))
-            for k in keys:
-                chans = [str(c) for c in zero_dict[k]]
-                s += "\n{}: {}".format(k,",".join(chans))
-            print(s)
+            print("Pruned Channels:"+s)
+        if 'pruned_chans' not in table:
+            table['pruned_chans'] = []
+        table['pruned_chans'].append(pruned_chans)
     # Figs
     if make_figs:
         if verbose:
