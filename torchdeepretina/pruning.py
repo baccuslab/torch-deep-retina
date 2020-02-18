@@ -8,7 +8,7 @@ if torch.cuda.is_available():
 else:
     DEVICE = torch.device('cpu')
 
-def zero_chans(model, chan_dict):
+def zero_chans(model, chan_dict, zero_bias=True):
     """
     Zeros out the model channels specified in the chan_dict.
 
@@ -17,6 +17,8 @@ def zero_chans(model, chan_dict):
     chan_dict: dict (str, set)
         keys: layer name as string
         vals: set of ints corresponding to the channels to drop
+    zero_bias: bool
+        if true, bias is zeroed as well as channel
     """
     for layer in chan_dict.keys():
         # Assumes layer name is of form 'sequential.<idx>'
@@ -27,14 +29,14 @@ def zero_chans(model, chan_dict):
                 shape = modu.weight.data[chan].shape
                 model.sequential[idx].convs[-1].weight.data[chan] =\
                                   torch.zeros(*shape[1:]).to(DEVICE)
-                if hasattr(modu, 'bias'):
+                if zero_bias and hasattr(modu, 'bias'):
                     model.sequential[idx].convs[-1].bias.data[chan] = 0
             else:
                 modu = model.sequential[idx]
                 shape = modu.weight.data[chan].shape
                 model.sequential[idx].weight.data[chan] =\
                                    torch.zeros(*shape[1:]).to(DEVICE)
-                if hasattr(modu, 'bias'):
+                if zero_bias and hasattr(modu, 'bias'):
                     model.sequential[idx].bias.data[chan] = 0
 
 def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
