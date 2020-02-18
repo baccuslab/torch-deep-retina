@@ -525,7 +525,8 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500,
     else:
         return X.grad.data.cpu()
 
-def integrated_gradient(model, X, layer='sequential.2', gc_idx=None,
+def integrated_gradient(model, X, layer='sequential.2', chans=None,
+                                                    spat_idx=None,
                                                     alpha_steps=5,
                                                     batch_size=500,
                                                     y=None,
@@ -540,9 +541,11 @@ def integrated_gradient(model, X, layer='sequential.2', gc_idx=None,
         model: PyTorch Deep Retina models
         X: Input stimuli ndarray or torch FloatTensor (T,D,H,W)
         layer: str layer name
-        gc_idx: int or tuple of ints (chan, row, col)
-            ganglion cell of interest. if None, uses all cells. If
-            tuple, must argue chan, row, and column
+        chans: int or list of ints
+            the channels of interest. if None, uses all channels
+        spat_idx: tuple of ints (row, col)
+            the row and column of interest. if None, the spatial
+            location of the recordings is used for each channel.
         alpha_steps: int, integration steps
         batch_size: step size when performing computations on GPU
         y: torch FloatTensor or ndarray (T,N)
@@ -568,20 +571,24 @@ def integrated_gradient(model, X, layer='sequential.2', gc_idx=None,
     gc_activs = None
     model.to(DEVICE)
 
+    if chans is None:
+        chans = list(range(model.n_units))
+    elif isinstance(chans,int):
+        chans = [chans]
+
     # Handle convolutional Ganglion Cell output by replacing GrabUnits
     # coordinates for desired cell
-    prev_coord = None
-    if isinstance(gc_idx, tuple):
-        chan, row, col = gc_idx
-        idx = get_module_idx(model, GrabUnits)
-        assert idx >= 0, "not yet compatible with one-hot models"
-        grabber = model.sequential[idx]
-        prev_coord = grabber.coords[chan].clone()
-        grabber.coords[chan,0] = row
-        grabber.coords[chan,1] = col
-        gc_idx = chan
-    elif gc_idx is None:
-        gc_idx = list(range(model.n_units))
+    prev_coords = None
+    if spat_idx is not None:
+        if isinstance(spat_idx, int): spat_idx = (spat_idx, spat_idx)
+        row, col = spat_idx
+        mod_idx = get_module_idx(model, GrabUnits)
+        assert mod_idx >= 0, "not yet compatible with one-hot models"
+        grabber = model.sequential[mod_idx]
+        prev_coords = grabber.coords.clone()
+        for chan in chans:
+            grabber.coords[chan,0] = row
+            grabber.coords[chan,1] = col
     if batch_size is None:
         batch_size = len(X)
     X = torch.FloatTensor(X)
@@ -602,27 +609,25 @@ def integrated_gradient(model, X, layer='sequential.2', gc_idx=None,
                                            batch_size=None,
                                            to_numpy=False,
                                            to_cpu=False,
+                                           no_grad=False,
                                            verbose=False)
             if prev_response is not None:
                 ins = response[layer]
-                outs = response['outputs'][:,gc_idx]
+                outs = response['outputs'][:,chans]
                 if lossfxn is not None and y is not None:
-                    truth = y[idx,gc_idx]
+                    truth = y[idx][:,chans]
                     outs = lossfxn(outs,truth)
                 grad = torch.autograd.grad(outs.sum(), ins)[0]
-                grad = grad.detach().cpu().reshape(len(grad),
-                                        *intg_grad.shape[1:])
+                grad = grad.data.detach().cpu().reshape(len(grad),
+                                             *intg_grad.shape[1:])
                 l = layer
                 act = (response[l].data.cpu()-prev_response[l])
                 act = act.reshape(grad.shape)
                 intg_grad[idx] += grad*act
                 if alpha == 1:
                     if gc_activs is None:
-                        if isinstance(gc_idx, int):
-                            gc_activs = torch.zeros(len(X))
-                        else:
-                            gc_activs =torch.zeros(len(X),len(gc_idx))
-                    outs = response['outputs'][:,gc_idx]
+                        gc_activs = torch.zeros(len(X),len(chans))
+                    outs = response['outputs'][:,chans]
                     gc_activs[idx] = outs.data.cpu()
             prev_response={k:v.data.cpu() for k,v in response.items()}
     del response
@@ -630,8 +635,8 @@ def integrated_gradient(model, X, layer='sequential.2', gc_idx=None,
     if len(gc_activs.shape) == 1:
         gc_activs = gc_activs.unsqueeze(1) # Create new axis
 
-    if prev_coord is not None:
-        grabber.coords[gc_idx] = prev_coord
+    if prev_coords is not None:
+        grabber.coords = prev_coords
     # Return to previous gradient calculation state
     requires_grad(model, True)
     # return to previous grad calculation state
