@@ -7,14 +7,17 @@ import pandas as pd
 
 
 if __name__=="__main__":
-    n_samples = 10000
-    sim_type = 'cca'
+    n_samples = 7500
+    sim_type = 'dot'
     model_paths = sys.argv[1:]
     same_model = False
     if len(model_paths) == 1:
         model_paths.append(model_paths[0])
         same_model = True
-    save_file = ""
+    save_folder = "similarity_csvs/"
+    if not os.path.exists(save_folder):
+        os.mkdir(save_folder)
+    save_file = save_folder
     for mp in model_paths:
         chkpt = tdr.io.load_checkpoint(mp)
         save_file += chkpt['exp_name']+str(chkpt['exp_num'])+"_"
@@ -34,3 +37,7 @@ if __name__=="__main__":
                                                 sim_type=sim_type,
                                                 same_model=same_model,
                                                 save_file=save_file)
+    sim_df['model1_savefile'] = model_paths[0]
+    sim_df['model2_savefile'] = model_paths[1]
+    sim_df.to_csv(save_file, sep="!", header=True, index=False)
+
