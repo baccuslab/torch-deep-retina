@@ -100,15 +100,18 @@ class GrabUnits(nn.Module):
 
         centers: list of tuples of ints
             this should be a list of (row,col) coordinates of the
-            receptive field centers for each of the ganglion cells.
+            receptive field centers on the stimulus for each of the
+            ganglion cells.
         ksizes: list of ints
             the kernel sizes of each of the layers. len(ksizes)==3
         img_shape: tuple (chan, height, width)
             the shape of the original image
         """
         # Each quantity is even, thus the final half_effective_ksize is odd
-        half_effective_ksize = (ksizes[0]-1) + (ksizes[1]-1) +\
-                                            (ksizes[2]//2-1) + 1
+        half_effective_ksize = 1
+        for ksize in ksizes:
+            half_effective_ksize += ksize//2
+
         coords = []
         for center in centers:
             row,col = self.center_to_coord(center,
@@ -117,14 +120,14 @@ class GrabUnits(nn.Module):
             coords.append([row,col])
         return torch.LongTensor(coords)
 
-    def center_to_coord(self, center,half_effective_ksize,img_shape):
+    def center_to_coord(self, center, half_effective_ksize,img_shape):
         """
         singular version of centers_to_coords
         """
-        row = min(max(0,center[0]-half_effective_ksize),
-                    img_shape[1]-2*(half_effective_ksize-1))
-        col = min(max(0,center[1]-half_effective_ksize),
-                    img_shape[2]-2*(half_effective_ksize-1))
+        row = max((center[0]-half_effective_ksize),0)
+        row = min(row, img_shape[-2]-(2*(half_effective_ksize-1)))
+        col = max((center[1]-half_effective_ksize),0)
+        col = min(col, img_shape[-1]-(2*(half_effective_ksize-1)))
         return [row,col]
 
     def forward(self, x):
