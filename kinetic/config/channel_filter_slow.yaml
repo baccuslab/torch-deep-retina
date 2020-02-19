@@ -1,0 +1,11 @@
+exp_id: 'channel_filter_slow'
+gpu: 2
+save_intvl: 1
+Model:
+    name: 'KineticsChannelModelFilter'
+    checkpoint: '/home/xhding/saved_model/channel_filter/epoch_10_loss_-27.42987749385597_pearson_0.45068423074452113.pth'
+    noise: 0.
+Data:
+    trunc_int: 50
+Optimize:
+    l2: 0.
