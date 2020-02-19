@@ -1105,44 +1105,25 @@ class Kinetics(nn.Module):
         new_pop[:,2] = pop[:,2] + dt*(-kfr - ksi + kfi + ksr)
         new_pop[:,3] = pop[:,3] + dt*(-ksr + ksi)
         return new_pop[:,1], new_pop
-
-# For retinotopic models
+        
 class OneHot(nn.Module):
-    """
-    Layer to choose a single output activation as a cell's response
-
-    shape: list-like or int (num channels, hieght, width)
-        the shape of the incoming activations without the batch size.
-
-    Attributes:
-        w: nn Parameter (C,L)
-            actual weights for each channel
-        prob: FloatTensor (C,L)
-            probability form of w (normed before every forward pass)
-    """
-    def __init__(self,shape, rand_init=False):
+    def __init__(self,shape):
         super(OneHot, self).__init__()
-        assert len(shape) == 3, "Shape must have 3 dimensions"
         self.shape = shape
-        if rand_init:
-            tensor = torch.rand(shape[0],shape[1]*shape[2])
-        else:
-            tensor = torch.ones(shape[0],shape[1]*shape[2])
-        self.w = nn.Parameter(tensor)
+        self.w = nn.Parameter(torch.rand(shape[0],shape[1]*shape[2]))
         self.prob = None
 
+
     def forward(self, x):
-        """
-        x: FloatTensor (B,C,H,W)
-        """
-        positive = self.w.abs() + 1e-4 # all vals are positive (C,L)
-        # Create probabilities for each channel (C,L)
-        self.prob = torch.einsum("cl,c->cl",positive,
-                                  1/positive.sum(-1))
+        positive = self.w - torch.min(self.w,1)[0][:,None]
+        normed = positive.permute(1,0) / positive.sum(-1)
+        self.prob = normed.permute(1,0)
+
         x = x.reshape(*x.shape[:2],-1)
-        # Multiply by probabilities and sum accross channels
-        out = torch.einsum("bcl,cl->bc",x,self.prob)
+        out = torch.sum(x*self.prob,dim=-1)
+
         return out
+# For retinotopic models
 
 class ConsolidatedOneHot(nn.Module):
     """
@@ -1167,14 +1148,14 @@ class ConsolidatedOneHot(nn.Module):
 
 
     """
-    def __init__(self,shape,locations,labels):
+    def __init__(self,shape,labels):
         super().__init__()
         self.shape=shape
         self.labels = labels
-        self.w = nn.Parameter(torch.zeros(shape[0],shape[1]*shape[2]))
-        for i,loc in enumerate(locations):
-            self.w[i,loc] = 1.0
+        self.w = nn.Parameter(torch.rand(shape[0],shape[1]*shape[2]))
         self.prob = None
+        print('SHAPE')
+        print(shape)
 
     def forward(self,x):
         positive = self.w - torch.min(self.w,1)[0][:,None]
@@ -1183,30 +1164,20 @@ class ConsolidatedOneHot(nn.Module):
 
         x = x.reshape(*x.shape[:2],-1)
         resps = []
-
+        print('PROB, X')
+        print(self.prob.shape,x.shape)
         for i,l in enumerate(self.labels):
             out = torch.sum(self.prob[i]*x[:,l,:],dim=-1)
             resps.append(out)
+
         out = torch.stack(resps)
         return out.transpose(1,0)
 
 def semantic_loss(prob):
-    """
-    Loss fxn that encourages one-hot vectorization
-
-    prob: from OneHot.prob - will be of shape
-        [NUMBER_OF_CHANNELS x KERNEL_SIZE^2] (because its flattened)
-
-    I tried many implementations and this is the fastest
-
-    """
     wmc_tmp = torch.zeros_like(prob)
 
     for i in range(prob.shape[1]):
-        zeros = torch.zeros_like(prob[:,0]).fill_(i).unsqueeze(-1)
-        one_situation = torch.ones_like(prob).scatter_(1,
-                                                       zeros.long(),
-                                                       0)
+        one_situation = torch.ones_like(prob).scatter_(1,torch.zeros_like(prob[:,0]).fill_(i).unsqueeze(-1).long(),0)
         wmc_tmp[:,i] = torch.abs((one_situation - prob).prod(dim=1))
 
     wmc_tmp = -1.0*torch.log(wmc_tmp.sum(dim=1))
@@ -1219,4 +1190,3 @@ class NullScheduler:
 
     def step(self, *args, **kwargs):
         pass
-

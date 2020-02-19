@@ -62,6 +62,7 @@ class Trainer:
             train_method = getattr(self, "retinotopic_loop")
         else:
             train_method = self.train_loop
+
         return train_method(hyps,verbose)
 
     def stop_early(self, acc):
@@ -389,11 +390,11 @@ class Trainer:
                     one_hot_loss = torch.zeros(1).to(DEVICE)
 
                 # One Hot l1 penalty
-                semantic_l1 = utils.try_key(hyps,'semantic_l1',0)
-                if semantic_l1 > 0:
-                    w = model.sequential[-1].w
-                    l = torch.norm(w, 1, dim=-1).float()
-                    one_hot_loss += semantic_l1*l.mean()
+                # semantic_l1 = utils.try_key(hyps,'semantic_l1',0)
+                # if semantic_l1 > 0:
+                #     w = model.sequential[-1].w
+                #     l = torch.norm(w, 1, dim=-1).float()
+                #     one_hot_loss += semantic_l1*l.mean()
 
                 loss = error + activity_l1 + one_hot_loss
 
@@ -786,7 +787,8 @@ def get_data(hyps):
                                             hyps['stim_type'],
                                             'test',img_depth,0,
                                             norm_stats=norm_stats,
-                                            cutout_width=cutout_size))
+                                            cutout_width=cutout_size,
+                                            data_path=data_path))
     except:
         test_data = None
     return train_data, test_data

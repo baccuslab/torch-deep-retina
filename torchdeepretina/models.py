@@ -67,22 +67,22 @@ class TDRModel(nn.Module):
             the list should have a row, col coordinate for the center
             of each ganglion cell receptive field.
         bnorm_d: int
-            the dimension of the batchnorm layers. 1 indicates a 
+            the dimension of the batchnorm layers. 1 indicates a
             BatchNorm1d layer type. This is spatially heterogeneous.
             A 2 indicates a BatchNorm2d layer type, which is spatially
             homogeneous.
         """
         super().__init__()
         self.n_units = n_units
-        self.chans = chans 
-        self.softplus = softplus 
-        self.infr_exp = inference_exp 
-        self.bias = bias 
-        self.img_shape = img_shape 
-        self.ksizes = ksizes 
-        self.gc_bias = gc_bias 
-        self.noise = noise 
-        self.bn_moment = bn_moment 
+        self.chans = chans
+        self.softplus = softplus
+        self.infr_exp = inference_exp
+        self.bias = bias
+        self.img_shape = img_shape
+        self.ksizes = ksizes
+        self.gc_bias = gc_bias
+        self.noise = noise
+        self.bn_moment = bn_moment
         self.recurrent = recurrent
         self.kinetic = kinetic
         self.convgc = convgc
@@ -126,7 +126,7 @@ class TDRModel(nn.Module):
 
 class BNCNN(TDRModel):
     """
-    The batchnorm model from Deep Learning Reveals ... 
+    The batchnorm model from Deep Learning Reveals ...
             (https://www.biorxiv.org/content/10.1101/340943v1)
     """
     def __init__(self, gauss_prior=0, **kwargs):
@@ -214,7 +214,7 @@ class BNCNN(TDRModel):
                 prior = prior/np.max(prior)/denom
                 prior = torch.FloatTensor(prior)
                 self.sequential[seq_idx].weight.data = prior
-        
+
     def forward(self, x):
         if not self.training and self.infr_exp:
             return torch.exp(self.sequential(x))
@@ -285,7 +285,7 @@ class LinearStackedBNCNN(TDRModel):
                                     bias=self.bias,
                                     stack_chan=self.stack_chans[0],
                                     stack_ksize=self.stack_ksizes[0],
-                                    drop_p=self.drop_p, 
+                                    drop_p=self.drop_p,
                                     padding=self.paddings[0])
         modules.append(conv)
         shape = update_shape(shape, self.ksizes[0],
@@ -393,7 +393,7 @@ class LinearStackedBNCNN(TDRModel):
         fx =torch.nn.functional.batch_norm(fx,bnorm.running_mean.data,
                                             bnorm.running_var.data,
                                             weight=bnorm.scale.abs(),
-                                            bias=bnorm.shift, 
+                                            bias=bnorm.shift,
                                             eps=bnorm.eps,
                                             momentum=bnorm.momentum,
                                             training=self.training)
@@ -425,7 +425,7 @@ class LN(TDRModel):
         else:
             modules.append(nn.ELU())
         self.sequential = nn.Sequential(*modules)
- 
+
     def forward(self, x):
         return self.sequential(x)
 
@@ -594,7 +594,7 @@ class VaryModel(TDRModel):
             shape = update_shape(shape, self.ksizes[i],
                                         padding=self.paddings[i])
             self.shapes.append(tuple(shape))
-                    
+
             ## BatchNorm
             if self.bnorm_d == 1:
                 modules.append(Flatten())
@@ -653,7 +653,7 @@ class VaryModel(TDRModel):
         if not self.convgc:
             return self.forward(x)
         # Remove GrabUnits layer
-        fx = self.sequential[:-3](x) 
+        fx = self.sequential[:-3](x)
         bnorm = self.sequential[-2]
         # Perform 2dbatchnorm using 1d parameters
         fx =torch.nn.functional.batch_norm(fx,bnorm.running_mean.data,
@@ -678,7 +678,9 @@ class RetinotopicModel(TDRModel):
                                         stack_ksizes=[3,3],
                                         stack_chans=[None,None],
                                         paddings=None,
-                                        rand_onehot=False, **kwargs):
+                                        collapsed=False,
+                                        collapse_labels=None,
+                                        **kwargs):
         super().__init__(**kwargs)
         """
         n_layers: int
@@ -702,17 +704,17 @@ class RetinotopicModel(TDRModel):
         paddings: list of ints
             the padding for each conv layer. If none,
             defaults to 0.
-        rand_onehot: bool
-            if true, the onehot vector is initialized as random values
-            between 0 and 1. Otherwise all values are initialized to
-            1/length
         """
         self.name = 'VaryNet'
         self.n_layers = n_layers
         self.stackconvs = stackconvs
         self.drop_p = drop_p
         self.one2one = one2one
-        self.rand_onehot = rand_onehot
+        self.collapsed = collapsed
+        self.collapse_labels=collapse_labels
+
+
+
         if isinstance(stack_ksizes, int):
             stack_ksizes=[stack_ksizes for i in\
                                         range(len(self.ksizes))]
@@ -770,23 +772,42 @@ class RetinotopicModel(TDRModel):
             modules.append(nn.ReLU())
 
         ##### Final Layer
-        modules.append(nn.Conv2d(self.chans[-1],
-        self.n_units,
-        kernel_size=self.ksizes[-1],
-        bias=self.bias))
+        if not self.collapsed:
+            modules.append(nn.Conv2d(self.chans[-1],
+            self.n_units,
+            kernel_size=self.ksizes[-1],
+            bias=self.bias))
 
-        modules.append(AbsBatchNorm2d(self.n_units, eps=1e-3,
-                                    momentum=self.bn_moment))
+            modules.append(AbsBatchNorm2d(self.n_units, eps=1e-3,
+                                        momentum=self.bn_moment))
 
-        shape = update_shape(shape, self.ksizes[-1])
-        self.shapes.append(tuple(shape))
+            shape = update_shape(shape, self.ksizes[-1])
+            self.shapes.append(tuple(shape))
 
-        modules.append(nn.Softplus())
-        modules.append(OneHot((self.n_units,*shape),
-                        rand_init=self.rand_onehot))
+            modules.append(nn.Softplus())
+
+            modules.append(OneHot((self.n_units,*shape)))
+
+
+        elif self.collapsed:
+            print('This was collapsed!')
+            modules.append(nn.Conv2d(self.chans[-1],
+            len(np.unique(self.collapse_labels)),
+            self.ksizes[-1],
+            self.bias))
+
+            modules.append(AbsBatchNorm2d(len(np.unique(self.collapse_labels)),
+                                        eps=1e-3,
+                                        momentum=self.bn_moment))
+
+            shape = update_shape(shape, self.ksizes[-1])
+            self.shapes.append(tuple(shape))
+            modules.append(nn.Softplus())
+            print('Collapse_Shape ???{}'.format(shape))
+            modules.append(ConsolidatedOneHot([self.n_units,shape[-1],shape[-1]],self.collapse_labels))
+
 
         self.sequential = nn.Sequential(*modules)
-
     def forward(self, x):
         if not self.training and self.infr_exp:
             return torch.exp(self.sequential(x))
@@ -820,8 +841,3 @@ class RetinotopicModel(TDRModel):
         if not self.training and self.infr_exp:
             return torch.exp(fx)
         return fx
-
-
-
-
-
