@@ -62,7 +62,8 @@ def get_conv_layer_names(model, conv_types=None):
             conv_names.append(name)
     return conv_names
 
-def get_layer_name_sets(model, delimeters=[nn.ReLU,nn.Softplus]):
+def get_layer_name_sets(model, delimeters=[nn.ReLU,nn.Softplus,
+                                                     nn.Tanh]):
     """
     Creates a set of the module names for each layer. Delineates
     layers based on the argued layer types. 
@@ -85,7 +86,8 @@ def get_layer_name_sets(model, delimeters=[nn.ReLU,nn.Softplus]):
         layer_names.append(layer_set)
     return layer_names
 
-def get_layer_idx(model, layer, delimeters=[nn.ReLU, nn.Softplus]):
+def get_layer_idx(model, layer, delimeters=[nn.ReLU, nn.Tanh,
+                                               nn.Softplus]):
     """
     Finds the layer index of the layer name. Returns -1 if the layer
     does not exist in the argued model.

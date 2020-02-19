@@ -29,6 +29,7 @@ class TDRModel(nn.Module):
                                                 convgc=False,
                                                 centers=None,
                                                 bnorm_d=1,
+                                                activ_fxn='ReLU',
                                                 **kwargs):
         """
         n_units: int
@@ -48,21 +49,22 @@ class TDRModel(nn.Module):
             if true, a softplus nonlinearity is included at the final
             layer for most models
         inference_exp: bool
-            if true, an exponential is applied at the final layer during
-            inference (when model is in eval mode)
+            if true, an exponential is applied at the final layer
+            during inference (when model is in eval mode)
         img_shape: tuple of ints (input_depth, height, width)
             the shape of the inputs, no including batch_size
         ksizes: tuple of ints
-            the kernel sizes for each layer in the model. If using fully
-            convolutional model, must include kernel size for final
-            layer.
+            the kernel sizes for each layer in the model. If using
+            fully convolutional model, must include kernel size for
+            final layer.
         recurrent: bool
             a switch to denote when a model is recurrent
         kinetic: bool
-            a switch to determine when a model includes a kinetics layer
+            a switch to determine when a model includes a kinetics
+            layer
         convgc: bool
-            if true, final layer is convolutional. If false, final layer
-            is fully connected.
+            if true, final layer is convolutional. If false, final
+            layer is fully connected.
         centers: list of tuples of ints
             the list should have a row, col coordinate for the center
             of each ganglion cell receptive field.
@@ -71,6 +73,9 @@ class TDRModel(nn.Module):
             BatchNorm1d layer type. This is spatially heterogeneous.
             A 2 indicates a BatchNorm2d layer type, which is spatially
             homogeneous.
+        activ_fxn: string
+            the name of the activation function to be used at the
+            intermediate layers.
         """
         super().__init__()
         self.n_units = n_units
@@ -90,6 +95,7 @@ class TDRModel(nn.Module):
         self.bnorm_d = bnorm_d
         assert bnorm_d == 1 or bnorm_d == 2, "Only 1 and 2 dim\
                              batchnorm are currently supported"
+        self.activ_fxn = activ_fxn
 
     def forward(self, x):
         return x
@@ -156,7 +162,7 @@ class BNCNN(TDRModel):
             modules.append(nn.BatchNorm2d(self.chans[0], eps=1e-3,
                                          momentum=self.bn_moment))
         modules.append(GaussianNoise(std=self.noise))
-        modules.append(nn.ReLU())
+        modules.append(getattr(nn,self.activ_fxn)())
         modules.append(nn.Conv2d(self.chans[0],self.chans[1],
                                   kernel_size=self.ksizes[1],
                                   bias=self.bias))
@@ -173,7 +179,7 @@ class BNCNN(TDRModel):
             modules.append(nn.BatchNorm2d(self.chans[1], eps=1e-3,
                                          momentum=self.bn_moment))
         modules.append(GaussianNoise(std=self.noise))
-        modules.append(nn.ReLU())
+        modules.append(getattr(nn,self.activ_fxn)())
         if self.convgc:
             modules.append(nn.Conv2d(self.chans[1], self.n_units,
                                       kernel_size=self.ksizes[2],
@@ -302,9 +308,9 @@ class LinearStackedBNCNN(TDRModel):
         else:
             modules.append(AbsBatchNorm2d(self.chans[0], eps=1e-3,
                                         momentum=self.bn_moment))
-        # Noise and ReLU
+        # Noise and Activation
         modules.append(GaussianNoise(std=self.noise))
-        modules.append(nn.ReLU())
+        modules.append(getattr(nn,self.activ_fxn)())
 
         ##### Second Layer
         # Convolution
@@ -338,9 +344,9 @@ class LinearStackedBNCNN(TDRModel):
         else:
             modules.append(AbsBatchNorm2d(self.chans[1], eps=1e-3,
                                          momentum=self.bn_moment))
-        # Noise and ReLU
+        # Noise and Activation
         modules.append(GaussianNoise(std=self.noise))
-        modules.append(nn.ReLU())
+        modules.append(getattr(nn,self.activ_fxn)())
 
         ##### Final Layer
         if self.convgc:
@@ -606,9 +612,9 @@ class VaryModel(TDRModel):
                 bnorm = AbsBatchNorm2d(temp_chans[i+1],eps=1e-3,
                                         momentum=self.bn_moment)
                 modules.append(bnorm)
-            # Noise and ReLU
+            # Noise and Activation
             modules.append(GaussianNoise(std=self.noise))
-            modules.append(nn.ReLU())
+            modules.append(getattr(nn,self.activ_fxn)())
 
         ##### Final Layer
         if self.convgc:
@@ -767,9 +773,9 @@ class RetinotopicModel(TDRModel):
                 bnorm = AbsBatchNorm2d(temp_chans[i+1],eps=1e-3,
                                         momentum=self.bn_moment)
                 modules.append(bnorm)
-            # Noise and ReLU
+            # Noise and Activation
             modules.append(GaussianNoise(std=self.noise))
-            modules.append(nn.ReLU())
+            modules.append(getattr(nn,self.activ_fxn)())
 
         ##### Final Layer
         if not self.collapsed:

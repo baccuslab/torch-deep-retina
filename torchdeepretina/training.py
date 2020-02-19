@@ -54,10 +54,13 @@ class Trainer:
         self.prev_acc = None
 
     def train(self,hyps,verbose=True):
-        hyps['seed'] = utils.try_key(hyps,'seed',int(time.time()))
-
+        # Set manual seed
+        hyps['seed'] = utils.try_key(hyps,'seed',None)
+        if hyps['seed'] is None:
+            hyps['seed'] = int(time.time())
         torch.manual_seed(hyps['seed'])
         np.random.seed(hyps['seed'])
+
         if utils.try_key(hyps, "retinotopic", False):
             train_method = getattr(self, "retinotopic_loop")
         else:
@@ -794,7 +797,6 @@ def get_data(hyps):
     return train_data, test_data
 
 def get_optim_objs(hyps, model, centers=None):
-    print(hyps['scheduler'])
     """
     Returns the optimization objects for the training.
 
@@ -816,32 +818,29 @@ def get_optim_objs(hyps, model, centers=None):
 
     optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'],
                                            weight_decay=hyps['l2'])
-    hyps['scheduler'] = utils.try_key(hyps,'scheduler',
+    hyps['scheduler'] = utils.try_key(hyps,
+                                     'scheduler',
                                      'ReduceLROnPlateau')
+    hyps['scheduler_thresh'] = utils.try_key(hyps,
+                                             'scheduler_thresh',
+                                             1e-2)
+    hyps['scheduler_patience'] = utils.try_key(hyps,
+                                               'scheduler_patience',
+                                               10)
 
-    hyps['scheduler_thresh'] = utils.try_key(hyps,'scheduler_thresh',
-                                     1e-2)
-
-    hyps['scheduler_patience'] = utils.try_key(hyps,'scheduler_patience',
-                                     10)
-
-    if hyps['scheduler'] is None:
-        scheduler = NullScheduler()
-
-    elif hyps['scheduler'] == 'ReduceLROnPlateau':
+    if hyps['scheduler'] == 'ReduceLROnPlateau':
         scheduler = globals()[hyps['scheduler']](optimizer, 'min',
                                         factor=0.1,
                                         patience=hyps['scheduler_patience'],
                                         threshold=hyps['scheduler_thresh'],
                                         verbose=True)
-
     elif hyps['scheduler'] == 'MultiStepLR':
         milestones = utils.try_key(hyps,'scheduler_milestones',[10,20,30])
         print(milestones)
         scheduler = globals()[hyps['scheduler']](optimizer, milestones,
                                         gamma=0.1)
-
-
+    else:
+        scheduler = NullScheduler()
 
     return optimizer, scheduler, loss_fn
 
