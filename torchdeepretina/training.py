@@ -165,7 +165,7 @@ class Trainer:
                 loss.backward()
                 optimizer.step()
                 # Only prunes if zero_dict contains values
-                zero_bias = tdrutils.try_key(hyps,'zero_bias',True)
+                zero_bias = utils.try_key(hyps,'zero_bias',True)
                 tdrprune.zero_chans(model, zero_dict,zero_bias)
 
                 epoch_loss += loss.item()
@@ -277,7 +277,7 @@ class Trainer:
                                                     **prune_dict)
                 stop_training = prune_dict['stop_pruning']
                 zero_dict = prune_dict['zero_dict']
-                zero_bias = tdrutils.try_key(hyps,'zero_bias',True)
+                zero_bias = utils.try_key(hyps,'zero_bias',True)
                 tdrprune.zero_chans(model, zero_dict,zero_bias)
 
             # Print Epoch Stats
