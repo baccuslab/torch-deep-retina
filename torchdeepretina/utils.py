@@ -13,7 +13,10 @@ import time
 from sklearn.utils.extmath import randomized_svd
 import subprocess
 
-DEVICE = torch.device("cuda:0")
+if torch.cuda.is_available():
+    DEVICE = torch.device("cuda:0")
+else:
+    DEVICE = torch.device("cpu")
 
 def partial_whiten(X, alpha, eigval_tol=1e-7):
     """
