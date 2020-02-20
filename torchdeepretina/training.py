@@ -815,22 +815,12 @@ def get_optim_objs(hyps, model, centers=None):
 
     optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'],
                                            weight_decay=hyps['l2'])
-    hyps['scheduler'] = utils.try_key(hyps,
-                                     'scheduler',
-                                     'ReduceLROnPlateau')
-    hyps['scheduler_thresh'] = utils.try_key(hyps,
-                                             'scheduler_thresh',
-                                             1e-2)
-    hyps['scheduler_patience'] = utils.try_key(hyps,
-                                               'scheduler_patience',
-                                               10)
-
     if hyps['scheduler'] == 'ReduceLROnPlateau':
         scheduler = globals()[hyps['scheduler']](optimizer, 'min',
-                                        factor=0.1,
-                                        patience=hyps['scheduler_patience'],
-                                        threshold=hyps['scheduler_thresh'],
-                                        verbose=True)
+                                  factor=hyps['scheduler_scale'],
+                                  patience=hyps['scheduler_patience'],
+                                  threshold=hyps['scheduler_thresh'],
+                                  verbose=True)
     elif hyps['scheduler'] == 'MultiStepLR':
         milestones = utils.try_key(hyps,'scheduler_milestones',[10,20,30])
         print(milestones)
@@ -870,13 +860,20 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
     # Base call, runs the training and saves the result
     if idx >= len(keys):
         # Ensure necessary hyps are present
-        if 'n_repeats' not in hyps: hyps['n_repeats'] = 1
-        # Pruning parameters
-        if 'prune' not in hyps: hyps['prune'] = False
-        if 'prune_layers' not in hyps: hyps['prune_layers'] = []
-        if 'prune_intvl' not in hyps: hyps['prune_intvl'] = 10
-        if 'alpha_steps' not in hyps: hyps['alpha_steps'] = 5
-        if 'intg_bsize' not in hyps: hyps['intg_bsize'] = 500
+        hyps['n_repeats'] = utils.try_key(hyps, 'n_repeats', 1)
+        hyps['prune'] = utils.try_key(hyps, 'prune', False)
+        hyps['prune_layers'] = utils.try_key(hyps, 'prune_layers', [])
+        hyps['prune_intvl'] = utils.try_key(hyps, 'prune_intvl', 10)
+        hyps['alpha_steps'] = utils.try_key(hyps, 'alpha_steps', 5)
+        hyps['intg_bsize'] = utils.try_key(hyps, 'intg_bsize', 500)
+        hyps['scheduler'] = utils.try_key(hyps, 'scheduler',
+                                           'ReduceLROnPlateau')
+        hyps['scheduler_thresh'] = utils.try_key(hyps,
+                                           'scheduler_thresh', 1e-2)
+        hyps['scheduler_patience']=utils.try_key(hyps,
+                                           'scheduler_patience', 10)
+        hyps['scheduler_scale'] = utils.try_key(hyps,
+                                           'scheduler_scale', 0.5)
         for i in range(hyps['n_repeats']):
             # Load q
             hyps['search_keys'] = ""
