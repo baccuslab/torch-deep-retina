@@ -2,6 +2,7 @@ import numpy as np
 import copy
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import json
 import os
 import torchdeepretina.stimuli as tdrstim
@@ -11,6 +12,7 @@ from tqdm import tqdm
 import pyret.filtertools as ft
 import time
 from sklearn.utils.extmath import randomized_svd
+from scipy.optimize import linear_sum_assignment
 import subprocess
 
 if torch.cuda.is_available():
@@ -59,6 +61,255 @@ def partial_whiten(X, alpha, eigval_tol=1e-7):
     # Returned (partially) whitened data and whitening matrix.
     return X @ Zx, Zx
 
+class PermutationSimilarity:
+    """
+    Finds the best one-to-one matching in the columnar dimension
+    between two matrices.
+    """
+
+    def fit(self, X, Y):
+        """
+        Fits the permutation matrix between X and Y. Assumes time is
+        in first dimension and number of neurons is in second. Uses
+        the hungarian matching algorithm
+
+        X: torch FloatTensor or ndarray (T,N) or (T,C,H,W)
+        Y: torch FloatTensor or ndarray (T,N) or (T,C,H,W)
+        """
+        if len(X.shape) > 2:
+            X = X.reshape(len(X),-1)
+        if len(Y.shape) > 2:
+            Y = Y.reshape(len(Y),-1)
+        if isinstance(X,torch.Tensor):
+            X = X.data.cpu().numpy()
+        if isinstance(Y,torch.Tensor):
+            Y = Y.data.cpu().numpy()
+        self.xmean = X.mean(0)
+        self.ymean = Y.mean(0)
+        X_c = X-self.xmean
+        Y_c = Y-self.ymean
+
+        xty = X_c.T@Y_c
+        C = -xty - np.min(xty)
+
+        rows,cols = linear_sum_assignment(C)
+        self.rows = rows
+        self.cols = cols
+
+    def grad_fit(self, X, Y, lr=0.001, tol=0.0001, patience=10,
+                                                    alpha=0.5):
+        """
+        Fits the permutation matrix between X and Y. Assumes time is
+        in first dimension and number of neurons is in second. Uses
+        gradient descent to find the permutation matrix.
+
+        X: torch FloatTensor or ndarray (T,N) or (T,C,H,W)
+        Y: torch FloatTensor or ndarray (T,N) or (T,C,H,W)
+        lr: float
+            the learning rate of the gradient descent
+        tol: float
+            the tolerance of convergence. if the loss is not dropping
+            by more than this value, we consider the loss to have
+            converged
+        patience: int
+            the number of finishing loops to do after the loss has
+            converged
+        alpha: float between 0 and 1
+            the portion of the loss dedicated to the permutation mtx
+            manipulations
+        """
+        if len(X.shape) > 2:
+            X = X.reshape(len(X),-1)
+        if len(Y.shape) > 2:
+            Y = Y.reshape(len(Y),-1)
+        if isinstance(X,np.ndarray):
+            X = torch.FloatTensor(X)
+        if isinstance(Y,np.ndarray):
+            Y = torch.FloatTensor(Y)
+        self.xmean = X.mean(0)
+        self.ymean = Y.mean(0)
+        X_c = (X-self.xmean)
+        Y_c = (Y-self.ymean)
+        self.xmean = self.xmean.data.cpu().numpy()
+        self.ymean = self.ymean.data.cpu().numpy()
+
+        X_c = X_c.to(DEVICE)
+        Y_c = Y_c.to(DEVICE)
+
+        xty = torch.mm(X_c.T, Y_c)
+        C = -xty - xty.min()
+
+        rows,cols = self.train_perm_mtx(C,lr=lr,tol=tol,
+                                                patience=patience,
+                                                alpha=alpha)
+        self.rows = rows
+        self.cols = cols
+
+    def train_perm_mtx(self, C, lr=0.001, tol=0.0001, patience=10,
+                                                      alpha=0.5):
+        """
+        Uses gradient descent to find the one-hot matrix that
+        minimizes the cost of C.
+
+        C: torch FloatTensor
+        lr: float
+            the learning rate of the gradient descent
+        tol: float
+            the tolerance of convergence. if the loss is not dropping
+            by more than this value, we consider the loss to have
+            converged
+        patience: int
+            the number of finishing loops to do after the loss has
+            converged
+        alpha: float between 0 and 1
+            the portion of the loss dedicated to the permutation mtx
+            manipulations
+        """
+        perm_mtx = torch.ones_like(C)/float(C.numel())
+        perm_mtx.requires_grad = True
+
+        tup = self.grad_step(C, perm_mtx, lr, alpha=alpha)
+        loss, perm_loss, aux_loss, perm_mtx = tup
+        prev_loss = loss + tol + 1
+        loops_left = patience
+        count = 1
+        while (prev_loss-perm_loss) > tol or loops_left > 0:
+            if (prev_loss-perm_loss) <= tol:
+                loops_left -= 1
+            else:
+                loops_left = patience
+            if count % 1000 == 0:
+                lr = lr*0.5
+                count = 0
+            prev_loss = perm_loss
+            tup = self.grad_step(C, perm_mtx, lr, alpha=alpha)
+            loss, perm_loss, aux_loss, perm_mtx = tup
+            s = "Loss:{:05}, Perm:{:05}, Aux:{:05}"
+            s = s.format(loss.item(),perm_loss.item(),aux_loss.item())
+            print(s, end="       \r")
+            count += 1
+        cols = np.argmax(perm_mtx.data.cpu().numpy(), axis=-1)
+        perm = (perm_mtx.data/perm_mtx.data.norm(2))
+        return np.arange(len(C)).astype("int"), cols
+    
+    def grad_step(self, C, perm_mtx, lr, alpha=0.6):
+        """
+        Calculates the loss and enforces the constraints on the perm
+        matrix.
+
+        C: FloatTensor (N,M)
+            the cost matrix
+        perm_mtx: FloatTensor (N,M)
+            the permutation matrix
+        lr: float
+            the learning rate
+        alpha: float between 0 and 1
+            the portion of the loss dedicated to the permutation mtx
+            manipulations
+        """
+        perm = perm_mtx.abs()/perm_mtx.norm(2)
+        perm_loss = (C*perm).mean()
+        aux_loss = 0.001*perm_mtx.norm(1)
+        loss = alpha*aux_loss + (1-alpha)*perm_loss
+        loss.backward()
+        perm_mtx.data = perm_mtx.data - lr*perm_mtx.grad.data
+        perm_mtx.grad.data.zero_()
+        perm_mtx.data = perm_mtx.data.abs()
+        return loss, perm_loss, aux_loss, perm_mtx
+
+    def transform(self, X, Y):
+        """
+        Centers the data and reorders the columns of Y for maximal
+        alignment with X.
+
+        X: ndarray or FloatTensor
+        Y: ndarray or FloatTensor
+        """
+        if isinstance(X,torch.Tensor):
+            X = X.data.cpu().numpy()
+        if isinstance(Y,torch.Tensor):
+            Y = Y.data.cpu().numpy()
+        tX = (X - self.xmean)
+        Y_c = (Y - self.ymean)
+        tY = Y_c[:,self.cols]
+        return tX, tY
+
+    def similarity(self, X, Y):
+        """Return the canonical correlation coefficients."""
+        tX, tY = self.transform(X, Y)
+        denom = np.linalg.norm(tX, axis=0) * np.linalg.norm(tY, axis=0)
+        numer = np.sum(tX * tY, axis=0)
+        return np.mean(numer / denom)
+
+def perm_similarity(X,Y,test_X=None,test_Y=None, grad_fit=False,
+                                                 lr=0.001,
+                                                 tol=0.0001,
+                                                 patience=10,
+                                                 alpha=0.5,
+                                                 verbose=True):
+    """
+    Finds the best permutation matrix to map X onto Y and calculates
+    the similarity between this projected matrix and the original Y.
+    Uses the hungarian algorithm or gradient descent to determine the
+    best permutation.
+
+    X: ndarray (T,N)
+        T should be the dimension to be averaged over. Likely this is
+        the temporal dimension. N is the number of features in the
+        matrix. Likely this is the number of neurons.
+    Y: ndarray (T,N)
+        T should be the dimension to be averaged over. Likely this is
+        the temporal dimension. N is the number of features in the
+        matrix. Likely this is the number of neurons.
+    test_X: ndarray (T,N)
+        If None, 10% the X matrix is partitioned into a test set in
+        the T dimension
+    test_Y: ndarray (T,N)
+        If None, 10% the Y matrix is partitioned into a test set in
+        the T dimension
+    grad_fit: bool
+        if true, algorithm uses gradient descent instead of hungarian
+        algorithm for permutation matching. if false, uses hungarian
+
+        lr: float
+            the learning rate of the gradient descent
+        tol: float
+            the tolerance of convergence. if the loss is not dropping
+            by more than this value, we consider the loss to have
+            converged
+        patience: int
+            the number of finishing loops to do after the loss has
+            converged
+        algorithm
+    """
+    if isinstance(X,torch.Tensor):
+        X = X.data.cpu().numpy()
+    if isinstance(Y,torch.Tensor):
+        Y = Y.data.cpu().numpy()
+    if test_X is None or test_Y is None:
+        test_p = 0.1
+        if verbose:
+            print("Splitting data")
+        portion = int(len(X)*test_p)
+        perm = np.random.permutation(len(X)).astype(np.int)
+        test_X = X[perm[-portion:]]
+        X = X[perm[:-portion]]
+        test_Y = Y[perm[-portion:]]
+        Y = Y[perm[:-portion]]
+    assert len(X) == len(Y) and len(test_X) == len(test_Y)
+
+    perm_obj = PermutationSimilarity()
+    if verbose:
+        print("Beggining fit")
+    if grad_fit:
+        perm_obj.grad_fit(X,Y,lr=lr,tol=tol,patience=patience,
+                                                  alpha=alpha)
+    else:
+        perm_obj.fit(X, Y)
+    if verbose:
+        print("Calculating correlation")
+    ccor = perm_obj.similarity(test_X, test_Y)
+    return ccor
 
 class RidgeCCA:
     def __init__(
@@ -126,7 +377,7 @@ class RidgeCCA:
         self.fit(X, Y)
         return self.transform(X, Y)
 
-    def canon_corrs(self, X, Y):
+    def similarity(self, X, Y):
         """Return the canonical correlation coefficients."""
         tX, tY = self.transform(X, Y)
         denom = np.linalg.norm(tX, axis=0) * np.linalg.norm(tY, axis=0)
@@ -776,7 +1027,7 @@ class CCA:
                                                  verbose=verbose)
         self.cuda(state=cuda)
 
-    def cca_cor(self, test_X, test_Y, cuda=True):
+    def similarity(self, test_X, test_Y, cuda=True):
         X_c = test_X-self.xmean
         Y_c = test_Y-self.ymean
         if cuda:
@@ -834,15 +1085,16 @@ def np_cca(X,Y,test_X=None,test_Y=None, n_components=1, eig_tol=1e-7,
     alpha: float
         regularization parameter
     """
+    test_p = 0.1
     if test_X is None or test_Y is None:
         if verbose:
             print("Splitting data")
-        quart = int(len(X)*.25)
+        portion = int(len(X)*test_p)
         perm = np.random.permutation(len(X)).astype(np.int)
-        test_X = X[perm[-quart:]]
-        X = X[perm[:-quart]]
-        test_Y = Y[perm[-quart:]]
-        Y = Y[perm[:-quart]]
+        test_X = X[perm[-portion:]]
+        X = X[perm[:-portion]]
+        test_Y = Y[perm[-portion:]]
+        Y = Y[perm[:-portion]]
     assert len(X) == len(Y) and len(test_X) == len(test_Y)
 
     cca_obj = RidgeCCA(n_components=n_components, alpha=alpha)
@@ -851,7 +1103,7 @@ def np_cca(X,Y,test_X=None,test_Y=None, n_components=1, eig_tol=1e-7,
     cca_obj.fit(X, Y)
     if verbose:
         print("Calculating correlation")
-    ccor = cca_obj.canon_corrs(test_X, test_Y)
+    ccor = cca_obj.similarity(test_X, test_Y)
     return ccor
 
 def cca(X,Y,test_X=None,test_Y=None, n_components=1, eig_tol=1e-7,
@@ -891,15 +1143,16 @@ def cca(X,Y,test_X=None,test_Y=None, n_components=1, eig_tol=1e-7,
     """
     X = torch.FloatTensor(X).cpu()
     Y = torch.FloatTensor(Y).cpu()
+    test_p = 0.1
     if test_X is None or test_Y is None:
         if verbose:
             print("Splitting data")
-        quart = int(len(X)*.25)
-        perm = torch.randperm(len(X)).long()
-        test_X = X[perm[-quart:]]
-        X = X[perm[:-quart]]
-        test_Y = Y[perm[-quart:]]
-        Y = Y[perm[:-quart]]
+        portion = int(len(X)*test_p)
+        perm = np.random.permutation(len(X)).astype(np.int)
+        test_X = X[perm[-portion:]]
+        X = X[perm[:-portion]]
+        test_Y = Y[perm[-portion:]]
+        Y = Y[perm[:-portion]]
     assert len(X) == len(Y) and len(test_X) == len(test_Y)
 
     cca_obj = CCA(n_components=n_components, eig_tol=eig_tol,
@@ -909,7 +1162,7 @@ def cca(X,Y,test_X=None,test_Y=None, n_components=1, eig_tol=1e-7,
     cca_obj.fit(X, Y, cuda=cuda, verbose=verbose)
     if verbose:
         print("Calculating correlation")
-    ccor = cca_obj.cca_cor(test_X, test_Y, cuda=cuda)
+    ccor = cca_obj.similarity(test_X, test_Y, cuda=cuda)
     if to_numpy:
         return ccor.cpu().numpy()
     del cca_obj
