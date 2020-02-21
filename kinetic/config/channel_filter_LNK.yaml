@@ -1,0 +1,6 @@
+exp_id: 'channel_filter_LNK'
+gpu: 6
+Model:
+    name: 'KineticsChannelModelFilterNoClamp'
+    checkpoint: ''
+    noise: 0.

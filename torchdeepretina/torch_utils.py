@@ -1145,14 +1145,14 @@ class RunningNorm1d(nn.Module):
     #    return 'n_units={}, momentum={}'.format(self.n_units, self.momentum)
 
 class Kinetics_channel(nn.Module):
-    def __init__(self, chan=8, dt=0.001):
+    def __init__(self, chan=8, dt=0.01):
         super().__init__()
         self.ka = nn.Parameter(torch.rand(chan, 1).abs()/10)
         self.kfi = nn.Parameter(torch.rand(chan, 1).abs()/10)
         self.kfr = nn.Parameter(torch.rand(chan, 1).abs()/10)
         self.ksi = nn.Parameter(torch.rand(chan, 1).abs()/10)
         self.ksr = nn.Parameter(torch.rand(chan, 1).abs()/10)
-        self.dt = 0.001
+        self.dt = dt
 
     def extra_repr(self):
         return "dt={}".format(self.dt)

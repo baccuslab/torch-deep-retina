@@ -35,15 +35,21 @@ def train(cfg):
     if cfg.Model.checkpoint != '':
         checkpoint = torch.load(cfg.Model.checkpoint, map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
-        model.eval()
-        for para in model.parameters():
-            para.requires_grad = False
-        model.kinetics.ksi.requires_grad = True
-        model.kinetics.ksr.requires_grad = True
+        start_epoch = checkpoint['epoch'] + 1
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        
+    model.kinetics.ksi.requires_grad = False
+    model.kinetics.ksr.requires_grad = False
             
-        model.kinetics.ka.requires_grad = True
-        model.kinetics.kfi.requires_grad = True
-        model.kinetics.kfr.requires_grad = True
+    model.kinetics.ka.requires_grad = False
+    model.kinetics.kfi.requires_grad = False
+    model.kinetics.kfr.requires_grad = False
+    
+    model.kinetics.ksi.data = 0.2 * torch.ones(model.chans[0], 1).to(device)
+    model.kinetics.ksr.data = 0.02 * torch.ones(model.chans[0], 1).to(device)
+    model.kinetics.ka.data = 60. * torch.ones(model.chans[0], 1).to(device)
+    model.kinetics.kfi.data = 19. * torch.ones(model.chans[0], 1).to(device)
+    model.kinetics.kfr.data = 6. * torch.ones(model.chans[0], 1).to(device)
     
     train_dataset = TrainDataset(cfg)
     batch_sampler = BatchRnnSampler(length=len(train_dataset), batch_size=cfg.Data.batch_size,
@@ -57,23 +63,14 @@ def train(cfg):
         hs = get_hs(model, cfg.Data.batch_size, device)
         for idx,(x,y) in enumerate(tqdm(train_data)):
             x = x.to(device)
-            fx = model.bipolar(x)
-            fx, h0 = model.kinetics(fx, hs[0]) 
-            hs[1].append(fx)
-            h1 = hs[1]
-            hs = [h0, h1]           
+            y = y.double().to(device)
+            out, hs = model(x, hs)
+            loss += loss_fn(out.double(), y)
             if idx % cfg.Data.trunc_int == 0:
                 h_0 = []
                 h_0.append(hs[0].detach())
                 h_0.append(deque([h.detach() for h in hs[1]], maxlen=model.seq_len))
             if idx % cfg.Data.trunc_int == (cfg.Data.trunc_int - 1):
-                y = y.double().to(device)
-                fx = torch.stack(list(h1), dim=1) #(B,D,N)
-                if model.scale_kinet:
-                    fx = model.kinet_scale(fx)
-                fx = model.amacrine(fx)
-                out = model.ganglion(fx)
-                loss = loss_fn(out.double(), y)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -102,6 +99,6 @@ def train(cfg):
                         'loss': epoch_loss}, save_path)
     
 if __name__ == "__main__":
-    cfg = get_custom_cfg('channel_filter_slow')
+    cfg = get_custom_cfg('channel_filter_LNK')
     print(cfg)
     train(cfg)

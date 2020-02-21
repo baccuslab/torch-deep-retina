@@ -1,0 +1,8 @@
+exp_id: 'channel_filter_batch_100'
+gpu: 2
+Model:
+    name: 'KineticsChannelModelFilter'
+    checkpoint: ''
+    noise: 0.
+Data:
+    batch_size: 100

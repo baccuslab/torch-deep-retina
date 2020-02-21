@@ -122,10 +122,11 @@ def response1D(x, r, dt=0.01, us_factor=50, figsize=(8, 5)):
 
     # 1D stimulus trace
     block(x, ax=ax0)
-    ax0.set_ylim(-1.05, 0.05)
+    ax0.set_ylim(0, 1)
 
     # neural responses
-    ax1.plot(time, r, '-', color='firebrick')
+    for i in range(r.shape[-1]):
+        ax1.plot(time, r[:,i], '-')
     ax1.set_xlim(0, time[-1] + dt)
     ax1.set_ylim(-0.05, r.max() + 0.05)
     ax1.set_ylabel('Firing rate (Hz)')

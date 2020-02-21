@@ -29,6 +29,13 @@ def select_model(cfg, device):
                                   linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
                                   bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
                                   img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
+    if cfg.Model.name == 'KineticsChannelModelFilterNoClamp':
+        model = KineticsChannelModelFilterNoClamp(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
+                                  recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
+                                  noise=cfg.Model.noise, bias=cfg.Model.bias, 
+                                  linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
+                                  bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
+                                  img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
     if cfg.Model.name == 'KineticsChannelModelNoBatchnorm':
         model = KineticsChannelModelNoBatchnorm(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
                                   recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
