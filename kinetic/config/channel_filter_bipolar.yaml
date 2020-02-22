@@ -1,0 +1,7 @@
+exp_id: 'channel_filter_bipolar'
+gpu: 6
+Model:
+    name: 'KineticsChannelModelFilter'
+    checkpoint: ''
+    noise: 0.
+    linear_bias: False
