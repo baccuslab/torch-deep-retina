@@ -149,7 +149,7 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0,
         # apply clipping to remove the stimulus just after transitions
         num_blocks = 1 if not (train_or_test=='train' and nskip>0)\
                               else utils.try_key(NUM_BLOCKS,expt,1)
-        valid_indices = np.arange(expt_length).reshape(num_blocks, -1)
+        valid_indices = np.arange(expt_length).reshape(num_blocks,-1)
         valid_indices = valid_indices[:, nskip:].ravel()
 
         # reshape into the Toeplitz matrix (nsamps, hist, # *stim_dim)
@@ -177,7 +177,8 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0,
 
         # get the ganglion cell receptive field centers
         if expt in CENTERS:
-            centers = np.asarray(CENTERS[expt])
+            centers = np.asarray([CENTERS_DICT[expt][c] for c in cells])
+            #centers = np.asarray(CENTERS[expt])[cells]
         else:
             centers = None
 

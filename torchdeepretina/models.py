@@ -190,8 +190,9 @@ class BNCNN(TDRModel):
                                       bias=self.gc_bias))
             shape = update_shape(shape, self.ksizes[2])
             self.shapes.append(tuple(shape))
-            modules.append(GrabUnits(self.centers, self.ksizes,
-                                               self.img_shape))
+            modules.append(GrabUnits(self.centers,
+                                     self.ksizes[:self.n_layers],
+                                     self.img_shape))
         else:
             modules.append(Flatten())
             size = self.chans[1]*shape[0]*shape[1]
@@ -364,8 +365,9 @@ class LinearStackedBNCNN(TDRModel):
             modules.append(conv)
             shape = update_shape(shape, self.ksizes[2])
             self.shapes.append(tuple(shape))
-            modules.append(GrabUnits(self.centers, self.ksizes,
-                                               self.img_shape))
+            modules.append(GrabUnits(self.centers,
+                                     self.ksizes[:self.n_layers],
+                                     self.img_shape))
         else:
             modules.append(Flatten())
             modules.append(nn.Linear(self.chans[1]*shape[0]*shape[1],
@@ -638,8 +640,9 @@ class VaryModel(TDRModel):
             modules.append(conv)
             shape = update_shape(shape, self.ksizes[self.n_layers-1])
             self.shapes.append(tuple(shape))
-            modules.append(GrabUnits(self.centers, self.ksizes,
-                                               self.img_shape))
+            modules.append(GrabUnits(self.centers,
+                                     self.ksizes[:self.n_layers],
+                                     self.img_shape))
         else:
             modules.append(Flatten())
             modules.append(nn.Linear(temp_chans[-1]*shape[0]*shape[1],

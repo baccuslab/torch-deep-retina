@@ -86,7 +86,6 @@ class GrabUnits(nn.Module):
             the shape of the original image
         """
         super().__init__()
-        assert len(ksizes) > 2 and centers is not None
         self.ksizes = ksizes
         self.img_shape = img_shape
         self.coords = self.centers2coords(centers,ksizes,img_shape)
@@ -133,6 +132,11 @@ class GrabUnits(nn.Module):
     def forward(self, x):
         units = x[...,:,self.chans,self.coords[:,0],self.coords[:,1]]
         return units
+
+    def extra_repr(self):
+        coords = ["c{}: {}".format(i,self.coords[i]) for i in\
+                                        range(len(self.coords))]
+        return ",\n".join(coords)
 
 class ScaledSoftplus(nn.Module):
     def __init__(self):
