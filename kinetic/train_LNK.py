@@ -37,19 +37,13 @@ def train(cfg):
         model.load_state_dict(checkpoint['model_state_dict'])
         start_epoch = checkpoint['epoch'] + 1
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        
-    model.kinetics.ksi.requires_grad = False
-    model.kinetics.ksr.requires_grad = False
-            
-    model.kinetics.ka.requires_grad = False
-    model.kinetics.kfi.requires_grad = False
-    model.kinetics.kfr.requires_grad = False
     
-    model.kinetics.ksi.data = 0.2 * torch.ones(model.chans[0], 1).to(device)
-    model.kinetics.ksr.data = 0.02 * torch.ones(model.chans[0], 1).to(device)
-    model.kinetics.ka.data = 60. * torch.ones(model.chans[0], 1).to(device)
-    model.kinetics.kfi.data = 19. * torch.ones(model.chans[0], 1).to(device)
-    model.kinetics.kfr.data = 6. * torch.ones(model.chans[0], 1).to(device)
+    model.kinetics.ksi.data = 0. * torch.ones(model.chans[0], 1).to(device)
+    model.kinetics.ksr.data = 0. * torch.ones(model.chans[0], 1).to(device)
+    model.kinetics.ka.data = 23. * torch.ones(model.chans[0], 1).to(device)
+    model.kinetics.kfi.data = 50. * torch.ones(model.chans[0], 1).to(device)
+    model.kinetics.kfr.data = 87. * torch.ones(model.chans[0], 1).to(device)
+    
     
     train_dataset = TrainDataset(cfg)
     batch_sampler = BatchRnnSampler(length=len(train_dataset), batch_size=cfg.Data.batch_size,

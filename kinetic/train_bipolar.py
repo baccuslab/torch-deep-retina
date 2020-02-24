@@ -46,13 +46,29 @@ def train(cfg):
             model.state_dict()[key] = checkpoint_BNCNN['model_state_dict'][amacrine_minus_1(key)]
         if 'ganglion' in key:
             model.state_dict()[key] = checkpoint_BNCNN['model_state_dict'][key]
+    '''
     for name, p in model.amacrine.named_parameters():
         if 'filter' not in name:
             p.requires_grad = False
     for name, p in model.ganglion.named_parameters():
         p.requires_grad = False
+    '''
     model.amacrine.eval()
     model.ganglion.eval()
+    '''
+    model.kinetics.ksi.requires_grad = False
+    model.kinetics.ksr.requires_grad = False
+            
+    model.kinetics.ka.requires_grad = False
+    model.kinetics.kfi.requires_grad = False
+    model.kinetics.kfr.requires_grad = False
+    '''
+    
+    model.kinetics.ksi.data = 0. * torch.ones(model.chans[0], 1).to(device)
+    model.kinetics.ksr.data = 0. * torch.ones(model.chans[0], 1).to(device)
+    model.kinetics.ka.data = 23. * torch.ones(model.chans[0], 1).to(device)
+    model.kinetics.kfi.data = 50. * torch.ones(model.chans[0], 1).to(device)
+    model.kinetics.kfr.data = 87. * torch.ones(model.chans[0], 1).to(device)
     
     train_dataset = TrainDataset(cfg)
     batch_sampler = BatchRnnSampler(length=len(train_dataset), batch_size=cfg.Data.batch_size,

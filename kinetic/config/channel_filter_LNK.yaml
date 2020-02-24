@@ -1,6 +1,7 @@
 exp_id: 'channel_filter_LNK'
-gpu: 6
+gpu: 4
 Model:
-    name: 'KineticsChannelModelFilterNoClamp'
+    name: 'KineticsChannelModelFilterBipolar'
     checkpoint: ''
     noise: 0.
+    linear_bias: False
