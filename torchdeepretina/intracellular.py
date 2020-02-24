@@ -741,8 +741,6 @@ def get_intr_cors(model, stim_dict, mem_pot_dict,
                 pots = mem_pot_dict[cell_file][stim_type]
 
                 for layer in layers:
-                    if verbose:
-                        print("Calculating cors for layer:", layer)
                     resp = response[layer]
                     resp = resp.reshape(len(resp),-1)
                     # Retrns ndarray (Model Neurons, Potentials)
