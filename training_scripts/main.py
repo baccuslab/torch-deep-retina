@@ -19,7 +19,7 @@ from torchdeepretina.analysis import analysis_pipeline
 
 if __name__ == "__main__":
     hyperparams_file = "hyps/hyperparams.json"
-    hyperranges_file = 'hyps/hyperranges.json'
+    hyperranges_file = None
     device = 0
     if len(sys.argv) > 1:
         for i,arg in enumerate(sys.argv[1:]):
@@ -40,7 +40,10 @@ if __name__ == "__main__":
     print()
 
     hyps = load_json(hyperparams_file)
-    hyp_ranges = load_json(hyperranges_file)
+    if hyperranges_file is None:
+        hyp_ranges = {"lr":[hyps['lr']]}
+    else:
+        hyp_ranges = load_json(hyperranges_file)
     hyps_str = ""
     for k,v in hyps.items():
         if k not in hyp_ranges:
