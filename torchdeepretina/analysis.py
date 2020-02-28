@@ -191,7 +191,7 @@ def test_model(model, hyps):
     cor = np.mean(cors)
     return loss, cor
 
-def get_intrneuron_rfs(stims, mem_pots, filt_len=40,verbose=False):
+def get_interneuron_rfs(stims, mem_pots, filt_len=40,verbose=False):
     """
     Calculates the receptive fields of the recorded interneurons.
 
@@ -242,7 +242,7 @@ def get_intrneuron_rfs(stims, mem_pots, filt_len=40,verbose=False):
         rfs[cell_file][stim_key] =np.asarray(rfs[cell_file][stim_key])
     return rfs
 
-def sample_model_rfs(model, layers=[], verbose=False):
+def sample_model_rfs(model, layers=[], use_grad=True, verbose=False):
     """
     Returns a receptive field of the central unit of each channel
     in each layer of the model.
@@ -250,6 +250,9 @@ def sample_model_rfs(model, layers=[], verbose=False):
     model: torch Module
     layers: list of ints or strs
         indexes or names of desired layers to sample from.
+    use_grad: bool
+        if true, rfs are calculated by averaging over a number of
+        instantaneous receptive fields
 
     returns:
         rfs: dict
@@ -286,7 +289,7 @@ def sample_model_rfs(model, layers=[], verbose=False):
             table['col'].append(col)
     df = pd.DataFrame(table)
 
-    rfs = get_model_rfs(model, df, verbose=verbose)
+    rfs = get_model_rfs(model, df, use_grad=use_grad, verbose=verbose)
     return rfs
 
 def get_model_rfs(model, data_frame, contrast=1, use_grad=False,
@@ -563,13 +566,13 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'],
         print("Reading data for interneuron correlations...")
         print("Using stim keys:", ", ".join(list(stim_keys)))
     filt_len = model.img_shape[0]
-    rp = "~/interneuron_data"
+    rp = "~/sni_interneuron_data"
     interneuron_data = tdrdatas.load_interneuron_data(root_path=rp,
                                             filter_length=filt_len,
                                             files=files)
     stim_dict, mem_pot_dict, _ = interneuron_data
     if ret_real_rfs:
-        real_rfs = get_intrneuron_rfs(stim_dict, mem_pot_dict,
+        real_rfs = get_interneuron_rfs(stim_dict, mem_pot_dict,
                                   filt_len=model.img_shape[0],
                                   verbose=verbose)
 
