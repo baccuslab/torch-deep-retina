@@ -1,5 +1,4 @@
 exp_id: 'channel_filter_bipolar'
-gpu: 5
 Model:
     name: 'KineticsChannelModelFilterBipolar'
     checkpoint: ''

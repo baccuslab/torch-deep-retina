@@ -1,4 +1,5 @@
 import os
+import argparse
 import torch
 import torch.nn as nn
 from torch.utils.data.dataloader import DataLoader
@@ -12,6 +13,11 @@ from kinetic.utils import *
 from kinetic.models import *
 from kinetic.config import get_default_cfg, get_custom_cfg
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--gpu', type=int, required=True)
+parser.add_argument('--hyper', type=str, required=True)
+opt = parser.parse_args()
+
 def train(cfg):
     
     if not os.path.exists(os.path.join(cfg.save_path, cfg.exp_id)):
@@ -20,7 +26,7 @@ def train(cfg):
     with open(os.path.join(cfg.save_path, cfg.exp_id, 'cfg'), 'w') as f:
         f.write(str(cfg))
     
-    device = torch.device('cuda:'+str(cfg.gpu))
+    device = torch.device('cuda:'+str(opt.gpu))
     
     model = select_model(cfg, device)
     start_epoch = 0
@@ -95,6 +101,6 @@ def train(cfg):
                         'loss': epoch_loss}, save_path)
     
 if __name__ == "__main__":
-    cfg = get_custom_cfg('channel_filter')
+    cfg = get_custom_cfg(opt.hyper)
     print(cfg)
     train(cfg)

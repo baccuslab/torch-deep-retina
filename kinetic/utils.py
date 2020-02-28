@@ -36,33 +36,18 @@ def select_model(cfg, device):
                                   linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
                                   bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
                                   img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
-    if cfg.Model.name == 'KineticsChannelModelFilterNoClamp':
-        model = KineticsChannelModelFilterNoClamp(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
+    if cfg.Model.name == 'KineticsChannelModelFilterBipolarNoNorm':
+        model = KineticsChannelModelFilterBipolarNoNorm(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
+                                  recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
+                                  noise=cfg.Model.noise, bias=cfg.Model.bias, 
+                                  linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
+                                  softplus=cfg.Model.softplus, img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
+    if cfg.Model.name == 'KineticsChannelModelFilterAmacrine':
+        model = KineticsChannelModelFilterAmacrine(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
                                   recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
                                   noise=cfg.Model.noise, bias=cfg.Model.bias, 
                                   linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
                                   bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
-                                  img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
-    if cfg.Model.name == 'KineticsChannelModelNoBatchnorm':
-        model = KineticsChannelModelNoBatchnorm(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
-                                  recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
-                                  noise=cfg.Model.noise, bias=cfg.Model.bias, 
-                                  linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
-                                  softplus=cfg.Model.softplus, 
-                                  img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
-    if cfg.Model.name == 'KineticsChannelModelLayerNorm':
-        model = KineticsChannelModelLayerNorm(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
-                                  recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
-                                  bias=cfg.Model.bias, 
-                                  linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
-                                  softplus=cfg.Model.softplus, 
-                                  img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
-    if cfg.Model.name == 'KineticsChannelModelInstanceNorm':
-        model = KineticsChannelModelInstanceNorm(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
-                                  recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
-                                  bias=cfg.Model.bias, 
-                                  linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
-                                  softplus=cfg.Model.softplus, 
                                   img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
     if cfg.Model.name == 'KineticsModel':
         model = KineticsModel(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 

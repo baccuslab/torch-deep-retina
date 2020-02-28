@@ -411,3 +411,37 @@ def contrast_adaptation_kinetic_where_occupancy(model, device, c0, c1, where, du
     (fig, (ax0,ax1)) = figs
 
     return Rs, As, I1s, I2s
+
+def contrast_adaptation_kinetic_average(model, device, c0, c1, duration=50, delay=50, nsamples=140, nrepeats=10, filt_depth=40):
+    """Step change in contrast"""
+
+    # the contrast envelope
+    envelope = stim.flash(duration, delay, nsamples, intensity=(c1 - c0))
+    envelope += c0
+
+    # generate a bunch of responses to random noise with the given contrast envelope
+    responses = []
+    averages = []
+    with torch.no_grad():
+        for _ in range(nrepeats):
+            x = torch.from_numpy(stim.concat(np.random.randn(*envelope.shape) * envelope + 1, nh=filt_depth)).to(device)
+  
+            hs = get_hs(model, 1, device)
+            resps = []
+            aves = []
+            for i in range(x.shape[0]):
+                resp, hs = model(x[i:i+1], hs)
+                resps.append(resp)
+                aves.append(resp * x[i].mean())
+            resp = torch.cat(resps, dim=0)
+            ave = torch.cat(aves, dim=0)
+
+            responses.append(resp.cpu().detach().numpy())
+            averages.append(ave.cpu().detach().numpy())
+
+    responses = np.asarray(responses)
+    averages = np.asarray(averages)
+    figs = viz.response1D(envelope[40:, 0, 0], responses.mean(axis=0))
+    (fig, (ax0,ax1)) = figs
+
+    return averages.mean(axis=0)

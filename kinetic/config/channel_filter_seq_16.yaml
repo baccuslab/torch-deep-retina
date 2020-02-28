@@ -1,5 +1,4 @@
 exp_id: 'channel_filter_seq_10'
-gpu: 4
 Model:
     name: 'KineticsChannelModelFilter'
     checkpoint: ''

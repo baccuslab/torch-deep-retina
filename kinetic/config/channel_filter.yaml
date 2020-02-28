@@ -1,9 +1,5 @@
 exp_id: 'channel_filter'
-gpu: 1
 Model:
     name: 'KineticsChannelModelFilterBipolar'
-    checkpoint: '/home/xhding/saved_model/channel_filter_bipolar/epoch_035_loss_-20.04_pearson_0.3939.pth'
+    checkpoint: ''
     noise: 0.
-    linear_bias: False
-Optimize:
-    lr: 5e-3

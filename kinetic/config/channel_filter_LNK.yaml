@@ -1,7 +1,6 @@
-exp_id: 'channel_filter_LNK'
-gpu: 4
+exp_id: 'channel_filter_LNK_NoNorm'
 Model:
-    name: 'KineticsChannelModelFilterBipolar'
+    name: 'KineticsChannelModelFilterBipolarNoNorm'
     checkpoint: ''
     noise: 0.
     linear_bias: False

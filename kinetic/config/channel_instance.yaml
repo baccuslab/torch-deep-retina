@@ -1,5 +1,4 @@
 exp_id: 'channel_instance'
-gpu: 1
 Model:
     name: 'KineticsChannelModelInstanceNorm'
     checkpoint: ''

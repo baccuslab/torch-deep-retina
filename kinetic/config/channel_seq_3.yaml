@@ -1,5 +1,4 @@
 exp_id: 'channel_seq_3'
-gpu: 0
 Model:
     name: 'KineticsChannelModel'
     checkpoint: ''

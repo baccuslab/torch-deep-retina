@@ -1,4 +1,5 @@
 import os
+import argparse
 import torch
 import torch.nn as nn
 from torch.utils.data.dataloader import DataLoader
@@ -11,6 +12,11 @@ from kinetic.evaluation import pearsonr_eval
 from kinetic.utils import *
 from kinetic.models import *
 from kinetic.config import get_default_cfg, get_custom_cfg
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--gpu', type=int, required=True)
+parser.add_argument('--hyper', type=str, required=True)
+opt = parser.parse_args()
 
 def train(cfg):
     
@@ -102,6 +108,6 @@ def train(cfg):
                         'loss': epoch_loss}, save_path)
     
 if __name__ == "__main__":
-    cfg = get_custom_cfg('channel_filter_slow')
+    cfg = get_custom_cfg(opt.hyper)
     print(cfg)
     train(cfg)

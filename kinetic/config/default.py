@@ -5,7 +5,6 @@ _C = CfgNode()
 
 _C.exp_id = 'random'
 _C.img_shape = (40,50,50)
-_C.gpu = 1
 _C.epoch = 50
 _C.save_intvl = 5
 _C.save_path = '/home/xhding/saved_model'
