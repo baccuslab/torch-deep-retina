@@ -22,7 +22,9 @@ def contrast_adaptation_kinetic(model, device, c0, c1, duration=50, delay=50, ns
     responses = []
     with torch.no_grad():
         for _ in range(nrepeats):
-            x = torch.from_numpy(stim.concat(np.random.randn(*envelope.shape) * envelope + 1, nh=filt_depth)).to(device)
+            x = np.random.randn(*envelope.shape) * envelope + 1
+            x = (x - x.mean())/x.std()
+            x = torch.from_numpy(stim.concat(x, nh=filt_depth)).to(device)
   
             hs = get_hs(model, 1, device)
             resps = []
@@ -50,7 +52,9 @@ def contrast_adaptation_kinetic_reset(model, device, c0, c1, duration=50, delay=
     responses = []
     with torch.no_grad():
         for _ in range(nrepeats):
-            x = torch.from_numpy(stim.concat(np.random.randn(*envelope.shape) * envelope + 1, nh=filt_depth)).to(device)
+            x = np.random.randn(*envelope.shape) * envelope + 1
+            x = (x - x.mean())/x.std()
+            x = torch.from_numpy(stim.concat(x, nh=filt_depth)).to(device)
 
             resps = []
             for i in range(x.shape[0]):
@@ -84,7 +88,9 @@ def contrast_adaptation_kinetic_occupancy(model, device, c0, c1, duration=50, de
     I2s = []
     with torch.no_grad():
         for _ in range(nrepeats):
-            x = torch.from_numpy(stim.concat(np.random.randn(*envelope.shape) * envelope + 1, nh=filt_depth)).to(device)
+            x = np.random.randn(*envelope.shape) * envelope + 1
+            x = (x - x.mean())/x.std()
+            x = torch.from_numpy(stim.concat(x, nh=filt_depth)).to(device)
             hs = get_hs(model, 1, device)
             resps = []
             R = []
@@ -131,7 +137,9 @@ def contrast_adaptation_kinetic_center_occupancy(model, device, c0, c1, duration
     I2s = []
     with torch.no_grad():
         for _ in range(nrepeats):
-            x = torch.from_numpy(stim.concat(np.random.randn(*envelope.shape) * envelope + 1, nh=filt_depth)).to(device)
+            x = np.random.randn(*envelope.shape) * envelope + 1
+            x = (x - x.mean())/x.std()
+            x = torch.from_numpy(stim.concat(x, nh=filt_depth)).to(device)
   
             hs = get_hs(model, 1, device)
             resps = []
@@ -300,7 +308,9 @@ def contrast_adaptation_kinetic_center_deviation(model, device, c0, c1, duration
     Rs = []
     with torch.no_grad():
         for _ in range(nrepeats):
-            x = torch.from_numpy(stim.concat(np.random.randn(*envelope.shape) * envelope + 1, nh=filt_depth)).to(device)
+            x = np.random.randn(*envelope.shape) * envelope + 1
+            x = (x - x.mean())/x.std()
+            x = torch.from_numpy(stim.concat(x, nh=filt_depth)).to(device)
   
             hs = get_hs(model, 1, device)
             R = np.zeros((8, 1296))
@@ -330,7 +340,9 @@ def contrast_adaptation_kinetic_center_deviation_response(model, device, c0, c1,
     I2s = []
     with torch.no_grad():
         for _ in range(nrepeats):
-            x = torch.from_numpy(stim.concat(np.random.randn(*envelope.shape) * envelope + 1, nh=filt_depth)).to(device)
+            x = np.random.randn(*envelope.shape) * envelope + 1
+            x = (x - x.mean())/x.std()
+            x = torch.from_numpy(stim.concat(x, nh=filt_depth)).to(device)
   
             hs = get_hs(model, 1, device)
             resps = []
@@ -379,7 +391,9 @@ def contrast_adaptation_kinetic_where_occupancy(model, device, c0, c1, where, du
     I2s = []
     with torch.no_grad():
         for _ in range(nrepeats):
-            x = torch.from_numpy(stim.concat(np.random.randn(*envelope.shape) * envelope + 1, nh=filt_depth)).to(device)
+            x = np.random.randn(*envelope.shape) * envelope + 1
+            x = (x - x.mean())/x.std()
+            x = torch.from_numpy(stim.concat(x, nh=filt_depth)).to(device)
   
             hs = get_hs(model, 1, device)
             resps = []
@@ -424,7 +438,9 @@ def contrast_adaptation_kinetic_average(model, device, c0, c1, duration=50, dela
     averages = []
     with torch.no_grad():
         for _ in range(nrepeats):
-            x = torch.from_numpy(stim.concat(np.random.randn(*envelope.shape) * envelope + 1, nh=filt_depth)).to(device)
+            x = np.random.randn(*envelope.shape) * envelope + 1
+            x = (x - x.mean())/x.std()
+            x = torch.from_numpy(stim.concat(x, nh=filt_depth)).to(device)
   
             hs = get_hs(model, 1, device)
             resps = []

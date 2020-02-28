@@ -1,4 +1,0 @@
-exp_id: 'channel_instance'
-Model:
-    name: 'KineticsChannelModelInstanceNorm'
-    checkpoint: ''

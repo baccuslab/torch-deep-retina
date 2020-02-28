@@ -1,5 +1,0 @@
-exp_id: 'channel_seq_3'
-Model:
-    name: 'KineticsChannelModel'
-    checkpoint: ''
-    recur_seq_len: 3

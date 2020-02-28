@@ -106,8 +106,8 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, cutout_widt
             stim = ft.cutout(arr, idx=(px, py), width=cutout_width).astype('float32')
         stats = {}
         if norm_stats is not None:
-            stats['mean'] = norm_stats[0]
-            stats['std'] = norm_stats[1]
+            stats['mean'] = norm_stats['mean']
+            stats['std'] = norm_stats['std']
         else:
             stats['mean'] = stim.mean()
             stats['std'] = stim.std()+1e-7

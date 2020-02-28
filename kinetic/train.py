@@ -49,7 +49,7 @@ def train(cfg):
     batch_sampler = BatchRnnSampler(length=len(train_dataset), batch_size=cfg.Data.batch_size,
                                     seq_len=cfg.Data.trunc_int)
     train_data = DataLoader(dataset=train_dataset, batch_sampler=batch_sampler)
-    validation_data =  DataLoader(dataset=ValidationDataset(cfg))
+    validation_data =  DataLoader(dataset=ValidationDataset(cfg, train_dataset.stats))
     
     for epoch in range(start_epoch, start_epoch + cfg.epoch):
         epoch_loss = 0
@@ -75,7 +75,7 @@ def train(cfg):
                 
         epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size
         
-        pearson = pearsonr_eval(model, validation_data, cfg.Model.n_units, 600, device)
+        pearson = pearsonr_eval(model, validation_data, cfg.Model.n_units, len(validation_data), device)
         
         print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}'.format(epoch, epoch_loss, pearson))
         

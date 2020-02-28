@@ -1,4 +1,0 @@
-exp_id: 'channel_no_norm'
-Model:
-    name: 'KineticsChannelModelNoBatchnorm'
-    checkpoint: ''

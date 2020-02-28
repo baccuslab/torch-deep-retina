@@ -1,4 +1,0 @@
-exp_id: 'channel_layer'
-Model:
-    name: 'KineticsChannelModelLayerNorm'
-    checkpoint: ''

@@ -48,10 +48,10 @@ class TrainDataset(Dataset):
     
 class ValidationDataset(Dataset):
     
-    def __init__(self, cfg):
+    def __init__(self, cfg, stats):
         super().__init__()
         data = loadexpt('15-10-07', [0,1,2,3,4], 'naturalscene', 'train',
-                        cfg.img_shape[0], 0, data_path=cfg.Data.data_path)
+                        cfg.img_shape[0], 0, norm_stats=stats, data_path=cfg.Data.data_path)
         val_size = cfg.Data.val_size
         self.X = data.X[-val_size:]
         self.y = data.y[-val_size:]
@@ -68,10 +68,10 @@ class ValidationDataset(Dataset):
     
 class TestDataset(Dataset):
     
-    def __init__(self, cfg):
+    def __init__(self, cfg, stats):
         super().__init__()
         data = loadexpt('15-10-07', [0,1,2,3,4], 'naturalscene', 'test',
-                        cfg.img_shape[0], 0, data_path=cfg.Data.data_path)
+                        cfg.img_shape[0], 0, norm_stats=stats, data_path=cfg.Data.data_path)
         self.X = data.X[:]
         self.y = data.y[:]
         self.centers = data.centers
