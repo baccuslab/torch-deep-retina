@@ -130,6 +130,7 @@ class Trainer:
                 hyps['prune_layers'] = layers[:-1]
         zero_dict ={d:set() for d in hyps['prune_layers']}
         epoch = -1
+        zero_bias = utils.try_key(hyps,'zero_bias',True)
         stop_training = False
         while not stop_training:
             epoch += 1
@@ -147,7 +148,7 @@ class Trainer:
             # Train Loop
             for i,(x,label) in enumerate(data_distr.train_sample()):
                 optimizer.zero_grad()
-                label = label.float().to(DEVICE)
+                label = label.float()
 
                 # Error Evaluation
                 y,error = static_eval(x, label, model, loss_fn)
@@ -155,7 +156,7 @@ class Trainer:
                     activity_l1 = torch.zeros(1).to(DEVICE)
                 else:
                     activity_l1 = hyps['l1']*torch.norm(y, 1).float()
-                    activity_l1 = activity_l1 .mean()
+                    activity_l1 = activity_l1.mean()
                 if 'gauss_reg' in hyps and hyps['gauss_reg'] > 0:
                     g_coef = hyps['gauss_loss_coef']
                     activity_l1 += g_coef*gauss_reg.get_loss()
@@ -165,7 +166,6 @@ class Trainer:
                 loss.backward()
                 optimizer.step()
                 # Only prunes if zero_dict contains values
-                zero_bias = utils.try_key(hyps,'zero_bias',True)
                 tdrprune.zero_chans(model, zero_dict,zero_bias)
 
                 epoch_loss += loss.item()
@@ -375,7 +375,7 @@ class Trainer:
             # Train Loop
             for i,(x,label) in enumerate(data_distr.train_sample()):
                 optimizer.zero_grad()
-                label = label.float().to(DEVICE)
+                label = label.float()
 
                 # Error Evaluation
                 y,error = static_eval(x, label, model, loss_fn)
@@ -762,7 +762,7 @@ def static_eval(x, label, model, loss_fn):
         the loss function. should accept args: (pred, true)
     """
     pred = model(x.to(DEVICE))
-    error = loss_fn(pred,label.to(DEVICE))
+    error = loss_fn(pred, label.to(DEVICE))
     return pred,error
 
 def get_data(hyps):
