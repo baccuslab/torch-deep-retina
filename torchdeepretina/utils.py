@@ -20,6 +20,51 @@ if torch.cuda.is_available():
 else:
     DEVICE = torch.device("cpu")
 
+def get_shifts(row_steps=0, col_steps=0, n_row=50, n_col=50,
+                                    row_pad=15, col_pad=15):
+    """
+    Iterator that returns all possible shift combinations for a
+    stimulus that is (n_row, n_col) dims. Used with get_intr_cors to
+    ensure that receptive fields of the model units and recordings
+    are overlapping.
+
+    row_steps: int
+        The number of row shifts to perform evenly spaced within the
+        padded window
+    col_steps: int
+        The number of col shifts to perform evenly spaced within the
+        padded window
+    n_row: int
+        size of window height
+    n_col: int
+        size of window width
+    row_pad: int
+        the limit of the shifting in the height dimension
+    col_pad: int
+        the limit of the shifting in the width dimension
+    """
+    assert not (row_steps < 0 or col_steps < 0),\
+                                            "steps must be positive"
+    if row_steps==0 and col_steps==0:
+        yield (0,0)
+        return
+    
+    row_dist = (n_row-2*row_pad)
+    assert row_dist >= 0, "padding is too big!"
+    col_dist = (n_col-2*col_pad)
+    assert col_dist >= 0, "padding is too big!"
+
+    row_rng = [0] if row_dist==0 or row_steps<=1\
+                        else np.linspace(-row_dist//2, row_dist//2,
+                                                         row_steps)
+    col_rng = [0] if col_dist==0 or col_steps<=1\
+                        else np.linspace(-col_dist//2, col_dist//2,
+                                                         col_steps)
+
+    for row in row_rng:
+        for col in col_rng:
+            yield (int(row), int(col))
+
 def partial_whiten(X, alpha, eigval_tol=1e-7):
     """
     Return regularized whitening transform for a matrix X.
@@ -1365,6 +1410,38 @@ def mtx_cor(X, Y, batch_size=500, to_numpy=False, zscore=True):
     if to_numpy:
         return cor_mtx.numpy()
     return cor_mtx
+
+def pca(data, k=2):
+    """
+    Performs principal component analysis on the data. More
+    specifically, calculates the k principal components of the data
+    matrix and returns the projected data along with the eigen values
+    and vectors.
+
+    data: ndarray or torch tensor (T,N)
+        the data should be organized such that T is the number
+        of datapoints and N is the number of features. In
+        neuro, this would mean T is time or trial and N is
+        neuron.
+    k: int
+        number of principal components to calculate. In reality,
+        all components are calculated regardless of this argument,
+        so reducing k does not reduce compute time.
+    """
+    cent = data-data.mean(0)
+    cov = cent.T@cent
+    if isinstance(data, np.ndarray):
+        vals, vecs = np.linalg.eig(cov)
+        args = np.argsort(-vals)
+    else:
+        vals, vecs = torch.eig(cov,eigenvectors=True)
+        vecs = vecs.T # torch returns left eigenvectors, we want right
+        vals = vals[:,0] # Only reals
+        args = torch.argsort(vals)
+    k = min(len(args),k)
+    vecs = vecs[:,args[:k]]
+    vals = vals[args[:k]]
+    return cent@vecs, vals, vecs
 
 def revcor(X, y, batch_size=500, to_numpy=False, ret_norm_stats=False,
                                                        verbose=False):

@@ -21,10 +21,28 @@ from skimage.transform import downscale_local_mean
 import skimage.draw
 import cv2
 import torch
+import pyret.filtertools as ft
 
 __all__ = ['concat', 'white', 'contrast_steps', 'flash','spatialize',
                       'bar', 'driftingbar', 'cmask','paired_flashes',
                       'rolling_window','get_cutout',"spatial_pad"]
+
+def get_rf_centers(rfs):
+    """
+    Finds the row,col coordinate of the center of a receptive field.
+    First rank 1 decomposes the receptive field, then uses spatial
+    component to find the row,col coordinate with the maximum value.
+
+    rfs: ndarray or list of ndarrays (N,C,H,W)
+        a list of spatiotemporal receptive fields.
+    """
+    centers = []
+    for rf in rfs:
+        spat, _ = ft.decompose(rf)
+        idx = np.argmax(np.abs(spat.ravel()))
+        center = np.unravel_index(idx,spat.shape)
+        centers.append(center)
+    return centers
 
 def get_cutout(stimulus, center, span=20, pad_to=50):
     """ 

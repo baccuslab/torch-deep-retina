@@ -607,51 +607,6 @@ def model2model_one2one_cors(model1, model2,
     bests1, bests2 = tdrutils.best_one2one_mapping(cor_mtx)
     return cor_mtx, bests1, bests2
 
-def get_shifts(row_steps=0, col_steps=0, n_row=50, n_col=50,
-                                    row_pad=15, col_pad=15):
-    """
-    Iterator that returns all possible shift combinations for a
-    stimulus that is (n_row, n_col) dims. Used with get_intr_cors to
-    ensure that receptive fields of the model units and recordings
-    are overlapping.
-
-    row_steps: int
-        The number of row shifts to perform evenly spaced within the
-        padded window
-    col_steps: int
-        The number of col shifts to perform evenly spaced within the
-        padded window
-    n_row: int
-        size of window height
-    n_col: int
-        size of window width
-    row_pad: int
-        the limit of the shifting in the height dimension
-    col_pad: int
-        the limit of the shifting in the width dimension
-    """
-    assert not (row_steps < 0 or col_steps < 0),\
-                                            "steps must be positive"
-    if row_steps==0 and col_steps==0:
-        yield (0,0)
-        return
-    
-    row_dist = (n_row-2*row_pad)
-    assert row_dist >= 0, "padding is too big!"
-    col_dist = (n_col-2*col_pad)
-    assert col_dist >= 0, "padding is too big!"
-
-    row_rng = [0] if row_dist==0 or row_steps<=1\
-                        else np.linspace(-row_dist//2, row_dist//2,
-                                                         row_steps)
-    col_rng = [0] if col_dist==0 or col_steps<=1\
-                        else np.linspace(-col_dist//2, col_dist//2,
-                                                         col_steps)
-
-    for row in row_rng:
-        for col in col_rng:
-            yield (int(row), int(col))
-
 def get_intr_cors(model, stim_dict, mem_pot_dict,
                               layers={"sequential.2", "sequential.8"},
                               batch_size=500, slide_steps=0,
@@ -709,7 +664,7 @@ def get_intr_cors(model, stim_dict, mem_pot_dict,
     for cell_file in stim_dict.keys():
         for stim_type in stim_dict[cell_file].keys():
             best_mtxs = collections.defaultdict(lambda: dict())
-            shifts = get_shifts(row_steps=slide_steps,
+            shifts = tdrutils.get_shifts(row_steps=slide_steps,
                                 col_steps=slide_steps,
                                 n_row=model.img_shape[1],
                                 n_col=model.img_shape[2])
@@ -741,6 +696,8 @@ def get_intr_cors(model, stim_dict, mem_pot_dict,
                 pots = mem_pot_dict[cell_file][stim_type]
 
                 for layer in layers:
+                    if verbose:
+                        print("Calculating cors for layer:", layer)
                     resp = response[layer]
                     resp = resp.reshape(len(resp),-1)
                     # Retrns ndarray (Model Neurons, Potentials)

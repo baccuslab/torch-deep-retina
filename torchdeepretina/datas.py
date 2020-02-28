@@ -178,7 +178,6 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0,
         # get the ganglion cell receptive field centers
         if expt in CENTERS:
             centers = np.asarray([CENTERS_DICT[expt][c] for c in cells])
-            #centers = np.asarray(CENTERS[expt])[cells]
         else:
             centers = None
 
