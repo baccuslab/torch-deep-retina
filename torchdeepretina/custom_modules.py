@@ -124,9 +124,9 @@ class GrabUnits(nn.Module):
         singular version of centers_to_coords
         """
         row = max((center[0]-half_effective_ksize),0)
-        row = min(row, img_shape[-2]-(2*(half_effective_ksize-1)))
+        row = min(row, img_shape[-2]-1-(2*(half_effective_ksize-1)))
         col = max((center[1]-half_effective_ksize),0)
-        col = min(col, img_shape[-1]-(2*(half_effective_ksize-1)))
+        col = min(col, img_shape[-1]-1-(2*(half_effective_ksize-1)))
         return [row,col]
 
     def forward(self, x):

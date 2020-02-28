@@ -182,7 +182,7 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0,
             centers = None
 
     return Exptdata(stim_reshaped, resp, spk_hist, stats, cells,
-                                                        centers)
+                                                       centers)
 
 def _loadexpt_h5(expt, filename, root="~/experiments/data"):
     """Loads an h5py reference to an experiment on disk"""
