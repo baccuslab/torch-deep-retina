@@ -826,7 +826,7 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500,
 
 def integrated_gradient(model, X, layer='sequential.2', chans=None,
                                                     spat_idx=None,
-                                                    alpha_steps=5,
+                                                    alpha_steps=10,
                                                     batch_size=500,
                                                     y=None,
                                                     lossfxn=None,
@@ -1322,7 +1322,6 @@ def pearsonr(x,y):
     Returns:
         pearsonr: ndarray or torch tensor (...)
             shape will be the 
-
     """
     shape = None if len(x.shape) == 1 else x.shape[1:]
     assert type(x) == type(y)

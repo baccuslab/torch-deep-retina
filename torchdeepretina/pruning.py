@@ -126,7 +126,8 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
         layer = prune_layers[intg_idx]
         tdr_ig = tdrutils.integrated_gradient
         intg_grad, gc_resp = tdr_ig(model, data_sample, layer=layer,
-                                                    gc_idx=None,
+                                                    chans=None,
+                                                    spat_idx=None,
                                                     alpha_steps=steps,
                                                     batch_size=500,
                                                     to_numpy=True,
