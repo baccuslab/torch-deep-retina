@@ -34,6 +34,17 @@ CELLS = {
     'arbfilt': [0,1,2,3,4,5,6,7,8,9]
 }
 CENTERS = {
+    "bipolars_late_2012":  [(19, 22), (18, 20), (20, 21), (18, 19)],
+    "bipolars_early_2012": [(17, 23), (17, 23), (18, 23)],
+    "amacrines_early_2012":[(18, 23), (19, 24), (19, 23), (19, 23),
+                                                          (18, 23)],
+    "amacrines_late_2012":[ (20, 20), (22, 19), (20, 20), (19, 22),
+                            (22, 25), (19, 21), (19, 17), (20, 19),
+                            (17, 20), (19, 23), (17, 20), (17, 20),
+                            (20, 19), (18, 18), (19, 17), (17, 17),
+                            (18, 20), (20, 19), (17, 19), (19, 18),
+                            (17, 17), (25, 15)
+                          ],
     '15-10-07':  [[21,18], [24,20], [22,18], [27,18], [31,20]],
     '15-11-21a': [[37,3], [39,6], [20,15], [41,2]],
     '15-11-21b': [[16,13], [20,12], [19,7],[19,3], [21,7], [22,6],
@@ -44,6 +55,14 @@ CENTERS = {
     'arbfilt': None,
 }
 CENTERS_DICT = {
+     "bipolars_late_2012":  {i:c for i,c in\
+                          enumerate(CENTERS["bipolars_late_2012"])},
+     "bipolars_early_2012":  {i:c for i,c in\
+                          enumerate(CENTERS["bipolars_early_2012"])},
+     "amacrines_early_2012":  {i:c for i,c in\
+                          enumerate(CENTERS["amacrines_early_2012"])},
+     "amacrines_late_2012":  {i:c for i,c in\
+                          enumerate(CENTERS["amacrines_late_2012"])},
         '15-10-07':  {0:[21,18], 1:[24,20], 2:[22,18], 3:[27,18],
                       4:[31,20]},
         '15-11-21a': {6:[37,3], 10:[39,6], 12:[20,15], 13:[41,2]},
@@ -68,6 +87,9 @@ class DataContainer():
         self.y = data.y
         self.centers = data.centers
         self.stats = data.stats
+    
+    def __len__(self):
+        return len(self.X)
 
 def loadexpt(expt, cells, filename, train_or_test, history, nskip=0,
                                      cutout_width=None, 
@@ -218,6 +240,90 @@ def prepare_stim(stim, stim_type):
     else:
         print("Invalid stim type")
         assert False
+
+def loadintrexpt(expt, cells, stim_type, history, H=50, W=None,
+                                     cutout_width=None,
+                                     norm_stats=None,
+                                     data_path="~/interneuron_data"):
+    """
+    Loads an experiment from an h5 file on disk
+
+    Parameters
+    ----------
+    expt : str
+        The name of the interneuron file with or without the extension
+        (e.g. 'bipolars_late_2012')
+
+    cells : list of ints (or string "all")
+        Indices of the cells to load from the experiment
+        If "all" is argued, all cells for the argued expt are used.
+
+    stim_type : string
+        Name of the hdf5 file to load (e.g. 'whitenoise' or
+        'naturalscene')
+
+    history : int
+        Number of samples of history to include in the toeplitz
+        stimulus. If None, no history dimension is created.
+
+    H : int
+        height of stimulus
+
+    W : int
+        width of stimulus. if none, defaults to H
+
+    cutout_width : int, optional
+        If not None, cuts out the stimulus around the STA 
+        (assumes `cells` is a scalar)
+
+    norm_stats : listlike of floats or dict i.e. [mean, std], optional
+        If a list of len 2 is argued, idx 0 will be used as the mean 
+        and idx 1 the std for data normalization. if dict, use 'mean' 
+        and 'std' as keys
+
+    data_path : string
+        path to the data folders
+    """
+    if ".h5" != expt[-3:]: expt = expt + ".h5"
+    files = [expt]
+    if stim_type == "naturalscene" or stim_type == "whitenoise":
+        stim_keys = {"boxes"}
+    else:
+        stim_keys = {stim_type}
+    train_stim,mem_pots,_ = load_interneuron_data(data_path,
+                                                files=files,
+                                                stim_keys=stim_keys)
+    key = list(train_stim[files[0]].keys())[0]
+    if W is None: W = H
+    train_stim =tdrstim.spatial_pad(train_stim[files[0]][key],H=H,W=W)
+
+    stats = norm_stats
+    if stats is None:
+        stats = {"mean":train_stim.mean(),
+                 "std":train_stim.std()+1e-5}
+    elif isinstance(stats, list):
+        keys = ['mean', 'std']
+        stats = {k:v for k,v in zip(keys, stats)}
+    train_stim = (train_stim - stats['mean'])/stats['std']
+
+    if cells=="all":
+        cells = list(range(len(mem_pots)))
+    if isinstance(cells,  int):
+        cells = [cells]
+    centers = [CENTERS[expt[:-3]][c] for c in cells]
+    if cutout_width is not None and cutout_width > 0:
+        assert len(cells) == 1, "only 1 cell allowed for cutout"
+        center = CENTERS[expt][cells[0]]
+        stim = tdrstim.get_cutout(arr, center=center,
+                                   span=cutout_width,
+                                   pad_to=arr.shape[-1])
+        stim = stim.astype('float32')
+    if history is not None and history != 0:
+        train_stim = tdrstim.rolling_window(train_stim, history)
+    mem_pot = mem_pots[files[0]][key][cells].T
+    print("Using interneuron stimtype {} and cells {}".format(key,
+                                                              cells))
+    return Exptdata(train_stim, mem_pot, None, stats, cells, centers)
 
 def load_interneuron_data(root_path="~/interneuron_data/", files=None,
                                                   filter_length=40,

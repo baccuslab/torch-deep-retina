@@ -10,8 +10,9 @@ import os.path as path
 import torchdeepretina.utils as utils
 import torchdeepretina.io as tdrio
 import torchdeepretina.pruning as tdrprune
-from torchdeepretina.datas import loadexpt, DataContainer,\
-                                            DataDistributor
+import torchdeepretina.intracellular as tdrintr
+from torchdeepretina.datas import loadintrexpt,loadexpt,DataContainer,\
+                                                       DataDistributor
 from torchdeepretina.custom_modules import semantic_loss,NullScheduler
 from torchdeepretina.models import *
 import torchdeepretina.analysis as analysis
@@ -65,7 +66,11 @@ class Trainer:
             train_method = getattr(self, "retinotopic_loop")
         else:
             train_method = self.train_loop
-        return train_method(hyps,verbose)
+        try:
+            return train_method(hyps,verbose)
+        except IndexError as e:
+            print("Caught Index Error", e)
+            return None
 
     def stop_early(self, acc):
         """
@@ -114,9 +119,6 @@ class Trainer:
         # Make optimization objects (lossfxn, optimizer, scheduler)
         optimizer, scheduler, loss_fn = get_optim_objs(hyps, model,
                                                 train_data.centers)
-        if 'gauss_reg' in hyps and hyps['gauss_reg'] > 0:
-            gauss_reg = tdrmods.GaussRegularizer(model, [0,6],
-                                          std=hyps['gauss_reg'])
 
         # Training
         if hyps['exp_name'] == "test":
@@ -303,7 +305,6 @@ class Trainer:
             # If loss is nan, training is futile
             if math.isnan(avg_loss) or math.isinf(avg_loss) or stop:
                 break
-
 
         # Final save
         results = {"save_folder":hyps['save_folder'],
@@ -604,10 +605,14 @@ def hyper_search(hyps, hyp_ranges, early_stopping=10,
                                              time.time()-starttime)
         hyps = hyper_q.get()
         results = trainer.train(hyps, verbose=True)
-        with open(results_file,'a') as f:
-            results = " -- ".join([str(k)+":"+str(results[k]) for\
-                                     k in sorted(results.keys())])
-            f.write("\n"+results+"\n")
+        if results is not None:
+            with open(results_file,'a') as f:
+                results = " -- ".join([str(k)+":"+str(results[k]) for\
+                                         k in sorted(results.keys())])
+                f.write("\n"+results+"\n")
+        else:
+            print("Skipped {} cells {}".format(hyps['dataset'],
+                                               hyps['cells']))
 
 def get_exp_num(exp_name):
     """
@@ -716,7 +721,7 @@ def validate_static(hyps, model, data_distr, loss_fn, step_size=500,
             n = outs.shape[0]
             vl = hyps['l1'] * torch.norm(outs, 1).float()/n
             val_loss += vl.item()
-        if verbose and i%(n_loops//10) == 0:
+        if verbose and i%max((n_loops//10),1) == 0:
             n = data_distr.val_y.shape[0]
             print("{}/{}".format(i*step_size,n), end="     \r")
     return val_loss, val_preds, val_targs
@@ -732,7 +737,7 @@ def get_model_and_distr(hyps, train_data):
     """
     model = globals()[hyps['model_type']](**hyps)
     model = model.to(DEVICE)
-    num_val = 10000
+    num_val = int(min(10000, 0.1*len(train_data)))
     batch_size = hyps['batch_size']
     seq_len = 1
     shift_labels = False if 'shift_labels' not in hyps else\
@@ -746,6 +751,9 @@ def get_model_and_distr(hyps, train_data):
                                     shift_labels=shift_labels,
                                     zscorey=zscorey)
     data_distr.torch()
+    if 'start_checkpt' in hyps and hyps['start_checkpt'] is not None:
+        checkpt = tdrio.load_checkpoint(hyps['start_checkpt'])
+        model.load_state_dict(checkpt['model_state_dict'])
     return model, data_distr
 
 def static_eval(x, label, model, loss_fn):
@@ -774,12 +782,25 @@ def get_data(hyps):
                                       hyps['cutout_size']
     img_depth, img_height, img_width = hyps['img_shape']
 
-    data_path = utils.try_key(hyps,'datapath','~/experiments/data')
+    if hyps['dataset'] in set(tdrintr.centers.keys()):
+        data_path=utils.try_key(hyps,'datapath','~/interneuron_data/')
+        train_data = loadintrexpt(expt=hyps['dataset'],
+                                           cells=hyps['cells'],
+                                           stim_type=hyps['stim_type'],
+                                           history=img_depth,
+                                           H=img_height,
+                                           W=img_width,
+                                           norm_stats=None,
+                                           cutout_width=cutout_size,
+                                           data_path=data_path)
 
-    train_data = DataContainer(loadexpt(hyps['dataset'],hyps['cells'],
+    else:
+        data_path = utils.try_key(hyps,'datapath','~/experiments/data')
+        train_data = loadexpt(hyps['dataset'],hyps['cells'],
                                 hyps['stim_type'],'train',img_depth,0,
                                 cutout_width=cutout_size,
-                                data_path=data_path))
+                                data_path=data_path)
+    train_data = DataContainer(train_data)
     norm_stats = [train_data.stats['mean'], train_data.stats['std']]
 
     try:
