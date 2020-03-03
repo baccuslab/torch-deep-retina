@@ -131,6 +131,7 @@ def load_checkpoint(path):
     path: str
         path to checkpoint file
     """
+    path = os.path.expanduser(path)
     if os.path.isdir(path):
         checkpts = get_checkpoints(path)
         hyps = get_hyps(path)
