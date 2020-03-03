@@ -1,3 +1,8 @@
+"""
+Calculates a similarity metric between two argued models. The result
+is a dataframe that contains information about the similarity of each
+of the layers.
+"""
 import torch
 import torchdeepretina as tdr
 import numpy as np
