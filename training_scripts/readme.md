@@ -83,7 +83,9 @@ The hyperparams.json should have a list of all the desired user setting for the 
     * the number of integration steps when calculating the integrated gradient
 * `intg_bsize`: int
     * batch size of integrated gradient calculations
-* 
+* `zero_bias`: bool
+    * determines if bias should be zeroed in addition to pruned filter
+
 * `retinotopic`: bool
     * determines if retinotopic training. Overwritten by `prune`
 * `semantic_scale`: float
