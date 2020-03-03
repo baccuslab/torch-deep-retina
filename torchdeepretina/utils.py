@@ -1321,15 +1321,13 @@ def pearsonr(x,y):
 
     Returns:
         pearsonr: ndarray or torch tensor (...)
-            shape will be the 
+            shape will be the same as input but without the first
+            dimension. As such, the correlations are calculated
+            between cells in the same spatial location.
 
     """
     shape = None if len(x.shape) == 1 else x.shape[1:]
     assert type(x) == type(y)
-    if isinstance(x, np.ndarray):
-        sqrt = np.sqrt
-    else:
-        sqrt = torch.sqrt
     x = x.reshape(len(x), -1)
     y = y.reshape(len(y), -1)
     try:
@@ -1338,6 +1336,10 @@ def pearsonr(x,y):
         # STD calculation ensures same calculation is performed for
         # ndarrays and torch tensors. Torch tensor .std() uses n-1 
         # correction
+        if isinstance(x, np.ndarray):
+            sqrt = np.sqrt
+        else:
+            sqrt = torch.sqrt
         sigx = sqrt((x**2).mean(0)-mux**2)
         sigy = sqrt((y**2).mean(0)-muy**2)
     except MemoryError as e:
