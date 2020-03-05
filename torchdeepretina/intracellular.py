@@ -719,8 +719,11 @@ def get_intr_cors(model, stim_dict, mem_pot_dict,
                 layer_idx = tdrutils.get_layer_idx(model, layer=layer)
                 assert layer_idx >= 0,\
                             "layer {} does not exist!!!".format(layer)
-                shape = (model.chans[layer_idx],
-                       *model.shapes[layer_idx])
+                if layer_idx >= len(model.shapes):
+                    shape = [model.n_units]
+                else:
+                    shape = (model.chans[layer_idx],
+                                *model.shapes[layer_idx])
                 best_mtx = best_mtxs[layer]['cor_mtx']
                 xshift = best_mtxs[layer]['xshift']
                 yshift = best_mtxs[layer]['yshift']
@@ -736,8 +739,11 @@ def get_intr_cors(model, stim_dict, mem_pot_dict,
                         cor = best_mtx[unit_idx,cell_idx]
                         intr_cors['cor'].append(cor)
                         intr_cors['layer'].append(layer)
-                        (chan,row,col) = np.unravel_index(unit_idx,
-                                                             shape)
+                        if len(shape) == 1:
+                            chan,row,col = unit_idx,0,0
+                        else:
+                            (chan,row,col)=np.unravel_index(unit_idx,
+                                                            shape)
                         intr_cors['chan'].append(chan)
                         intr_cors['row'].append(row)
                         intr_cors['col'].append(col)
