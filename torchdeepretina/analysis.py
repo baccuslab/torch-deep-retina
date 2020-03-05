@@ -86,7 +86,7 @@ def std_consistency(model_files, ret_all=False, verbose=True):
         return avg_std, nat_std, white_std
     return avg_std
 
-def get_metrics(folder, ret_metrics=False):
+def get_metrics(folder):
     """
     Returns the recorded training history of the model training
     (i.e. val loss, val acc, etc)
@@ -103,13 +103,12 @@ def get_metrics(folder, ret_metrics=False):
                             'exp_val_acc', 'test_pearson'}
     for f in checkpts:
         chkpt = tdrio.load_checkpoint(f)
-        if ret_metrics:
-            for k,v in data.items():
-                if k in metric_set:
-                    if k not in metrics:
-                        metrics[k] = [v]
-                    else:
-                        metrics[k].append(v)
+        for k,v in chkpt.items():
+            if k in metric_set:
+                if k not in metrics:
+                    metrics[k] = [v]
+                else:
+                    metrics[k].append(v)
     metrics['norm_stats'] = [chkpt['norm_stats']['mean'],
                                     chkpt['norm_stats']['std']]
     return metrics
@@ -169,12 +168,7 @@ def test_model(model, hyps):
             hyperparameter names
         vals: values corresponding to each hyperparameter key
     """
-    data = tdrdatas.loadexpt(expt=hyps['dataset'],
-                              cells=hyps['cells'],
-                              filename=hyps['stim_type'],
-                              train_or_test="test",
-                              history=model.img_shape[0],
-                              norm_stats=hyps['norm_stats'])
+    data = tdrdatas.load_test_data(hyps)
     with torch.no_grad():
         response = tdrutils.inspect(model, data.X, batch_size=1000,
                                          to_numpy=False)['outputs']
@@ -531,13 +525,13 @@ def get_model2model_cca(model1, model2, model1_layers=[],
         ccors[key] = np.mean(ccor)
     return ccors
 
-def get_intr_cors(model, layers=['sequential.0', 'sequential.6'], 
-                                                 stim_keys={"boxes"},
-                                                 files=None,
-                                                 ret_real_rfs=False,
-                                                 ret_model_rfs=False,
-                                                 slide_steps=0,
-                                                 verbose=True):
+def get_intr_cors(model, layers=['sequential.0', 'sequential.6'],
+                                     stim_keys={"boxes",'lines'},
+                                     files=None,
+                                     ret_real_rfs=False,
+                                     ret_model_rfs=False,
+                                     slide_steps=0,
+                                     verbose=True):
     """
     Gets and returns a DataFrame of the interneuron correlations with
     the model.
@@ -566,16 +560,29 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'],
         print("Reading data for interneuron correlations...")
         print("Using stim keys:", ", ".join(list(stim_keys)))
     filt_len = model.img_shape[0]
-    rp = "~/sni_interneuron_data"
+    rp = "~/interneuron_data"
     interneuron_data = tdrdatas.load_interneuron_data(root_path=rp,
                                             filter_length=filt_len,
-                                            files=files)
+                                            files=files,
+                                            stim_keys=stim_keys,
+                                            join_stims=True)
     stim_dict, mem_pot_dict, _ = interneuron_data
+    # Using join_stims returns a dict with keys of the file names and
+    # values of the ndarray stimulus and membrane potentials. In this
+    # case it has joined the boxes and lines stimulus.
+    # get_interneuron_rfs and get_intr_cors expect there to be an
+    # additional dict listing the stimuli types. So here we provide
+    # that structure and name the stimulus as 'test'
+    for k in stim_dict.keys():
+        stim_dict[k] = {"test":stim_dict[k]}
+        mem_pot_dict[k] = {"test":mem_pot_dict[k]}
+
     if ret_real_rfs:
         real_rfs = get_interneuron_rfs(stim_dict, mem_pot_dict,
                                   filt_len=model.img_shape[0],
                                   verbose=verbose)
 
+    verbose = slide_steps!=0 and verbose
     df = tdrintr.get_intr_cors(model, stim_dict, mem_pot_dict,
                                            layers=set(layers),
                                            batch_size=500,
@@ -672,7 +679,7 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
             print("Pruned Channels:"+s)
         if 'pruned_chans' not in table:
             table['pruned_chans'] = []
-        table['pruned_chans'].append(pruned_chans)
+        table['pruned_chans'].append(pruned_chans) # Pruned chan count
     # Figs
     if make_figs:
         if verbose:
@@ -684,16 +691,11 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
     table['test_loss'] = [gc_loss]
     df = pd.DataFrame(table)
     if verbose:
-        print("GC Cor:", gc_cor,"  Loss:", gc_loss)
+        print("Test Cor:", gc_cor,"  Loss:", gc_loss)
 
     layers = []
-    bnorms = {nn.BatchNorm2d, nn.BatchNorm1d, custmods.AbsBatchNorm2d,
-                                              custmods.AbsBatchNorm1d}
-    for name,modu in model.named_modules():
-        if len(name.split(".")) == 2 and type(modu) in bnorms:
-            layers.append(name)
+    layers = tdrutils.get_conv_layer_names(model)
     layers = sorted(layers, key=lambda x: int(x.split(".")[-1]))
-    layers = layers[:2]
     if verbose:
         print("Calculating intrnrn correlations for:", layers)
     intr_df = get_intr_cors(model, layers=layers,
@@ -743,7 +745,7 @@ def evaluate_ln(ln, hyps):
     table['test_acc'] = [gc_cor]
     df = pd.DataFrame(table)
     if verbose:
-        print("GC Cor:", gc_cor,"  Loss:", gc_loss)
+        print("Test Cor:", gc_cor,"  Loss:", gc_loss)
     return df
 
 def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
