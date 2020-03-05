@@ -139,7 +139,7 @@ def load_checkpoint(path):
     data = torch.load(path, map_location=torch.device("cpu"))
     return data
 
-def load_model(path):
+def load_model(path,verbose=True):
     """
     Loads the model architecture and state dict from a .pt or .pth
     file. Or from a training save folder. Defaults to the last check
@@ -173,17 +173,20 @@ def load_model(path):
         try:
             model.load_state_dict(data['model_state_dict'])
         except:
-            print("Error loading state_dict, attempting fix..")
+            if verbose:
+                print("Error loading state_dict, attempting fix..")
             sd = data['model_state_dict']
             sd_keys = list(sd.keys())
             m_keys = [name for name,_ in model.named_parameters()]
             for sk,mk in zip(sd_keys,m_keys):
                 if sk != mk:
-                    print("renaming {} to {}".format(sk,mk))
+                    if verbose:
+                        print("renaming {} to {}".format(sk,mk))
                     sd[mk] = sd[sk]
                     del sd[sk]
             model.load_state_dict(sd)
-            print("Fix successful!")
+            if verbose:
+                print("Fix successful!")
     except KeyError as e:
         print("Failed to load state_dict. Key pairings:")
         for i,(sk,mk) in enumerate(zip(sd_keys,m_keys)):

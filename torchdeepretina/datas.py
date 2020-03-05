@@ -76,6 +76,10 @@ CENTERS_DICT = {
         'arbfilt': dict(),
 }
 
+INTR_FILES = {'bipolars_late_2012', 'bipolars_early_2012',
+              'amacrines_early_2012','amacrines_late_2012',
+              'horizontals_early_2012', 'horizontals_late_2012'}
+
 Exptdata = namedtuple('Exptdata', ['X','y','spkhist','stats',"cells",
                                                           "centers"])
 __all__ = ['loadexpt','CELLS',"CENTERS","DataContainer","DataObj",
@@ -244,6 +248,7 @@ def prepare_stim(stim, stim_type):
 def loadintrexpt(expt, cells, stim_type, history, H=50, W=None,
                                      cutout_width=None,
                                      norm_stats=None,
+                                     train_or_test="train",
                                      data_path="~/interneuron_data"):
     """
     Loads an experiment from an h5 file on disk
@@ -281,6 +286,11 @@ def loadintrexpt(expt, cells, stim_type, history, H=50, W=None,
         and idx 1 the std for data normalization. if dict, use 'mean' 
         and 'std' as keys
 
+    train_or_test: str (valid: 'train','test')
+        determines if test data or train data will be returned. if
+        test data is selected and it is interneuron data being
+        returned then lines stimulus is included in data
+
     data_path : string
         path to the data folders
     """
@@ -290,12 +300,27 @@ def loadintrexpt(expt, cells, stim_type, history, H=50, W=None,
         stim_keys = {"boxes"}
     else:
         stim_keys = {stim_type}
+    if train_or_test == "test":
+        stim_keys.add("lines")
     train_stim,mem_pots,_ = load_interneuron_data(data_path,
                                                 files=files,
-                                                stim_keys=stim_keys)
-    key = list(train_stim[files[0]].keys())[0]
+                                                stim_keys=stim_keys,
+                                                join_stims=True)
     if W is None: W = H
-    train_stim =tdrstim.spatial_pad(train_stim[files[0]][key],H=H,W=W)
+    if train_or_test == 'test':
+        train_stim = tdrstim.spatial_pad(train_stim[files[0]],H=H,W=W)
+        mem_pot = mem_pots[files[0]]
+    else:
+        key = list(train_stim[files[0]].keys())[0]
+        train_stim = tdrstim.spatial_pad(train_stim[files[0]][key],
+                                                           H=H,W=W)
+        mem_pot = mem_pots[files[0]][key]
+
+    if cells=="all":
+        cells = list(range(len(mem_pots)))
+    elif isinstance(cells,  int):
+        cells = [cells]
+    mem_pot = mem_pot[cells].T
 
     stats = norm_stats
     if stats is None:
@@ -306,24 +331,47 @@ def loadintrexpt(expt, cells, stim_type, history, H=50, W=None,
         stats = {k:v for k,v in zip(keys, stats)}
     train_stim = (train_stim - stats['mean'])/stats['std']
 
-    if cells=="all":
-        cells = list(range(len(mem_pots)))
-    if isinstance(cells,  int):
-        cells = [cells]
     centers = [CENTERS[expt[:-3]][c] for c in cells]
     if cutout_width is not None and cutout_width > 0:
         assert len(cells) == 1, "only 1 cell allowed for cutout"
         center = CENTERS[expt][cells[0]]
-        stim = tdrstim.get_cutout(arr, center=center,
+        train_stim = tdrstim.get_cutout(train_stim, center=center,
                                    span=cutout_width,
-                                   pad_to=arr.shape[-1])
-        stim = stim.astype('float32')
+                                   pad_to=train_stim.shape[-1])
+        train_stim = train_stim.astype('float32')
     if history is not None and history != 0:
         train_stim = tdrstim.rolling_window(train_stim, history)
-    mem_pot = mem_pots[files[0]][key][cells].T
-    print("Using interneuron stimtype {} and cells {}".format(key,
-                                                              cells))
     return Exptdata(train_stim, mem_pot, None, stats, cells, centers)
+
+def load_test_data(hyps):
+    """
+    Used to load testing data for models either trained on ganglion
+    cells or interneurons.
+
+    hyps: dict
+        keys: str
+            'dataset'
+            
+    """
+    if hyps['dataset'][-3:] == ".h5":
+        hyps['dataset'] = hyps['dataset'][:-3]
+    print(hyps['dataset'])
+    if hyps['dataset'] in INTR_FILES:
+        data = loadintrexpt(expt=hyps['dataset'],
+                                  cells=hyps['cells'],
+                                  stim_type=hyps['stim_type'],
+                                  train_or_test="test",
+                                  history=hyps['img_shape'][0],
+                                  H=hyps['img_shape'][1],
+                                  norm_stats=hyps['norm_stats'])
+    else:
+        data = loadexpt(expt=hyps['dataset'],
+                              cells=hyps['cells'],
+                              filename=hyps['stim_type'],
+                              train_or_test="test",
+                              history=hyps['img_shape'][0],
+                              norm_stats=hyps['norm_stats'])
+    return data
 
 def load_interneuron_data(root_path="~/interneuron_data/", files=None,
                                                   filter_length=40,
@@ -347,24 +395,21 @@ def load_interneuron_data(root_path="~/interneuron_data/", files=None,
        truncates the joined stimuli to be of equal length. 
        Only applies if join_stims is true.
 
-    returns:
-    if using join_stims then no stim_type key exists
-    stims - dict
-        keys are the cell files, vals are dicts
-        keys of subdicts are stim type with vals of ndarray
-        stimuli (T,H,W)
-    mem_pots - dict
-        keys are the cell files, vals are dicts
-            keys of subdicts are stim type with values of ndarray
-            membrane potentials for each cell within the
-            file (N_CELLS, T-filter_length)
+    Returns:
+        if using join_stims then no stim_type key exists!!!
+
+        stims - dict
+            keys are the cell files, vals are dicts
+            keys of subdicts are stim type with vals of ndarray
+            stimuli (T,H,W)
+        mem_pots - dict
+            keys are the cell files, vals are dicts
+                keys of subdicts are stim type with values of ndarray
+                membrane potentials for each cell within the
+                file (N_CELLS, T-filter_length)
     """
     if files is None:
-        files = ['bipolars_late_2012.h5', 'bipolars_early_2012.h5',
-                                         'amacrines_early_2012.h5',
-                                         'amacrines_late_2012.h5',
-                                         'horizontals_early_2012.h5',
-                                         'horizontals_late_2012.h5']
+        files = [f+".h5" for f in INTR_FILES]
     full_files = [os.path.expanduser(os.path.join(root_path, name))\
                                                   for name in files]
     file_ids = []

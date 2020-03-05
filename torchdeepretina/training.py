@@ -281,6 +281,13 @@ class Trainer:
                 zero_dict = prune_dict['zero_dict']
                 zero_bias = utils.try_key(hyps,'zero_bias',True)
                 tdrprune.zero_chans(model, zero_dict,zero_bias)
+                reset_lr = utils.try_key(hyps,'reset_lr',False)
+                reset_lr = reset_lr and not isinstance(scheduler,
+                                                       NullScheduler)
+                if reset_lr:
+                    # Reset learning rate if using scheduler
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] = hyps['lr']
 
             # Print Epoch Stats
             if prune:
