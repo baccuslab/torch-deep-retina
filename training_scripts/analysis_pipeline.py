@@ -43,7 +43,7 @@ if __name__ == "__main__":
     for grand_folder in grand_folders:
         print("Analyzing", grand_folder)
         dfs = analysis.analysis_pipeline(grand_folder,
-                                      make_figs=False,
+                                      make_figs=True,
                                       make_model_rfs=False,
                                       slide_steps=0,
                                       save_dfs=True,
