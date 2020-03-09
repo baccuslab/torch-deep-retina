@@ -531,7 +531,8 @@ def get_layer_name_sets(model, delimeters=[nn.ReLU,nn.Softplus,
 def get_module_idx(model, modu_type):
     """
     Finds and returns the index of the first instance of the module
-    type. Assumes model has sequential member variable
+    type in the nn.Sequential list. Assumes model has sequential
+    member variable
 
     model: torch Module
         must contain sequential attribute
@@ -542,6 +543,21 @@ def get_module_idx(model, modu_type):
         if isinstance(modu,modu_type):
             return i
     return -1
+
+def get_module_by_name(model, layer_name):
+    """
+    Finds and returns the type of module with the name layer_name.
+    Returns None if no layer_name is found
+
+    model: torch Module
+        must contain sequential attribute
+    layer_name: str
+        the name of the layer to be typed
+    """
+    for name,modu in model.named_modules():
+        if name == layer_name:
+            return modu
+    return None
 
 def get_layer_idx(model, layer, delimeters=[nn.ReLU, nn.Tanh,
                                                nn.Softplus]):

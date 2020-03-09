@@ -157,7 +157,7 @@ def get_analysis_table(folder=None, hyps=None):
             table[k] = [v]
     return table
 
-def test_model(model, hyps):
+def test_model(model, hyps, verbose=False):
     """
     Runs the test data through the model and determines the loss and
     correlation with the truth.
@@ -168,7 +168,7 @@ def test_model(model, hyps):
             hyperparameter names
         vals: values corresponding to each hyperparameter key
     """
-    data = tdrdatas.load_test_data(hyps)
+    data = tdrdatas.load_test_data(hyps,verbose=verbose)
     with torch.no_grad():
         response = tdrutils.inspect(model, data.X, batch_size=1000,
                                          to_numpy=False)['outputs']
@@ -272,10 +272,15 @@ def sample_model_rfs(model, layers=[], use_grad=True, verbose=False):
     # Loop to create data frame containing each desired unit
     for layer in layers:
         chan_idx = tdrutils.get_layer_idx(model, layer=layer)
-        n_chans = model.chans[chan_idx]
-        shape = model.shapes[chan_idx]
-        row = shape[0]//2
-        col = shape[1]//2
+        if chan_idx>=len(model.shapes) or chan_idx>=len(model.chans):
+            row = None
+            col = None
+            n_chans = model.n_units
+        else:
+            n_chans = model.chans[chan_idx]
+            shape = model.shapes[chan_idx]
+            row = shape[0]//2
+            col = shape[1]//2
         for chan in range(n_chans):
             table['layer'].append(layer)
             table['chan'].append(chan)
@@ -323,15 +328,23 @@ def get_model_rfs(model, data_frame, contrast=1, use_grad=False,
         rng = tqdm(rng)
     for i in rng:
         layer, chan, row, col = data_frame.loc[:,keys].iloc[i]
-        layer_idx = tdrutils.get_layer_idx(model, layer)
-        cell_idx = (chan,row,col)
-        unit_id = (layer,chan,row,col)
+        if row is None and col is None:
+            layer_idx = -1
+            cell_idx = chan
+            unit_id = (layer,chan)
+        else:
+            layer_idx = tdrutils.get_layer_idx(model, layer)
+            cell_idx = (chan,row,col)
+            unit_id = (layer,chan,row,col)
         if (layer,chan) in rf_dups:
             continue
         rf_dups.add((layer,chan))
         chans = model.chans
         shapes = model.shapes
-        layer_shape = (chans[layer_idx],*shapes[layer_idx])
+        if layer_idx == -1:
+            layer_shape = None
+        else:
+            layer_shape = (chans[layer_idx],*shapes[layer_idx])
         if use_grad:
             sta = compute_sta(model, layer=layer, cell_index=cell_idx,
                                               layer_shape=layer_shape,
@@ -631,7 +644,11 @@ def get_analysis_figs(folder, model, metrics=None, ret_phenom=True,
 
         for fig, name in zip(figs, fig_names):
             save_name = name + ".png"
-            fig.savefig(os.path.join(folder, save_name))
+            try:
+                fig.savefig(os.path.join(folder, save_name))
+            except Exception as e:
+                print("Failed to save", save_name)
+                print(e)
 
 def analyze_model(folder, make_figs=True, make_model_rfs=False,
                                                  slide_steps=0,
@@ -686,7 +703,7 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
             print("Making figures")
         get_analysis_figs(folder, model, metrics, verbose=verbose)
     # GC Testing
-    gc_loss, gc_cor = test_model(model, hyps)
+    gc_loss, gc_cor = test_model(model, hyps, verbose=verbose)
     table['test_acc'] = [gc_cor]
     table['test_loss'] = [gc_loss]
     df = pd.DataFrame(table)

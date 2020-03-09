@@ -663,7 +663,8 @@ def get_intr_cors(model, stim_dict, mem_pot_dict,
     layers = sorted(list(layers))
     for cell_file in stim_dict.keys():
         for stim_type in stim_dict[cell_file].keys():
-            best_mtxs = collections.defaultdict(lambda: dict())
+            lam = lambda: collections.defaultdict(lambda: dict())
+            best_mtxs = collections.defaultdict(lam)
             shifts = tdrutils.get_shifts(row_steps=slide_steps,
                                 col_steps=slide_steps,
                                 n_row=model.img_shape[1],
@@ -672,17 +673,16 @@ def get_intr_cors(model, stim_dict, mem_pot_dict,
                 if verbose:
                     print("Shift x:{}, Shift y:{}".format(xshift,
                                                           yshift))
-                x,y = model.img_shape[1], model.img_shape[2]
+                D,H,W = model.img_shape
                 stim = stim_dict[cell_file][stim_type]
                 if not (xshift == 0 and yshift == 0):
-                    zeros = np.zeros((len(stim),x,y))
+                    zeros = np.zeros((len(stim),H,W))
                     stim = tdrstim.shifted_overlay(zeros, stim,
                                               row_shift=xshift,
                                               col_shift=yshift)
-                else:
-                    stim = tdrstim.spatial_pad(stim, W=x, H=y)
-                stim = tdrstim.rolling_window(stim,
-                                model.img_shape[0])
+                stim = tdrstim.spatial_pad(stim, W=H, H=W)
+                stim = tdrstim.rolling_window(stim, D)
+
                 if verbose:
                     temp = cell_file.split("/")[-1].split(".")[0]
                     s = "cell_file:{}, stim_type:{}..."
@@ -694,41 +694,37 @@ def get_intr_cors(model, stim_dict, mem_pot_dict,
                                        to_numpy=True,
                                        verbose=verbose)
                 pots = mem_pot_dict[cell_file][stim_type]
-
+                shapes = dict()
                 for layer in layers:
                     if verbose:
                         print("Calculating cors for layer:", layer)
                     resp = response[layer]
+                    shapes[layer] = resp.shape
                     resp = resp.reshape(len(resp),-1)
                     # Retrns ndarray (Model Neurons, Potentials)
                     cor_mtx = tdrutils.mtx_cor(resp, pots.T,
                                       batch_size=batch_size,
                                       to_numpy=True)
-                    if layer in best_mtxs:
-                        best_mtx = best_mtxs[layer]['cor_mtx']
-                        mean_diff = (best_mtx.max(0)-cor_mtx.max(0))
-                        mean_diff = mean_diff.mean()
-                    if layer not in best_mtxs or mean_diff < 0:
-                        best_mtxs[layer]["cor_mtx"] = cor_mtx
-                        best_mtxs[layer]["xshift"] = xshift
-                        best_mtxs[layer]["yshift"] = yshift
+                    # We need to store the best mtx for each potential
+                    for ci in range(cor_mtx.shape[1]):
+                        if ci in best_mtxs[layer]:
+                            bests = best_mtxs[layer][ci]['cors']
+                            diff = bests.max(0)-cor_mtx[:,ci].max(0)
+                        if ci not in best_mtxs[layer] or diff < 0:
+                            best_mtxs[layer][ci]["cors"]=cor_mtx[:,ci]
+                            best_mtxs[layer][ci]["xshift"] = xshift
+                            best_mtxs[layer][ci]["yshift"] = yshift
 
             if verbose:
                 print("Recording best shifts")
             for layer in best_mtxs.keys():
-                layer_idx = tdrutils.get_layer_idx(model, layer=layer)
-                assert layer_idx >= 0,\
-                            "layer {} does not exist!!!".format(layer)
-                if layer_idx >= len(model.shapes):
-                    shape = [model.n_units]
-                else:
-                    shape = (model.chans[layer_idx],
-                                *model.shapes[layer_idx])
-                best_mtx = best_mtxs[layer]['cor_mtx']
-                xshift = best_mtxs[layer]['xshift']
-                yshift = best_mtxs[layer]['yshift']
-                for unit_idx in range(best_mtx.shape[0]):
-                    for cell_idx in range(best_mtx.shape[1]):
+                modu = tdrutils.get_module_by_name(model,layer)
+                shape = shapes[layer][1:]
+                for cell_idx in range(cor_mtx.shape[1]):
+                    bests =    best_mtxs[layer][cell_idx]['cors']
+                    xshift =   best_mtxs[layer][cell_idx]['xshift']
+                    yshift =   best_mtxs[layer][cell_idx]['yshift']
+                    for unit_idx in range(bests.shape[0]):
                         intr_cors['cell_file'].append(cell_file)
                         intr_cors['cell_idx'].append(cell_idx)
                         intr_cors['stim_type'].append(stim_type)
@@ -736,14 +732,14 @@ def get_intr_cors(model, stim_dict, mem_pot_dict,
                         cell_type = cell_type.split("_")[0][:-1]
                         # amacrine or bipolar
                         intr_cors['cell_type'].append(cell_type)
-                        cor = best_mtx[unit_idx,cell_idx]
+                        cor = bests[unit_idx]
                         intr_cors['cor'].append(cor)
                         intr_cors['layer'].append(layer)
                         if len(shape) == 1:
                             chan,row,col = unit_idx,0,0
                         else:
-                            (chan,row,col)=np.unravel_index(unit_idx,
-                                                            shape)
+                            (chan,row,col)= np.unravel_index(unit_idx,
+                                                             shape)
                         intr_cors['chan'].append(chan)
                         intr_cors['row'].append(row)
                         intr_cors['col'].append(col)

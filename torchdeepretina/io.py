@@ -102,6 +102,15 @@ def get_checkpoints(folder, checkpt_exts={'p', 'pt', 'pth'}):
     checkpts = sorted(checkpts, key=sort_key)
     return checkpts
 
+def foldersort(x):
+    splt = x.split("/")[-1].split("_")
+    for i,s in enumerate(splt[1:]):
+        try:
+            return int(s)
+        except:
+            pass
+    assert False
+
 def get_model_folders(main_folder):
     """
     Returns a list of paths to the model folders contained within the
@@ -109,6 +118,9 @@ def get_model_folders(main_folder):
 
     main_folder - str
         path to main folder
+
+    Returns:
+        list of folders without full extension
     """
     folders = []
     main_folder = os.path.expanduser(main_folder)
@@ -119,8 +131,7 @@ def get_model_folders(main_folder):
                 if ".pt" in content:
                     folders.append(sub_d)
                     break
-    sort_key = lambda x: int(x.split("/")[-1].split("_")[1])
-    return sorted(folders, key=sort_key)
+    return sorted(folders, key=foldersort)
 
 def load_checkpoint(path):
     """

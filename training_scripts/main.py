@@ -13,6 +13,7 @@ import time
 import numpy as np
 import torch
 import select
+from torchdeepretina.io import get_model_folders
 from torchdeepretina.training import hyper_search
 from torchdeepretina.utils import load_json
 from torchdeepretina.analysis import analysis_pipeline
@@ -60,13 +61,7 @@ if __name__ == "__main__":
 
     sleep_time = 8
     if os.path.exists(hyps['exp_name']):
-        _, subds, _ = next(os.walk(hyps['exp_name']))
-        dirs = []
-        for d in subds:
-            splt = d.split("_")
-            if len(splt) >= 2 and splt[0] == hyps['exp_name']:
-                dirs.append(d)
-        dirs = sorted(dirs, key=lambda x: int(x.split("_")[1]))
+        dirs = get_model_folders(hyps['exp_name'])
         if len(dirs) > 0:
             s = "Overwrite last folder {}? (No/yes)".format(dirs[-1])
             print(s)

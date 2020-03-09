@@ -245,7 +245,7 @@ def prepare_stim(stim, stim_type):
         print("Invalid stim type")
         assert False
 
-def loadintrexpt(expt, cells, stim_type, history, H=50, W=None,
+def loadintrexpt(expt, cells, stim_type, history, H=None, W=None,
                                      cutout_width=None,
                                      norm_stats=None,
                                      train_or_test="train",
@@ -306,15 +306,10 @@ def loadintrexpt(expt, cells, stim_type, history, H=50, W=None,
                                                 files=files,
                                                 stim_keys=stim_keys,
                                                 join_stims=True)
+    if H is None: H = train_stim[files[0]].shape[1]
     if W is None: W = H
-    if train_or_test == 'test':
-        train_stim = tdrstim.spatial_pad(train_stim[files[0]],H=H,W=W)
-        mem_pot = mem_pots[files[0]]
-    else:
-        key = list(train_stim[files[0]].keys())[0]
-        train_stim = tdrstim.spatial_pad(train_stim[files[0]][key],
-                                                           H=H,W=W)
-        mem_pot = mem_pots[files[0]][key]
+    train_stim = tdrstim.spatial_pad(train_stim[files[0]], H=H, W=W)
+    mem_pot = mem_pots[files[0]]
 
     if cells=="all":
         cells = list(range(len(mem_pots)))
@@ -343,7 +338,7 @@ def loadintrexpt(expt, cells, stim_type, history, H=50, W=None,
         train_stim = tdrstim.rolling_window(train_stim, history)
     return Exptdata(train_stim, mem_pot, None, stats, cells, centers)
 
-def load_test_data(hyps):
+def load_test_data(hyps,verbose=False):
     """
     Used to load testing data for models either trained on ganglion
     cells or interneurons.
@@ -355,7 +350,8 @@ def load_test_data(hyps):
     """
     if hyps['dataset'][-3:] == ".h5":
         hyps['dataset'] = hyps['dataset'][:-3]
-    print(hyps['dataset'])
+    if verbose:
+        print("Dataset:", hyps['dataset'])
     if hyps['dataset'] in INTR_FILES:
         data = loadintrexpt(expt=hyps['dataset'],
                                   cells=hyps['cells'],
