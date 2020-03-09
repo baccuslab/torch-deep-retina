@@ -43,6 +43,7 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
                                                 prev_state_dict,
                                                 prev_min_chan,
                                                 val_acc, prev_acc,
+                                                lr, prev_lr,
                                                 **kwargs):
     """
     Handles the channel pruning calculations. Should be called every
@@ -99,10 +100,12 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
                 is set to the val_acc, otherwise stays as is
 
     """
-    new_drop_layer = False
-    stop_pruning = False
+    new_drop_layer = False # Indicates we will move on to next layer
+    stop_pruning = False # Indicates we want to stop the pruning
     prune_layers = hyps['prune_layers']
     tolerance = hyps['prune_tolerance']
+
+    # If true, means we want to revert and move on to next layer
     if intg_idx<len(prune_layers) and val_acc<prev_acc-tolerance:
         print("Validation decrease detected. "+\
                         "Returning to Previous Model")
@@ -113,10 +116,11 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
         intg_idx += 1
         new_drop_layer = True
     
-    drop_layer = (val_acc>=prev_acc or new_drop_layer)
+    # Only want to else if reached end of zeroable channels
+    drop_layer = (val_acc>=prev_acc-tolerance or new_drop_layer)
     if intg_idx<len(prune_layers) and drop_layer:
         print("Calculating Integrated Gradient | Layer:",
-                            prune_layers[intg_idx])
+                                  prune_layers[intg_idx])
         # Calc intg grad
         bsize = hyps['intg_bsize']
         steps = hyps['alpha_steps']
@@ -133,9 +137,16 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
                                                     to_numpy=True,
                                                     verbose=True)
         shape = (*intg_grad.shape[:2],-1)
-        intg_grad = intg_grad.reshape(shape)
-        intg_grad = intg_grad.mean(-1).mean(0) #shape (C,)
-        min_chans = np.argsort(np.abs(intg_grad))
+        intg_grad = intg_grad.reshape(shape) #shape (T,C,N)
+        if hyps['abssum']:
+            print("Taking absolute value first,",
+                        "then summing over channels")
+            intg_grad = np.abs(intg_grad).sum(-1).mean(0) #shape (C,)
+        else:
+            print("Summing over channels first,",
+                        "then taking absolute value")
+            intg_grad = np.abs(intg_grad.sum(-1)).mean(0) #shape (C,)
+        min_chans = np.argsort(intg_grad)
     
         # Track changes
         min_chan = min_chans[len(zero_dict[layer])]
@@ -149,12 +160,19 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
         print("No more layers in prune_layers list. "+\
                                     "Stopping Training")
         stop_pruning = True
-    # If ensures we do not use val_acc from discontinued model
+
+    # new_drop_layer means we have discontinued a pruning and wish
+    # to move on to the next possible layer for pruning. Thus, we
+    # want to revert our lr and acc to the values they were before
+    # we attempted the pruning if new_drop_layer is true. Otherwise
+    # we want to update them to the current values.
     if not new_drop_layer: 
         prev_acc = val_acc
+        prev_lr = lr
 
     return {"stop_pruning":stop_pruning, "zero_dict":zero_dict,
                                 "prev_state_dict":prev_state_dict,
                                 "prev_min_chan":prev_min_chan,
                                 "intg_idx":intg_idx,
-                                "prev_acc":prev_acc}
+                                "prev_acc":prev_acc,
+                                "prev_lr":prev_lr}
