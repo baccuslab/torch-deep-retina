@@ -12,8 +12,18 @@ import torchdeepretina.visualizations as viz
 import torchdeepretina.utils as tdrutils
 from tqdm import tqdm, trange
 import torch
+import torch.nn as nn
+import matplotlib.cm as cm
+from scipy.fftpack import fft, fftshift, fftfreq
+from scipy.interpolate import interp1d
+from tqdm import tqdm
+from jetpack import errorplot
+import deepdish as dd
 
-DEVICE = torch.device("cuda:0")
+if torch.cuda.is_available():
+    DEVICE = torch.device("cuda:0")
+else:
+    DEVICE = torch.device("cpu")
 device = DEVICE
 
 def step_response(model, duration=100, delay=50, nsamples=200,
@@ -592,7 +602,6 @@ def oms(duration=5, sample_rate=0.01, transition_duration=0.07,
     if len(back_position) > total_frames:
         s = "Warning: movie won't be {} shorter than a full period."
         f = np.float(2 * transition_frames + 2 * silent_frames)
-        print(s.format(f / total_frames))
         back_position[:total_frames]
         obj_position[:total_frames]
     else:
@@ -630,9 +639,9 @@ def oms(duration=5, sample_rate=0.01, transition_duration=0.07,
     return movie
 
 
-def osr(model=None, duration=2, interval=10, nflashes=5,
-                                         intensity=-2.0,
-                                         filt_depth=40):
+def osr_stim(duration=2, interval=8, nflashes=3, intensity=-1.0,
+                                                 filt_depth=40,
+                                                 noise_std=0.1):
     """
     Omitted stimulus response
 
@@ -648,52 +657,26 @@ def osr(model=None, duration=2, interval=10, nflashes=5,
         The intensity (luminance) of each flash (default: -2.0)
     """
 
-    # generate the stimulus
-    single_flash = tdrstim.flash(duration, interval, interval * 2,
-                                              intensity=intensity)
-    omitted_flash = tdrstim.flash(duration, interval, interval * 2,
-                                                     intensity=0.0)
+    single_flash = tdrstim.flash(duration, interval,
+                                           duration+interval,
+                                           intensity=intensity)
+    single_flash += noise_std*np.random.randn(*single_flash.shape)
+    omitted_flash = tdrstim.flash(duration, interval,
+                                            duration+interval,
+                                            intensity=0.0)
+    omitted_flash += noise_std*np.random.randn(*omitted_flash.shape)
     flash_group = list(repeat(single_flash, nflashes))
-    zero_pad = np.zeros((interval, 1, 1))
-    X = tdrstim.concat(zero_pad, *flash_group, omitted_flash,
-                                         *flash_group, nx=50,
-                                         nh=filt_depth)
-    X[X!=0] = 1
-    if model is not None:
-        X_torch = torch.from_numpy(X).to(DEVICE)
-        with torch.no_grad():
-            if model.recurrent:
-                hs = [torch.zeros(1,*h).to(device) for h in\
-                                             model.h_shapes]
-                resps = []
-                for i in range(X_torch.shape[0]):
-                    resp, hs = model(X_torch[i:i+1], hs)
-                    resps.append(resp)
-                resp = torch.cat(resps, dim=0)
-            else:
-                resp = model(X_torch)
-        resp = resp.cpu().detach().numpy()
-        figs = viz.response1D(X[:,-1,0,0].copy(),resp,figsize=(20, 8))
-        (fig, (ax0,ax1)) = figs
 
-        # Table Metrics
-        n_full_responses = len(resp)//len(single_flash)
-        responses =[resp[i*len(single_flash):(i+1)*len(single_flash)]\
-                                    for i in range(n_full_responses)]
-        flash_resps = np.zeros((len(responses), *responses[0].shape))
-        for i,resp in enumerate(responses):
-            if i != len(flash_group):
-                flash_resps[i] = resp
-        omitted_resp = np.asarray(responses[len(flash_group)])
-        avg_flash_resp = np.mean(flash_resps, axis=0)
-        resp_ratio =(omitted_resp.sum(0)/avg_flash_resp.sum(0)).mean()
-    else:
-        fig = None
-        ax0,ax1 = None, None
-        resp = None
-        resp_ratio = None
-
-    return (fig, (ax0,ax1)), X, resp, resp_ratio
+    zero_pad = np.zeros((filt_depth-interval, 1, 1))
+    start_pad = np.zeros((interval * (nflashes-1), 1, 1))
+    X = tdrstim.concat(start_pad, zero_pad, *flash_group,
+                                            omitted_flash,
+                                            zero_pad,
+                                            nx=50,
+                                            nh=filt_depth)
+    omitted_idx = len(start_pad)+len(zero_pad)
+    omitted_idx += nflashes*len(single_flash) + interval - filt_depth
+    return X, omitted_idx
 
 def motion_anticipation(model, scale_factor=55, velocity=0.08,
                                     width=2, flash_duration=2,
@@ -1177,6 +1160,454 @@ def nonlinearity_fig(model, contrast=0.25, layer_name=None,
     return fig
 
 ######################################################################
+######################################################################
+### OFFICIAL FIGURES FROM THE PAPER
+######################################################################
+
+def sqz_predict(mdls):
+    """
+    Squeeze predictions from multiple models into one array.
+
+    mdls: list of torch Modules
+    """
+    def predict(X):
+        X = torch.FloatTensor(X).cuda()
+        return np.hstack([mdl(X).detach().cpu().numpy() for mdl in mdls])
+    return predict
+
+
+def freq_doubling(predict, ncells, phases, widths, halfperiod=25,
+                                                    nsamples=140,
+                                                    filt_depth=40):
+    """
+    
+    """
+    F1 = np.zeros((ncells, phases.size, widths.size))
+    F2 = np.zeros_like(F1)
+
+    period = (2 * halfperiod) * 0.01
+    base_freq = 1 / period
+    freqs = fftfreq(nsamples - filt_depth, 0.01)
+    i1 = np.where(freqs == base_freq)[0][0]
+    i2 = np.where(freqs == base_freq * 2)[0][0]
+
+    for p, phase in enumerate(phases):
+        for w, width in tqdm(list(enumerate(widths))):
+            X = tdrstim.reversing_grating(nsamples, halfperiod, width,
+                                                    phase, 'sin')
+            stim = tdrstim.concat(X)
+            r = predict(stim)
+            for ci in range(r.shape[1]):
+                amp = np.abs(fft(r[:, ci]))
+                F1[ci, p, w] = amp[i1]
+                F2[ci, p, w] = amp[i2]
+    return F1, F2
+
+
+def f2_response(models):
+    """
+    Generate f2 response figure.
+
+    models: list of torch Modules or single torch Module
+        either a list of models or a single model
+    """
+
+    if not isinstance(models, list):
+        models = [models]
+    ns_predict = sqz_predict(models)
+
+    units = [m.n_units for m in models]
+    ncells = np.sum(units)              # Total number of cells.
+    phases = np.linspace(0, 1, 9)       # Grating phases.
+    widths = np.arange(1, 9)            # Bar widths (checkers).
+    sz = widths * 55.55                 # Bar widths (microns).
+    F1, F2 = freq_doubling(ns_predict, ncells, phases, widths)
+    fratio = F2 / F1
+    mu = fratio.mean(axis=1)
+
+    # Plot
+    fig = plt.figure(figsize=(6,6))
+    plt.style.use('deepretina')
+    ax = fig.add_subplot(111)
+    errorplot(sz, mu.mean(axis=0), mu.std(axis=0) / np.sqrt(ncells),
+                                             method='line', fmt='o',
+                                             color='#222222', ax=ax)
+    ax.plot([0, 500], [1, 1], '--', color='lightgray', lw=1, zorder=0)
+    #ax.set_xlabel('Bar width ($\mu m$)',fontsize=40)
+    #ax.set_ylabel('$F_2/F_1$ component ratio',fontsize=40)
+    ax.tick_params(axis='both', which='major', labelsize=40)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    plt.xticks(ticks=[0,200,400])
+    plt.yticks(ticks=[0,1,5])
+
+    #ax.set_ylim(0, 8.2)
+    plt.tight_layout()
+    return fig
+
+def signfix(taus):
+    """Corrects sign of a temporal kernel."""
+    new_taus = []
+    for tau in taus:
+        if np.mean(tau[25:]) > 0:
+            new_taus.append(-tau)
+        else:
+            new_taus.append(tau)
+    return np.stack(new_taus)
+
+
+def cadapt(contrasts, mdls, ncells):
+    """Runs contrast adaptation analysis."""
+    
+    celldata = []
+    for mdl, nc in zip(mdls, ncells):
+        mdl.cuda()
+        mdl.eval()
+        for ci in range(nc):
+            taus = []
+            for c in tqdm(contrasts):
+                X = tdrstim.concat(tdrstim.white(200, nx=50, contrast=c))
+                X = torch.FloatTensor(X).cuda()
+                X.requires_grad = True
+                pred = mdl(X)[:,ci]
+                pred.sum().backward()
+                g = X.grad.data.detach().cpu().numpy()
+                rf = g.mean(axis=0)
+                _, tau = ft.decompose(rf)
+                taus.append(tau)
+            celldata.append(signfix(np.stack(taus)))
+        mdl.cpu()
+    return np.stack(celldata)
+
+
+def center_of_mass(f, p):
+    return np.sum(f * p)
+
+def upsample_single(tau, t, t_us):
+    return interp1d(t, tau, kind='cubic')(t_us)
+
+
+def upsample_tau(taus, t, t_us):
+    return np.stack([upsample_single(tau, t, t_us) for tau in taus])
+
+
+def npower(x):
+    """Normalized Fourier power spectrum."""
+    amp = np.abs(fft(x))
+    power = amp ** 2
+    return power / power.max()
+
+def generate_data(model, min_contrast=0.5, max_contrast=2.0,
+                                            n_contrasts=4):
+    """Generates data for the contrast adaptation figure."""
+    n_us = 1000
+    contrasts = np.linspace(min_contrast, max_contrast, n_contrasts)
+    t = np.linspace(-400, 0, model.img_shape[0])
+    t_us = np.linspace(-400, 0, n_us)
+
+    # Get temporal kernels
+    ns = cadapt(contrasts,(model,),(model.n_units,))
+    # Upsample kernels
+    ns = ns.reshape(n_contrasts*model.n_units, -1)
+    nss = upsample_tau(ns, t, t_us).reshape(model.n_units, n_contrasts,
+                                                           n_us)
+    Fns = np.stack([npower(ni) for ni in nss]) # FFT analysis
+
+    freqs = fftfreq(n_us, 1e-3 * np.mean(np.diff(t_us)))
+
+    data = {
+        'ns': ns,
+        'contrasts': contrasts,
+        'nss': nss,
+        't': t,
+        't_us': t_us,
+        'Fns': Fns,
+        'freqs': freqs,
+    }
+    return data
+
+def latenc(mdls, intensities):
+    rates = []
+    for i in tqdm(intensities):
+        X = tdrstim.concat(tdrstim.flash(2, 40, 70, intensity=i))
+        X = torch.FloatTensor(X).cuda()
+        preds = []
+        for mdl in mdls:
+            back_to_cpu = False
+            if not next(mdl.parameters()).is_cuda:
+                back_to_cpu = True
+                mdl.to(DEVICE)
+            mdl.eval()
+            #pred = mdl(X).detach().cpu().numpy()[:,i:i+1]
+            pred = mdl(X).detach().cpu().numpy()
+            preds.append(pred)
+            if back_to_cpu:
+                mdl.cpu()
+        r = np.hstack(preds)
+        rates.append(r)
+    return np.stack(rates)
+
+def upsample(r):
+    t = np.linspace(0, 300, 30)
+    ts = np.linspace(0, 200, 1000)
+    return interp1d(t, r, kind='cubic')(ts)
+
+def latency_encoding(models):
+    if isinstance(models, nn.Module):
+        models = [models]
+    # Time and Contrasts.
+    ts = np.linspace(0, 200, 1000)
+    intensities = np.linspace(0, -10, 21)
+
+    # Natural scenes.
+    ns = latenc(models, intensities)
+    ns_resp = ns.mean(axis=-1)
+    ns_resps = np.stack([upsample(ri) for ri in ns_resp])
+    ns_lats = ts[ns_resps.argmax(axis=1)]
+
+    # Make figure.
+    plt.style.use('deepretina')
+    fig = plt.figure(figsize=(19, 6))
+
+    # Panel 2: Natural scene responses.
+    ax2 = fig.add_subplot(121)
+    colors = cm.Reds(np.linspace(0, 1, len(ns)))
+    for r, c in zip(ns_resps, colors):
+        ax2.plot(ts, r, '-', color=c)
+    ax2.set_xlabel('Time (s)',fontsize=40)
+    ax2.set_ylabel('Response (Hz)',fontsize=40)
+    ax2.set_title('Natural Scenes',fontsize=40)
+    ax2.spines['top'].set_visible(False)
+    ax2.spines['right'].set_visible(False)
+    plt.locator_params(nbins=4)
+    ax2.tick_params(axis='both', which='major', labelsize=35)
+
+    # Panel 3: Latency vs. Intensity
+    ax3 = fig.add_subplot(122)
+    nat_color = 'lightcoral'
+    whit_color = '#888888'
+    ax3.plot(-intensities, ns_lats, 'o', color=nat_color)
+    ax3.set_xlabel('Intensity',fontsize=40)
+    ax3.set_ylabel('Latency',fontsize=40)
+    ax3.spines['top'].set_visible(False)
+    ax3.spines['right'].set_visible(False)
+    plt.locator_params(nbins=4)
+    ax3.tick_params(axis='both', which='major', labelsize=35)
+
+    # Add labels.
+    plt.xlabel('Intensity (a.u.)',fontsize=20)
+    plt.ylabel('Latency (ms)',fontsize=20)
+    plt.ylim(70, 100)
+    plt.xlim(0, 10.5)
+
+    plt.tight_layout()
+    return fig
+
+def fast_contrast_adaptation(model):
+    plt.style.use('deepretina')
+    data = generate_data(model)
+
+    Fn = data['Fns']
+    fr = fftfreq(1000, 4e-4)
+
+    ns_cm = np.zeros((5, 4))
+    for ci in range(5):
+        for j in range(4):
+            ns_cm[ci, j] = center_of_mass(fr[:7], Fn[ci, j, :7])
+
+    c = data['contrasts']
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+
+    errorplot(c, ns_cm.mean(axis=0), ns_cm.std(axis=0) / np.sqrt(5), method='line', fmt='o', color='lightcoral', ax=ax)
+
+    zs = np.linspace(0.5, 2.0, 1e3)
+    Pn = np.polyfit(c, ns_cm.mean(axis=0), 1)
+
+    ax.plot(zs, np.polyval(Pn, zs), '--', color='lightcoral')
+
+    ax.set_xlim(0.25, 2.25)
+    ax.set_ylim(9, 16)
+    plt.xticks([])
+    plt.yticks(ticks=[9,12,15])
+    ax.set_xlabel('Contrast (a.u.)', fontsize=40)
+    ax.set_ylabel('Frequency (Hz)', fontsize=40)
+    ax.set_title('Center of mass of frequency response',fontsize=20)
+    ax.tick_params(axis='both', which='major', labelsize=35)
+    #plt.locator_params(nbins=3)
+    plt.tight_layout()
+    return fig
+
+def motion_sweep(xstop, speed=0.24):
+    """
+    Sweeps a bar across the screen.
+    """
+    c, _, X = tdrstim.driftingbar(speed=speed, x=(-40, xstop))
+    centers = c[40:]
+    return centers, tdrstim.concat(X)
+
+def sqz(mdls, X):
+    """
+    Squeeze predictions from multiple models into one array.
+    """
+    X = torch.FloatTensor(X).cuda()
+    preds = []
+    for mdl in mdls:
+        back_to_cpu = False
+        if not next(mdl.parameters()).is_cuda:
+            back_to_cpu = True
+            mdl.to(DEVICE)
+        mdl.eval()
+        pred = mdl(X).detach().cpu().numpy()
+        preds.append(pred)
+        if back_to_cpu:
+            mdl.cpu()
+    r = np.hstack(preds)
+    return r
+
+def run_motion_reversal(x_locations, models, speed=0.19, clip_n=210,
+                                                         scaling=1,
+                                                         fps=0.01):
+    """
+    Gets responses to a bar reversing motion.
+    """
+    tflips, Xs = zip(*[tdrstim.dr_motion_reversal(xi,speed)[1:] for\
+                                             xi in x_locations])
+    data = [scaling*sqz(models, X) for X in tqdm(Xs)]
+    time = np.linspace(-tflips[0], (len(Xs[0])-tflips[0]), len(Xs[0]))
+    time = time*fps
+    deltas = np.array(tflips) - np.array(tflips)[0]
+    datacut = [data[0]]
+    datacut += [data[i][deltas[i]:-deltas[i]] for i in range(1, len(deltas))]
+    cn = int((datacut[0].shape[0]-clip_n)//2)
+    t = time[cn:-cn]
+    data_clipped = [d[cn:-cn] for d in datacut]
+    mu = np.hstack(data_clipped).mean(axis=1)
+    sig = np.hstack(data_clipped).std(axis=1) / np.sqrt(60)
+
+    clip_n = len(data_clipped[0])
+    #offset = 40//2
+    #speed = 0.01
+    #t = np.linspace(-clip_n//2 * speed , clip_n//2 * speed, clip_n) + offset*speed
+    return t, mu, sig, deltas
+
+def dr_motion_reversal(model):
+    # Load natural scene models.
+    speed = 0.19
+    # Plot
+    clip_n = 210
+    fig = plt.figure(figsize=(10, 7))
+
+    # Plot motion reversal response.
+    xs = np.arange(-9, 3)
+    t, mu, sig, deltas = run_motion_reversal(xs, (model,), speed, clip_n=clip_n, scaling=1)
+    #sig = np.zeros_like(sig)
+    ax = fig.add_subplot(111)
+    nat_color = 'lightcoral'
+    ax.plot(t,mu,color=nat_color, linewidth=4)
+    errorplot(t, mu, sig, color='lightcoral', ax=ax, linewidth=5)
+
+    ax.set_xlim(-.7, 1.1)
+    ax.set_ylim(0, 14)
+    ax.set_ylabel('Firing Rate (Hz)',fontsize=20)
+    ax.set_xlabel('Time (s)',fontsize=20)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    #ax.spines['left'].set_visible(False)
+    ax.tick_params(axis='both', which='major', labelsize=35)
+    plt.locator_params(nbins=3)
+    plt.yticks(ticks=[0,5,10])
+    plt.xticks(ticks=[-0.5, 0, 0.5, 1], labels=[-0.5, 0, 0.5, 1])
+    l = plt.legend(['Natural Scenes'], fontsize=35, frameon=False,
+                                                handlelength=0,
+                                                markerscale=0)
+    colors = [nat_color]
+    for color,text in zip(colors, l.get_texts()):
+        text.set_color(color)
+
+    plt.tight_layout()
+    return fig
+
+def block(x, offset, dt=10, us_factor=50, ax=None, alpha=1.0,
+                                          color='lightgrey'):
+    """block plot."""
+
+    # upsample the stimulus
+    time = np.arange(x.size) * dt
+    time_us = np.linspace(0, time[-1], us_factor * time.size)
+    x = interp1d(time, x, kind='nearest')(time_us)
+    maxval, minval = x.max(), x.min()
+
+    ax = plt.gca() if ax is None else ax
+    ax.fill_between(time_us, np.ones_like(x) * offset, x+offset, color=color, interpolate=True)
+    ax.plot(time_us, x+offset, '-', color=color, alpha=alpha)
+
+    return ax
+
+def osr(models):
+    """Generates the OSR figure."""
+    if isinstance(models,nn.Module):
+        models = [models]
+    # Generate stimulus.
+    dt = 10
+    # interval: delay
+    # duration: duration of flash
+    X, omt_idx = osr_stim(duration=2, interval=6, nflashes=8,
+                                                  intensity=-2,
+                                                  noise_std=0)
+
+    # Responses
+    t = np.linspace(0, len(X)*dt, len(X))
+    rn = sqz(models, X)
+
+    # Plot
+    plt.clf()
+    plt.style.use('deepretina')
+    fig = plt.figure(figsize=(15,8))
+    s = np.s_[models[0].img_shape[0]:140]
+    temp_t = t[s]
+    nat = rn.mean(1)[s]
+    nat_color = 'lightcoral'
+    plt.ylabel("Rate (Hz)", fontsize=40)
+    plt.xlabel("Time from Omission (s)", fontsize=40)
+    ax = plt.gca()
+    ax.plot(temp_t, nat, color=nat_color , label='Natural Scenes',
+                                           linewidth=4)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    offset = np.max(rn.mean(1))
+    offset = 11
+    #ax.plot(t,X[:,-1,0,0]+offset)
+    #plt.title('imgs/temp_intv{}_dur{}.png'.format(i,d))
+    block(X[:, -1, 0, 0], offset=offset, dt=dt, us_factor=50,
+                                                ax=plt.gca(),
+                                                color="black")
+    zero = t[omt_idx]
+    neg2 = t[omt_idx-20]
+    neg4 = t[omt_idx-40]
+    pos2 = t[omt_idx+20]
+    ticks = [neg4, neg2, zero, pos2]
+    plt.xlim([neg4-20,pos2+20])
+    plt.ylim([0,offset])
+    plt.yticks([0,5,10])
+    #plt.locator_params(nbins=3)
+    labels = [-0.4, -0.2, 0, .2]
+    plt.xticks(ticks=ticks, labels=labels)
+    ax.tick_params(axis='both', which='major', labelsize=45)
+    l = plt.legend(fontsize=40,loc='upper right',frameon=False,
+                                                handletextpad=-2.0, 
+                                                handlelength=0,
+                                                markerscale=0)
+    colors = [nat_color]
+    for color,text in zip(colors, l.get_texts()):
+        text.set_color(color)
+
+    plt.tight_layout()
+    return fig
 
 def retinal_phenomena_figs(model, verbose=True):
     """
@@ -1190,56 +1621,99 @@ def retinal_phenomena_figs(model, verbose=True):
     metrics = dict()
     filt_depth = model.img_shape[0]
 
-    (fig, (ax0,ax1)), X, resp = step_response(model,
-                                filt_depth=filt_depth)
-    figs.append(fig)
-    fig_names.append("step_response")
-    metrics['step_response'] = None
-
-    (fig,_),_,_,osr_resp_ratio = osr(model,duration=1,
-                                filt_depth=filt_depth)
-    figs.append(fig)
-    fig_names.append("osr")
-    metrics['osr'] = osr_resp_ratio 
-
-    (fig, (ax0,ax1)), X, resp = reversing_grating(model,
+    try:
+        (fig, (ax0,ax1)), X, resp = step_response(model,
                                     filt_depth=filt_depth)
-    figs.append(fig)
-    fig_names.append("reversing_grating")
-    metrics['reversing_grating'] = None
-
-    contrasts = [0.1, 0.7]
-    (fig, (_)), _, _ = contrast_adaptation(model, contrasts[1],
-                            contrasts[0], filt_depth=filt_depth)
-    figs.append(fig)
-    fig_names.append("contrast_adaptation")
-    metrics['contrast_adaptation'] = None
-
-    fig = contrast_fig(model, contrasts, unit_index=0,
-                              nonlinearity_type="bin",
-                              verbose=verbose)
-    figs.append(fig)
-    fig_names.append("fast_contr_adaptation")
-    metrics['contrast_fig'] = None
-
-    (fig, ax), _, _, _, _ = motion_reversal(model,
-                            filt_depth=filt_depth)
-    figs.append(fig)
-    fig_names.append("motion_reversal")
-    metrics['motion_reversal'] = None
-
-    tup = motion_anticipation(model, filt_depth=filt_depth)
-    (fig, ax) = tup[0]
-    figs.append(fig)
-    fig_names.append("motion_anticipation")
-    metrics['motion_anticipation'] = None
-
-    tup = oms_random_differential(model, filt_depth=filt_depth)
-    fig, _, _, diff_response, global_response = tup
-    figs.append(fig)
-    fig_names.append("oms")
-    oms_ratios = global_response.mean(0)/diff_response.mean(0)
-    metrics['oms'] = oms_ratios
-
+        figs.append(fig)
+        fig_names.append("step_response")
+        metrics['step_response'] = None
+    except Exception as e:
+        print("Error in Step Response")
+        print(e)
+    try:
+        fig = osr(model)
+        figs.append(fig)
+        fig_names.append("osr")
+    except Exception as e:
+        print("Error in OSR")
+        print(e)
+    try:
+        (fig, (ax0,ax1)), X, resp = reversing_grating(model,
+                                        filt_depth=filt_depth)
+        figs.append(fig)
+        fig_names.append("reversing_grating")
+        metrics['reversing_grating'] = None
+    except Exception as e:
+        print("Error in Reversing Grating")
+        print(e)
+    try:
+        contrasts = [0.1, 0.7]
+        (fig, (_)), _, _ = contrast_adaptation(model, contrasts[1],
+                                contrasts[0], filt_depth=filt_depth)
+        figs.append(fig)
+        fig_names.append("contrast_adaptation")
+        metrics['contrast_adaptation'] = None
+    except Exception as e:
+        print("Error in Contrast Adaptation")
+        print(e)
+    try:
+        fig = contrast_fig(model, contrasts, unit_index=0,
+                                  nonlinearity_type="bin",
+                                  verbose=verbose)
+        figs.append(fig)
+        fig_names.append("contrast_fig")
+        metrics['contrast_fig'] = None
+    except Exception as e:
+        print("Error in Contrast Fig")
+        print(e)
+    try:
+        fig = dr_motion_reversal(model)
+        figs.append(fig)
+        fig_names.append("motion_reversal")
+        metrics['motion_reversal'] = None
+    except Exception as e:
+        print("Error in Motion Reversal")
+        print(e)
+    try:
+        tup = motion_anticipation(model, velocity=0.176,
+                                         filt_depth=filt_depth)
+        (fig, ax) = tup[0]
+        figs.append(fig)
+        fig_names.append("motion_anticipation")
+        metrics['motion_anticipation'] = None
+    except Exception as e:
+        print("Error in Motion Anticipation")
+        print(e)
+    try:
+        tup = oms_random_differential(model, filt_depth=filt_depth)
+        fig, _, _, diff_response, global_response = tup
+        figs.append(fig)
+        fig_names.append("oms")
+        oms_ratios = global_response.mean(0)/diff_response.mean(0)
+        metrics['oms'] = oms_ratios
+    except Exception as e:
+        print("Error in OMS")
+        print(e)
+    try:
+        fig = f2_response(model)
+        figs.append(fig)
+        fig_names.append("f2_response")
+    except Exception as e:
+        print("Error in F2 Response")
+        print(e)
+    try:
+        fig = fast_contrast_adaptation(model)
+        figs.append(fig)
+        fig_names.append("fast_contrast_adaptation")
+    except Exception as e:
+        print("Error in Fast Contrast Adaptation")
+        print(e)
+    try:
+        fig = latency_encoding(model)
+        figs.append(fig)
+        fig_names.append("latency_encoding")
+    except Exception as e:
+        print("Error in Latency Encoding")
+        print(e)
     return figs, fig_names, metrics
 

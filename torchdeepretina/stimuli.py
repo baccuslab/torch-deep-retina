@@ -340,6 +340,20 @@ def motion_reversal(img_shape, start_pt=(0,0), horz_vel=0.5,
         frames.append(new_img)
     return np.asarray(frames)
 
+def dr_motion_reversal(xflip, speed=0.24):
+    c1, _, X1 = driftingbar(velocity=speed, width=2, x=(-40, xflip))
+    c2, _, X2 = driftingbar(velocity=speed, width=2, x=(xflip, -40))
+    centers = np.concatenate((c1, c2))[40:]
+    tflip = np.where(np.diff(centers) == 0)[0][0]
+    stim = np.concatenate([X1, X2],axis=0)
+    # resp = model.predict(stim)
+    return centers, tflip, stim
+
+def reversing_grating(nsamples, halfperiod, barsize, phase, waveform):
+    return reverse(grating(barsize=(barsize, 0), phase=(phase, 0),
+                                                waveform=waveform),
+                                                halfperiod, nsamples)
+
 def circle_mask(center, radius, mask_shape=(50,50)):
     """
     Creates a binary mask in the shape of a circle. 1s are inside the
@@ -1024,7 +1038,7 @@ def concat(*args, nx=50, nh=40):
     nx : int, optional
         Number of spatial dimensions (default: 50)
     """
-    c = np.vstack(map(lambda s: spatialize(s, nx), args))
+    c = np.vstack(map(lambda s: spatial_pad(s, nx), args))
     c = c.astype('float32')
     return rolling_window(c, nh)
 
@@ -1237,7 +1251,7 @@ def driftingbar(velocity, width, intensity=-1., x=(-30, 30)):
     stim : array_like
         The spatiotemporal drifting bar movie
     """
-    npts = 1 + int((x[1] - x[0]) / velocity)
+    npts = 1 + abs(int((x[1] - x[0]) / velocity))
     centers = np.linspace(x[0], x[1], npts)
     fxn = lambda x: bar((x, 0), width, np.Inf, us_factor=5, blur=0.)
     c = np.stack(map(fxn, centers))
@@ -1269,6 +1283,24 @@ def paired_flashes(ifi, flash_dur, intensity, total_length, delay):
     # return the concatenated pair
     return concat(f0 + f1)
 
+def sinusoid(halfperiod, nsamples, phase=0., intensity=1.0):
+    """Generates a 1-D sinusoidal wave"""
+    assert 0 <= phase <= 1, "Phase must be a fraction between 0 and 1"
+
+    # if halfperiod is zero, return all ones
+    if halfperiod == 0:
+        return np.ones(nsamples)
+
+    # compute the base frequency
+    time = np.linspace(0, 1, nsamples)
+    freq = 1 / (2 * halfperiod / nsamples)
+
+    # convert to radians
+    omega = 2 * np.pi * freq
+    phi = 2 * np.pi * phase
+
+    return intensity * np.sin(omega * time + phi)
+
 
 def square(halfperiod, nsamples, phase=0., intensity=1.0):
     """Generates a 1-D square wave"""
@@ -1293,40 +1325,46 @@ def square(halfperiod, nsamples, phase=0., intensity=1.0):
     return sequence[offset:(nsamples + offset)]
 
 
-def grating(barsize=(5, 0), phase=(0., 0.), nx=50, intensity=(1., 1.),
-                                                us_factor=1, blur=0.):
+def grating(barsize=(5, 0), phase=(0., 0.), nx=50,
+                        intensity=(1., 1.), us_factor=1,
+                        blur=0., waveform='square'):
     """Returns a grating as a spatial frame
 
     Parameters
     ----------
     barsize : (int, int), optional
-        Size of the bar in the x- and y- dimensions. A size of 0
-        indicates no spatial variation along that dimension. 
-        Default: (5, 0)
+        Size of the bar in the x- and y- dimensions. A size of 0 indicates no spatial
+        variation along that dimension. Default: (5, 0)
 
     phase : (float, float), optional
-        The phase of the grating in the x- and y- dimensions (as a
-        fraction of the period). Must be between 0 and 1. 
-        Default: (0., 0.)
+        The phase of the grating in the x- and y- dimensions (as a fraction of the period).
+        Must be between 0 and 1. Default: (0., 0.)
 
     intensity=(1., 1.)
         The contrast of the grating for the x- and y- dimensions
 
     nx : int, optional
-        The number of pixels along each dimension of the stimulus
-        (default: 50)
+        The number of pixels along each dimension of the stimulus (default: 50)
 
     us_factor : int
-        Amount to upsample the image by (before downsampling back to
-        50x50), (default: 1)
+        Amount to upsample the image by (before downsampling back to 50x50), (default: 1)
 
     blur : float
-        Amount of blur to applied to the upsampled image (before
-        downsampling), (default: 0.)
+        Amount of blur to applied to the upsampled image (before downsampling), (default: 0.)
+
+    waveform : str
+        Either 'square' or 'sin' or 'sinusoid'
     """
+    if waveform == 'square':
+        wform = square
+    elif waveform in ('sin', 'sinusoid'):
+        wform = sinusoid
+    else:
+        raise ValueError(f'Invalid waveform: {waveform}.')
+
     # generate a square wave along each axis
-    x = square(barsize[0], nx * us_factor, phase[0], intensity[0])
-    y = square(barsize[1], nx * us_factor, phase[1], intensity[1])
+    x = wform(barsize[0], nx * us_factor, phase[0], intensity[0])
+    y = wform(barsize[1], nx * us_factor, phase[1], intensity[1])
 
     # generate the grating frame and downsample
     return downsample(np.outer(y, x), us_factor, blur)
