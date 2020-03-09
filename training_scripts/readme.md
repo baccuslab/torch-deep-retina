@@ -85,6 +85,10 @@ The hyperparams.json should have a list of all the desired user setting for the 
     * batch size of integrated gradient calculations
 * `zero_bias`: bool
     * determines if bias should be zeroed in addition to pruned filter
+* `reset_lr`: bool
+    * determines if the learning rate should be reset to its initial value after every pruning attempt
+* `abssum`: bool
+    * if true, will take absolute value of integrated gradient prior to summing over channel. If false, will sum over channel first and then take absolute value. Either case will take mean over time.
 
 * `retinotopic`: bool
     * determines if retinotopic training. Overwritten by `prune`
