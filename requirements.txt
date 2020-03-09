@@ -13,4 +13,4 @@ deepdish
 pyret
 moviepy
 psutil
-
+-e git+git://github.com/nirum/jetpack.git@master#egg=jetpack

@@ -23,6 +23,8 @@ class PostInstallMoveFile(install):
         super().__init__(*args, **kwargs)
         atexit.register(install_mplstyle)
 
+
+
 setup(name='torchdeepretina',
       packages=find_packages(),
       version="0.1.0",
@@ -30,9 +32,28 @@ setup(name='torchdeepretina',
       author='Niru Maheshwaranathan, Lane McIntosh, Josh Melander, Julia Wang, Satchel Grant',
       author_email='grantsrb@stanford.edu',
       url='https://github.com/baccuslab/torch-deep-retina.git',
-      install_requires=[i.strip() for i in open("requirements.txt").readlines()],
+      install_requires= ["numpy",
+                         "scipy",
+                         "matplotlib",
+                         "torch",
+                         "opencv-python",
+                         "tqdm",
+                         "tableprint",
+                         "scikit-learn",
+                         "scikit-image",
+                         "h5py",
+                         "descent",
+                         "deepdish",
+                         "pyret",
+                         "moviepy",
+                         "psutil"]
+      py_modules=['torchdeepretina'],
+      cmdclass={
+          'install': PostInstallMoveFile,
+      },
       long_description='''
-          The torchdeepretina package contains methods for learning neural network models of the retina.
+          The torchdeepretina package contains methods for learning
+          neural network models of the retina.
           ''',
       classifiers=[
           'Intended Audience :: Science/Research',

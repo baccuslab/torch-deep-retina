@@ -35,9 +35,13 @@ For doing interneuron analyses, it is best to use the `get_intr_cors()` function
 - RetinotopicModel: a class that is similar to the VaryModel, but uses a one-hot layer to allow for fully convolutional training
 
 ## Setup
-After cloning the repo and copying to your @deepretina.stanford.edu account. All requirements should be already installed globally in deepretina. If not, to install a package locally:
+After cloning the repo and copying to your @deepretina.stanford.edu account, install all necessary packages locally:
 ```sh
-python3.6 -m pip install --user [package]
+python3.6 -m pip install --user -r requirements.txt
+```
+Next you will to install torchdeepretina. Run the following:
+```sh
+python3.6 -m pip install --user -e .
 ```
 
 Check GPU status:
