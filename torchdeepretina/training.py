@@ -136,7 +136,7 @@ class Trainer:
         stop_training = False
         while not stop_training:
             epoch += 1
-            stop_training = epoch > n_epochs and not hyps['prune']
+            stop_training = epoch >= n_epochs and not hyps['prune']
             print("Beginning Epoch {}/{} -- ".format(epoch,n_epochs),
                                                  hyps['save_folder'])
             print()
@@ -239,6 +239,7 @@ class Trainer:
                     del test_obs
 
             # Save Model Snapshot
+            cur_lr = next(iter(optimizer.param_groups))['lr']
             optimizer.zero_grad()
             save_dict = {
                 "model_type": hyps['model_type'],
@@ -253,7 +254,8 @@ class Trainer:
                 "norm_stats":train_data.stats,
                 "zero_dict":zero_dict,
                 "y_stats":{'mean':data_distr.y_mean,
-                             'std':data_distr.y_std}
+                             'std':data_distr.y_std},
+                "cur_lr":cur_lr, # Current LR
             }
             for k in hyps.keys():
                 if k not in save_dict:
@@ -271,16 +273,9 @@ class Trainer:
                                    "prev_state_dict":None,
                                    "prev_min_chan":-1,
                                    "intg_idx":0,
-                                   "prev_acc":-1}
+                                   "prev_acc":-1,
+                                   "prev_lr":cur_lr}
 
-                prune_dict = tdrprune.prune_channels(model, hyps,
-                                                    data_distr,
-                                                    val_acc=val_acc,
-                                                    **prune_dict)
-                stop_training = prune_dict['stop_pruning']
-                zero_dict = prune_dict['zero_dict']
-                zero_bias = utils.try_key(hyps,'zero_bias',True)
-                tdrprune.zero_chans(model, zero_dict,zero_bias)
                 reset_lr = utils.try_key(hyps,'reset_lr',False)
                 reset_lr = reset_lr and not isinstance(scheduler,
                                                        NullScheduler)
@@ -288,6 +283,22 @@ class Trainer:
                     # Reset learning rate if using scheduler
                     for param_group in optimizer.param_groups:
                         param_group['lr'] = hyps['lr']
+                cur_lr = next(iter(optimizer.param_groups))['lr']
+
+                prune_dict = tdrprune.prune_channels(model, hyps,
+                                                    data_distr,
+                                                    val_acc=val_acc,
+                                                    lr=cur_lr,
+                                                    **prune_dict)
+                stop_training = prune_dict['stop_pruning']
+                zero_dict = prune_dict['zero_dict']
+                zero_bias = utils.try_key(hyps,'zero_bias',True)
+                tdrprune.zero_chans(model, zero_dict,zero_bias)
+                # No matter what, set learning rate to the new prev_lr
+                # Either we are resetting to previous value, or setting
+                # to the current value
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = prune_dict['prev_lr']
 
             # Print Epoch Stats
             if prune:
@@ -318,7 +329,8 @@ class Trainer:
                     "Loss":avg_loss,
                     "ValAcc":val_acc,
                     "ValLoss":val_loss,
-                    "TestPearson":avg_pearson}
+                    "TestPearson":avg_pearson,
+                    **zero_dict}
         with open(hyps['save_folder'] + "/hyperparams.txt",'a') as f:
             s = " ".join([str(k)+":"+str(results[k]) for k in\
                                       sorted(results.keys())])
@@ -369,7 +381,7 @@ class Trainer:
         stop_training = False
         while not stop_training:
             epoch += 1
-            stop_training = epoch > n_epochs
+            stop_training = epoch >= n_epochs
             print("Beginning Epoch {}/{} -- ".format(epoch,n_epochs),
                                                  hyps['save_folder'])
             print()
@@ -617,6 +629,7 @@ def hyper_search(hyps, hyp_ranges, early_stopping=10,
                 results = " -- ".join([str(k)+":"+str(results[k]) for\
                                          k in sorted(results.keys())])
                 f.write("\n"+results+"\n")
+
         else:
             print("Skipped {} cells {}".format(hyps['dataset'],
                                                hyps['cells']))
@@ -629,16 +642,11 @@ def get_exp_num(exp_name):
         path to the main experiment folder that contains the model
         folders
     """
-    exp_folder = os.path.expanduser(exp_name)
-    _, dirs, _ = next(os.walk(exp_folder))
+    folders = tdrio.get_model_folders(exp_name)
     exp_nums = set()
-    for d in dirs:
-        splt = d.split("_")
-        if len(splt) >= 2 and splt[0] == exp_name:
-            try:
-                exp_nums.add(int(splt[1]))
-            except:
-                pass
+    for folder in folders:
+        splt = folder.split("/")[-1].split(exp_name)[1].split("_")[1]
+        exp_nums.add(int(splt))
     for i in range(len(exp_nums)):
         if i not in exp_nums:
             return i
@@ -787,20 +795,19 @@ def get_data(hyps):
     """
     cutout_size = None if 'cutout_size' not in hyps else\
                                       hyps['cutout_size']
-    img_depth, img_height, img_width = hyps['img_shape']
+    img_depth,_,_ = hyps['img_shape']
 
     if hyps['dataset'] in set(tdrintr.centers.keys()):
         data_path=utils.try_key(hyps,'datapath','~/interneuron_data/')
         train_data = loadintrexpt(expt=hyps['dataset'],
-                                           cells=hyps['cells'],
-                                           stim_type=hyps['stim_type'],
-                                           history=img_depth,
-                                           H=img_height,
-                                           W=img_width,
-                                           norm_stats=None,
-                                           cutout_width=cutout_size,
-                                           data_path=data_path)
-
+                                  cells=hyps['cells'],
+                                  stim_type=hyps['stim_type'],
+                                  history=img_depth,
+                                  H=None,
+                                  W=None,
+                                  norm_stats=None,
+                                  cutout_width=cutout_size,
+                                  data_path=data_path)
     else:
         data_path = utils.try_key(hyps,'datapath','~/experiments/data')
         train_data = loadexpt(hyps['dataset'],hyps['cells'],
@@ -819,6 +826,8 @@ def get_data(hyps):
                                             cutout_width=cutout_size))
     except:
         test_data = None
+
+    hyps['img_shape'] = train_data.X.shape[1:]
     return train_data, test_data
 
 def get_optim_objs(hyps, model, centers=None):
@@ -890,6 +899,7 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
         # Ensure necessary hyps are present
         hyps['n_repeats'] = utils.try_key(hyps, 'n_repeats', 1)
         hyps['prune'] = utils.try_key(hyps, 'prune', False)
+        hyps['abssum'] = utils.try_key(hyps, 'abssum', False)
         hyps['prune_layers'] = utils.try_key(hyps, 'prune_layers', [])
         hyps['prune_intvl'] = utils.try_key(hyps, 'prune_intvl', 10)
         hyps['alpha_steps'] = utils.try_key(hyps, 'alpha_steps', 5)
@@ -902,6 +912,8 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
                                            'scheduler_patience', 10)
         hyps['scheduler_scale'] = utils.try_key(hyps,
                                            'scheduler_scale', 0.5)
+        hyps['cross_validate'] = utils.try_key(hyps,
+                                           'cross_validate', False)
         for i in range(hyps['n_repeats']):
             # Load q
             hyps['search_keys'] = ""
