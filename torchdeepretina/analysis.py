@@ -328,6 +328,7 @@ def get_model_rfs(model, data_frame, contrast=1, use_grad=False,
         rng = tqdm(rng)
     for i in rng:
         layer, chan, row, col = data_frame.loc[:,keys].iloc[i]
+        layer, chan, row, col = int(layer),int(chan),int(row),int(col)
         if row is None and col is None:
             layer_idx = -1
             cell_idx = chan
