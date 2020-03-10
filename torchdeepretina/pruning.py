@@ -44,6 +44,7 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
                                                 prev_min_chan,
                                                 val_acc, prev_acc,
                                                 lr, prev_lr,
+                                                reset_sd=None,
                                                 **kwargs):
     """
     Handles the channel pruning calculations. Should be called every
@@ -87,6 +88,15 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
         prev_acc: float
             the validation accuracy associated with the
             prev_state_dict weights
+        lr: float
+            the current learning rate
+        prev_lr: float
+            the learning rate from before the last pruning
+        reset_sd: None or torch State Dict
+            If None, will have no effect. If state dict is argued,
+            the model will be reset to this state dict after the
+            next channel to be pruned is decided.
+
     Returns:
         dict:
             stop_pruning: bool
@@ -156,6 +166,8 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
         prev_min_chan = min_chan
         s = "Dropping channel {} in layer {}"
         print(s.format(min_chan, layer))
+        if reset_sd is not None:
+            model.load_state_dict(reset_sd)
     else:
         print("No more layers in prune_layers list. "+\
                                     "Stopping Training")

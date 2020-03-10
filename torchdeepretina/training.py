@@ -122,6 +122,7 @@ class Trainer:
             hyps["n_units"] = train_data.y.shape[-1]
             hyps['centers'] = train_data.centers
             model, data_distr = get_model_and_distr(hyps, train_data)
+            og_state_dict = model.state_dict()
             print("train shape:", data_distr.train_shape)
             print("val shape:", data_distr.val_shape)
 
@@ -182,7 +183,7 @@ class Trainer:
                     loss.backward()
                     optimizer.step()
                     # Only prunes if zero_dict contains values
-                    tdrprune.zero_chans(model, zero_dict,zero_bias)
+                    tdrprune.zero_chans(model, zero_dict, zero_bias)
 
                     epoch_loss += loss.item()
                     if verbose:
@@ -299,11 +300,16 @@ class Trainer:
                             param_group['lr'] = hyps['lr']
                     cur_lr = next(iter(optimizer.param_groups))['lr']
 
+                    reset_sd = utils.try_key(hyps,'reset_sd',False)
+                    sd = None
+                    if reset_sd: sd = og_sd
+
                     prune_dict = tdrprune.prune_channels(model, hyps,
-                                                        data_distr,
-                                                        val_acc=val_acc,
-                                                        lr=cur_lr,
-                                                        **prune_dict)
+                                                       data_distr,
+                                                       val_acc=val_acc,
+                                                       lr=cur_lr,
+                                                       reset_sd=sd,
+                                                       **prune_dict)
                     stop_training = prune_dict['stop_pruning']
                     zero_dict = prune_dict['zero_dict']
                     zero_bias = utils.try_key(hyps,'zero_bias',True)
