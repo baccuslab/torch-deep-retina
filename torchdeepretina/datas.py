@@ -557,8 +557,10 @@ class DataDistributor:
     shuffling or organizing data for rnns.
     """
 
-    def __init__(self, data, val_size=30000, batch_size=512,
-                                    seq_len=1, shuffle=True,
+    def __init__(self, data, batch_size=512, seq_len=1,
+                                    shuffle=True,
+                                    cross_val_idx=0,
+                                    n_cv_folds=10,
                                     rand_sample=None,
                                     recurrent=False,
                                     shift_labels=False,
@@ -573,6 +575,9 @@ class DataDistributor:
         shuffle - bool describing if data should be shuffled
             (the shuffling preserves the frame order within each
             data point)
+        cross_val_idx - int describing the cross validation rotation.
+        n_cv_folds - int descibing the number of cross validation
+            folds to be used in cross_validation.
         rand_sample - bool similar to shuffle but specifies the
             sampling method rather than the storage method. Allows
             for the data to be unshuffled but sampled randomly.
@@ -614,15 +619,27 @@ class DataDistributor:
             else:
                 self.perm = np.arange(self.X.shape[0]).astype('int')
         else:
-            if shuffle:
+            if shuffle and cross_val_idx is None:
                 self.perm = torch.randperm(self.X.shape[0]).long()
             else:
                 self.perm = torch.arange(self.X.shape[0]).long()
 
-        if val_size > len(self.perm):
-            val_size = int(len(self.perm)*0.05)
-        self.train_idxs = self.perm[:-val_size]
-        self.val_idxs = self.perm[-val_size:]
+        # Split indices into validation and training
+        val_size = int(len(self.perm)*1/n_cv_folds)
+        if cross_val_idx is None or 0:
+            self.val_idxs = self.perm[:val_size]
+            self.train_idxs = self.perm[val_size:]
+        elif cross_val_idx == n_cv_folds-1:
+            self.val_idxs = self.perm[-val_size:]
+            self.train_idxs = self.perm[:-val_size]
+        else:
+            cv_idx = cross_val_idx*val_size
+            self.val_idxs = self.perm[cv_idx:cv_idx+val_size]
+            cat = np.concatenate if isinstance(self.X,np.ndarray) else\
+                                                            torch.cat
+            arr = [self.perm[:cv_idx],
+                    self.perm[cv_idx+val_size:]]
+            self.train_idxs = cat(arr)
         self.train_X = DataObj(self.X, self.train_idxs)
         self.train_y = DataObj(self.y, self.train_idxs)
         self.val_X = DataObj(self.X, self.val_idxs)

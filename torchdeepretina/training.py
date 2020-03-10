@@ -102,246 +102,260 @@ class Trainer:
         torch.cuda.empty_cache()
         batch_size = hyps['batch_size']
 
-        hyps['exp_num'] = get_exp_num(hyps['exp_name'])
-        hyps['save_folder'] = get_save_folder(hyps)
-        print("Beginning training for {}".format(hyps['save_folder']))
+        if hyps['cross_val']:
+            cross_val_range = range(hyps['n_cv_folds'])
+        else:
+            cross_val_idx = hyps['cross_val_idx']
+            if cross_val_idx is None: cross_val_idx = 0
+            cross_val_idx = min(hyps['n_cv_folds']-1,cross_val_idx)
+            cross_val_range = range(cross_val_idx,cross_val_idx+1)
+        for cv_idx in cross_val_range:
+            hyps['cross_val_idx'] = cv_idx
+            hyps['exp_num'] = get_exp_num(hyps['exp_name'])
+            hyps['save_folder'] = get_save_folder(hyps)
+            s = "Beginning training for {} -- CV {}"
+            s = s.format(hyps['save_folder'],cv_idx)
+            print(s)
 
-        # Get Data, Make Model, Record Initial Hyps and Model
-        train_data, test_data = get_data(hyps)
-        hyps["n_units"] = train_data.y.shape[-1]
-        hyps['centers'] = train_data.centers
-        model, data_distr = get_model_and_distr(hyps, train_data)
-        print("train shape:", data_distr.train_shape)
-        print("val shape:", data_distr.val_shape)
+            # Get Data, Make Model, Record Initial Hyps and Model
+            train_data, test_data = get_data(hyps)
+            hyps["n_units"] = train_data.y.shape[-1]
+            hyps['centers'] = train_data.centers
+            model, data_distr = get_model_and_distr(hyps, train_data)
+            print("train shape:", data_distr.train_shape)
+            print("val shape:", data_distr.val_shape)
 
-        record_session(hyps, model)
+            record_session(hyps, model)
 
-        # Make optimization objects (lossfxn, optimizer, scheduler)
-        optimizer, scheduler, loss_fn = get_optim_objs(hyps, model,
-                                                train_data.centers)
+            # Make optimization objects (lossfxn, optimizer, scheduler)
+            optimizer, scheduler, loss_fn = get_optim_objs(hyps, model,
+                                                    train_data.centers)
 
-        # Training
-        if hyps['exp_name'] == "test":
-            hyps['n_epochs'] = 2
-            hyps['prune_intvl'] = 2
-        n_epochs = hyps['n_epochs']
-        if hyps['prune']:
-            if hyps['prune_layers'] == 'all' or\
-                                             hyps['prune_layers']==[]:
-                layers = utils.get_conv_layer_names(model)
-                hyps['prune_layers'] = layers[:-1]
-        zero_dict ={d:set() for d in hyps['prune_layers']}
-        epoch = -1
-        zero_bias = utils.try_key(hyps,'zero_bias',True)
-        stop_training = False
-        while not stop_training:
-            epoch += 1
-            stop_training = epoch >= n_epochs and not hyps['prune']
-            print("Beginning Epoch {}/{} -- ".format(epoch,n_epochs),
-                                                 hyps['save_folder'])
-            print()
-            n_loops = data_distr.n_loops
-            model.train(mode=True)
-            epoch_loss = 0
-            sf = hyps['save_folder']
-            stats_string = 'Epoch {} -- {}\n'.format(epoch, sf)
-            starttime = time.time()
-
-            # Train Loop
-            for i,(x,label) in enumerate(data_distr.train_sample()):
-                optimizer.zero_grad()
-                label = label.float()
-
-                # Error Evaluation
-                y,error = static_eval(x, label, model, loss_fn)
-                if hyps['l1']<=0:
-                    activity_l1 = torch.zeros(1).to(DEVICE)
-                else:
-                    activity_l1 = hyps['l1']*torch.norm(y, 1).float()
-                    activity_l1 = activity_l1.mean()
-                if 'gauss_reg' in hyps and hyps['gauss_reg'] > 0:
-                    g_coef = hyps['gauss_loss_coef']
-                    activity_l1 += g_coef*gauss_reg.get_loss()
-
-                # Backwards Pass
-                loss = error + activity_l1
-                loss.backward()
-                optimizer.step()
-                # Only prunes if zero_dict contains values
-                tdrprune.zero_chans(model, zero_dict,zero_bias)
-
-                epoch_loss += loss.item()
-                if verbose:
-                    print_train_update(error, activity_l1, model,
-                                                      n_loops, i)
-                if math.isnan(epoch_loss) or math.isinf(epoch_loss):
-                    break
-                if hyps['exp_name']=="test" and i >= 5:
-                    break
-
-            # Clean Up Train Loop
-            avg_loss = epoch_loss/n_loops
-            s = 'Avg Loss: {} -- Time: {}\n'
-            stats_string += s.format(avg_loss, time.time()-starttime)
-            # Deletions for memory reduction
-            del x
-            del y
-            del label
-
-            # Validation
-            model.eval()
-            with torch.no_grad():
-                # Miscellaneous Initializations
-                step_size = 500
-                n_loops = data_distr.val_shape[0]//step_size
-                if verbose:
-                    print()
-                    print("Validating")
-
-                # Validation Block
-                tup = validate_static(hyps,model,data_distr,
-                                     loss_fn, step_size=step_size,
-                                     verbose=verbose)
-                val_loss, val_preds, val_targs = tup
-                # Validation Evaluation
-                val_loss = val_loss/n_loops
-                n_units = data_distr.val_y.shape[-1]
-                val_preds = np.concatenate(val_preds, axis=0)
-                val_targs = np.concatenate(val_targs, axis=0)
-                pearsons = utils.pearsonr(val_preds, val_targs)
-                s = " | ".join([str(p) for p in pearsons])
-                stats_string += "Val Cell Cors:" + s +'\n'
-                val_acc = np.mean(pearsons)
-                stop = self.stop_early(val_acc)
-
-                # Clean Up
-                s = "Val Cor: {} | Val Loss: {}\n"
-                stats_string += s.format(val_acc, val_loss)
-                scheduler.step(val_acc)
-                del val_preds
-
-                # Validation on Test Subset (Nonrecurrent Models Only)
-                avg_pearson = 0
-                if test_data is not None:
-                    test_x = torch.from_numpy(test_data.X)
-                    test_obs = model(test_x.to(DEVICE)).cpu()
-                    test_obs = test_obs.detach().numpy()
-                    rng = range(test_obs.shape[-1])
-                    pearsons = utils.pearsonr(test_obs,test_data.y)
-                    for cell,r in enumerate(pearsons):
-                        avg_pearson += r
-                        s = 'Cell ' + str(cell) + ': ' + str(r)+"\n"
-                        stats_string += s
-                    n = float(test_obs.shape[-1])
-                    avg_pearson = avg_pearson / n
-                    s = "Avg Test Pearson: "+ str(avg_pearson) + "\n"
-                    stats_string += s
-                    del test_obs
-
-            # Save Model Snapshot
-            cur_lr = next(iter(optimizer.param_groups))['lr']
-            optimizer.zero_grad()
-            save_dict = {
-                "model_type": hyps['model_type'],
-                "model_state_dict":model.state_dict(),
-                "optim_state_dict":optimizer.state_dict(),
-                "hyps": hyps,
-                "loss": avg_loss,
-                "epoch":epoch,
-                "val_loss":val_loss,
-                "val_acc":val_acc,
-                "test_pearson":avg_pearson,
-                "norm_stats":train_data.stats,
-                "zero_dict":zero_dict,
-                "y_stats":{'mean':data_distr.y_mean,
-                             'std':data_distr.y_std},
-                "cur_lr":cur_lr, # Current LR
-            }
-            for k in hyps.keys():
-                if k not in save_dict:
-                    save_dict[k] = hyps[k]
-            del_prev = 'save_every_epoch' in hyps and\
-                                        not hyps['save_every_epoch']
-            tdrio.save_checkpoint(save_dict, hyps['save_folder'],
-                                       'test', del_prev=del_prev)
-
-            # Integrated Gradient Pruning
-            prune = hyps['prune'] and epoch >= n_epochs
-            if prune and epoch % hyps['prune_intvl'] == 0:
-                if epoch <= (n_epochs+hyps['prune_intvl']):
-                    prune_dict = { "zero_dict":zero_dict,
-                                   "prev_state_dict":None,
-                                   "prev_min_chan":-1,
-                                   "intg_idx":0,
-                                   "prev_acc":-1,
-                                   "prev_lr":cur_lr}
-
-                reset_lr = utils.try_key(hyps,'reset_lr',False)
-                reset_lr = reset_lr and not isinstance(scheduler,
-                                                       NullScheduler)
-                if reset_lr:
-                    # Reset learning rate if using scheduler
-                    for param_group in optimizer.param_groups:
-                        param_group['lr'] = hyps['lr']
-                cur_lr = next(iter(optimizer.param_groups))['lr']
-
-                prune_dict = tdrprune.prune_channels(model, hyps,
-                                                    data_distr,
-                                                    val_acc=val_acc,
-                                                    lr=cur_lr,
-                                                    **prune_dict)
-                stop_training = prune_dict['stop_pruning']
-                zero_dict = prune_dict['zero_dict']
-                zero_bias = utils.try_key(hyps,'zero_bias',True)
-                tdrprune.zero_chans(model, zero_dict,zero_bias)
-                # No matter what, set learning rate to the new prev_lr
-                # Either we are resetting to previous value, or setting
-                # to the current value
-                for param_group in optimizer.param_groups:
-                    param_group['lr'] = prune_dict['prev_lr']
-
-            # Print Epoch Stats
-            if prune:
-                s = "Zeroed Channels:\n"
-                keys = sorted(list(zero_dict.keys()))
-                for k in keys:
-                    chans = [str(c) for c in zero_dict[k]]
-                    s += "{}: {}\n".format(k,",".join(chans))
-                stats_string += s
-            gc.collect()
-            max_mem_used = resource.getrusage(resource.RUSAGE_SELF)
-            max_mem_used = max_mem_used.ru_maxrss/1024
-            s = "Memory Used: {:.2f} mb\n"
-            stats_string += s.format(max_mem_used)
-            print(stats_string)
-
-            # Log progress to txt file
-            log = os.path.join(hyps['save_folder'],"training_log.txt")
-            with open(log,'a') as f:
-                f.write(str(stats_string)+'\n')
-
-            # If loss is nan, training is futile
-            if math.isnan(avg_loss) or math.isinf(avg_loss) or stop:
-                break
-
-        # Final save
-        results = {"save_folder":hyps['save_folder'],
-                    "Loss":avg_loss,
-                    "ValAcc":val_acc,
-                    "ValLoss":val_loss,
-                    "TestPearson":avg_pearson,
-                    **zero_dict}
-        with open(hyps['save_folder'] + "/hyperparams.txt",'a') as f:
-            s = " ".join([str(k)+":"+str(results[k]) for k in\
-                                      sorted(results.keys())])
+            # Training
+            if hyps['exp_name'] == "test":
+                hyps['n_epochs'] = 2
+                hyps['prune_intvl'] = 2
+            n_epochs = hyps['n_epochs']
             if hyps['prune']:
-                s += "\nZeroed Channels:\n"
-                keys = sorted(list(zero_dict.keys()))
-                for k in keys:
-                    chans = [str(c) for c in zero_dict[k]]
-                    s += "{}: {}\n".format(k,",".join(chans))
-            s = "\n" + s + '\n'
-            f.write(s)
+                if hyps['prune_layers'] == 'all' or\
+                                                 hyps['prune_layers']==[]:
+                    layers = utils.get_conv_layer_names(model)
+                    hyps['prune_layers'] = layers[:-1]
+            zero_dict ={d:set() for d in hyps['prune_layers']}
+            epoch = -1
+            zero_bias = utils.try_key(hyps,'zero_bias',True)
+            stop_training = False
+            while not stop_training:
+                epoch += 1
+                stop_training = epoch >= n_epochs and not hyps['prune']
+                cv_s = "-- CV {}/{}".format(cv_idx, hyps['n_cv_folds'])
+                print("Beginning Epoch {}/{} -- ".format(epoch,n_epochs),
+                                                     hyps['save_folder'],
+                                                     cv_s)
+                print()
+                n_loops = data_distr.n_loops
+                model.train(mode=True)
+                epoch_loss = 0
+                sf = hyps['save_folder']
+                stats_string = 'Epoch {} -- {} {}\n'.format(epoch, sf,
+                                                                 cv_s)
+                starttime = time.time()
+
+                # Train Loop
+                for i,(x,label) in enumerate(data_distr.train_sample()):
+                    optimizer.zero_grad()
+                    label = label.float()
+
+                    # Error Evaluation
+                    y,error = static_eval(x, label, model, loss_fn)
+                    if hyps['l1']<=0:
+                        activity_l1 = torch.zeros(1).to(DEVICE)
+                    else:
+                        activity_l1 = hyps['l1']*torch.norm(y, 1).float()
+                        activity_l1 = activity_l1.mean()
+                    if 'gauss_reg' in hyps and hyps['gauss_reg'] > 0:
+                        g_coef = hyps['gauss_loss_coef']
+                        activity_l1 += g_coef*gauss_reg.get_loss()
+
+                    # Backwards Pass
+                    loss = error + activity_l1
+                    loss.backward()
+                    optimizer.step()
+                    # Only prunes if zero_dict contains values
+                    tdrprune.zero_chans(model, zero_dict,zero_bias)
+
+                    epoch_loss += loss.item()
+                    if verbose:
+                        print_train_update(error, activity_l1, model,
+                                                          n_loops, i)
+                    if math.isnan(epoch_loss) or math.isinf(epoch_loss):
+                        break
+                    if hyps['exp_name']=="test" and i >= 5:
+                        break
+
+                # Clean Up Train Loop
+                avg_loss = epoch_loss/n_loops
+                s = 'Avg Loss: {} -- Time: {}\n'
+                stats_string += s.format(avg_loss, time.time()-starttime)
+                # Deletions for memory reduction
+                del x
+                del y
+                del label
+
+                # Validation
+                model.eval()
+                with torch.no_grad():
+                    # Miscellaneous Initializations
+                    step_size = 500
+                    n_loops = data_distr.val_shape[0]//step_size
+                    if verbose:
+                        print()
+                        print("Validating")
+
+                    # Validation Block
+                    tup = validate_static(hyps,model,data_distr,
+                                         loss_fn, step_size=step_size,
+                                         verbose=verbose)
+                    val_loss, val_preds, val_targs = tup
+                    # Validation Evaluation
+                    val_loss = val_loss/n_loops
+                    n_units = data_distr.val_y.shape[-1]
+                    val_preds = np.concatenate(val_preds, axis=0)
+                    val_targs = np.concatenate(val_targs, axis=0)
+                    pearsons = utils.pearsonr(val_preds, val_targs)
+                    s = " | ".join([str(p) for p in pearsons])
+                    stats_string += "Val Cell Cors:" + s +'\n'
+                    val_acc = np.mean(pearsons)
+                    stop = self.stop_early(val_acc)
+
+                    # Clean Up
+                    s = "Val Cor: {} | Val Loss: {}\n"
+                    stats_string += s.format(val_acc, val_loss)
+                    scheduler.step(val_acc)
+                    del val_preds
+
+                    # Validation on Test Subset (Nonrecurrent Models Only)
+                    avg_pearson = 0
+                    if test_data is not None:
+                        test_x = torch.from_numpy(test_data.X)
+                        test_obs = model(test_x.to(DEVICE)).cpu()
+                        test_obs = test_obs.detach().numpy()
+                        rng = range(test_obs.shape[-1])
+                        pearsons = utils.pearsonr(test_obs,test_data.y)
+                        for cell,r in enumerate(pearsons):
+                            avg_pearson += r
+                            s = 'Cell ' + str(cell) + ': ' + str(r)+"\n"
+                            stats_string += s
+                        n = float(test_obs.shape[-1])
+                        avg_pearson = avg_pearson / n
+                        s = "Avg Test Pearson: "+ str(avg_pearson) + "\n"
+                        stats_string += s
+                        del test_obs
+
+                # Save Model Snapshot
+                cur_lr = next(iter(optimizer.param_groups))['lr']
+                optimizer.zero_grad()
+                save_dict = {
+                    "model_type": hyps['model_type'],
+                    "model_state_dict":model.state_dict(),
+                    "optim_state_dict":optimizer.state_dict(),
+                    "hyps": hyps,
+                    "loss": avg_loss,
+                    "epoch":epoch,
+                    "val_loss":val_loss,
+                    "val_acc":val_acc,
+                    "test_pearson":avg_pearson,
+                    "norm_stats":train_data.stats,
+                    "zero_dict":zero_dict,
+                    "y_stats":{'mean':data_distr.y_mean,
+                                 'std':data_distr.y_std},
+                    "cur_lr":cur_lr, # Current LR
+                }
+                for k in hyps.keys():
+                    if k not in save_dict:
+                        save_dict[k] = hyps[k]
+                del_prev = 'save_every_epoch' in hyps and\
+                                            not hyps['save_every_epoch']
+                tdrio.save_checkpoint(save_dict, hyps['save_folder'],
+                                           'test', del_prev=del_prev)
+
+                # Integrated Gradient Pruning
+                prune = hyps['prune'] and epoch >= n_epochs
+                if prune and epoch % hyps['prune_intvl'] == 0:
+                    if epoch <= (n_epochs+hyps['prune_intvl']):
+                        prune_dict = { "zero_dict":zero_dict,
+                                       "prev_state_dict":None,
+                                       "prev_min_chan":-1,
+                                       "intg_idx":0,
+                                       "prev_acc":-1,
+                                       "prev_lr":cur_lr}
+
+                    reset_lr = utils.try_key(hyps,'reset_lr',False)
+                    reset_lr = reset_lr and not isinstance(scheduler,
+                                                           NullScheduler)
+                    if reset_lr:
+                        # Reset learning rate if using scheduler
+                        for param_group in optimizer.param_groups:
+                            param_group['lr'] = hyps['lr']
+                    cur_lr = next(iter(optimizer.param_groups))['lr']
+
+                    prune_dict = tdrprune.prune_channels(model, hyps,
+                                                        data_distr,
+                                                        val_acc=val_acc,
+                                                        lr=cur_lr,
+                                                        **prune_dict)
+                    stop_training = prune_dict['stop_pruning']
+                    zero_dict = prune_dict['zero_dict']
+                    zero_bias = utils.try_key(hyps,'zero_bias',True)
+                    tdrprune.zero_chans(model, zero_dict,zero_bias)
+                    # No matter what, set learning rate to the new prev_lr
+                    # Either we are resetting to previous value, or setting
+                    # to the current value
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] = prune_dict['prev_lr']
+
+                # Print Epoch Stats
+                if prune:
+                    s = "Zeroed Channels:\n"
+                    keys = sorted(list(zero_dict.keys()))
+                    for k in keys:
+                        chans = [str(c) for c in zero_dict[k]]
+                        s += "{}: {}\n".format(k,",".join(chans))
+                    stats_string += s
+                gc.collect()
+                max_mem_used = resource.getrusage(resource.RUSAGE_SELF)
+                max_mem_used = max_mem_used.ru_maxrss/1024
+                s = "Memory Used: {:.2f} mb\n"
+                stats_string += s.format(max_mem_used)
+                print(stats_string)
+
+                # Log progress to txt file
+                log = os.path.join(hyps['save_folder'],"training_log.txt")
+                with open(log,'a') as f:
+                    f.write(str(stats_string)+'\n')
+
+                # If loss is nan, training is futile
+                if math.isnan(avg_loss) or math.isinf(avg_loss) or stop:
+                    break
+
+            # Final save
+            results = {"save_folder":hyps['save_folder'],
+                        "Loss":avg_loss,
+                        "ValAcc":val_acc,
+                        "ValLoss":val_loss,
+                        "TestPearson":avg_pearson,
+                        **zero_dict}
+            with open(hyps['save_folder'] + "/hyperparams.txt",'a') as f:
+                s = " ".join([str(k)+":"+str(results[k]) for k in\
+                                          sorted(results.keys())])
+                if hyps['prune']:
+                    s += "\nZeroed Channels:\n"
+                    keys = sorted(list(zero_dict.keys()))
+                    for k in keys:
+                        chans = [str(c) for c in zero_dict[k]]
+                        s += "{}: {}\n".format(k,",".join(chans))
+                s = "\n" + s + '\n'
+                f.write(s)
         return results
 
     def retinotopic_loop(self, hyps, verbose=False):
@@ -752,15 +766,17 @@ def get_model_and_distr(hyps, train_data):
     """
     model = globals()[hyps['model_type']](**hyps)
     model = model.to(DEVICE)
-    num_val = int(min(10000, 0.1*len(train_data)))
     batch_size = hyps['batch_size']
     seq_len = 1
     shift_labels = False if 'shift_labels' not in hyps else\
                                         hyps['shift_labels']
     zscorey = False if 'zscorey' not in hyps else hyps['zscorey']
-    data_distr = DataDistributor(train_data, num_val,
-                                    batch_size=batch_size,
+    cross_val_idx = hyps['cross_val_idx']
+    n_cv_folds = hyps['n_cv_folds']
+    data_distr = DataDistributor(train_data, batch_size=batch_size,
                                     shuffle=hyps['shuffle'],
+                                    cross_val_idx=cross_val_idx,
+                                    n_cv_folds=n_cv_folds,
                                     recurrent=False,
                                     seq_len=seq_len,
                                     shift_labels=shift_labels,
@@ -912,8 +928,10 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
                                            'scheduler_patience', 10)
         hyps['scheduler_scale'] = utils.try_key(hyps,
                                            'scheduler_scale', 0.5)
-        hyps['cross_validate'] = utils.try_key(hyps,
-                                           'cross_validate', False)
+        hyps['cross_val'] = utils.try_key(hyps, 'cross_val', False)
+        hyps['cross_val_idx'] = utils.try_key(hyps, 'cross_val_idx',
+                                                              0)
+        hyps['n_cv_folds'] = utils.try_key(hyps, 'n_cv_folds', 10)
         for i in range(hyps['n_repeats']):
             # Load q
             hyps['search_keys'] = ""

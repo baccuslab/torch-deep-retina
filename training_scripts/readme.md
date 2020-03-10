@@ -9,6 +9,12 @@ The hyperparams.json should have a list of all the desired user setting for the 
     * The name of the main experiment. Model folders will be saved within a folder of this name.
 * `n_repeats`: int
     * The number of times to repeat any given hyperparameter set
+* `cross_val`: bool
+    * if true, will cross validate model with `n_cv_folds` train-val splits
+* `cross_val_idx`: int or null
+    * if `cross_val` is true, this parameter has no effect and will be cycled through during training. If `cross_val` is false, this will specify the train-val split to use during training.
+* `n_cv_folds`: int
+    * the number of cross validation folds to use
 * `save_every_epoch`: bool
     * A boolean determining if the model `state_dict` should be saved for every epoch, or only the most recent epoch.
 
