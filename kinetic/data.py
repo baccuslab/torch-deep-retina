@@ -84,3 +84,4 @@ class TestDataset(Dataset):
         inpt = torch.from_numpy(self.X[index])
         trgt = torch.from_numpy(self.y[index])
         return (inpt, trgt)
+    

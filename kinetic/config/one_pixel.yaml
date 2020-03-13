@@ -1,0 +1,11 @@
+exp_id: 'one_pixel_channel'
+img_shape: (40,)
+Model:
+    name: 'KineticsOnePixelChannel'
+    checkpoint: ''
+    noise: 0.
+    linear_bias: False
+    scale_kinet: False
+    n_units: 1
+Data:
+    trunc_int: 500

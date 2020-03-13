@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torchdeepretina.torch_utils import *
     
 class KineticsModel(nn.Module):
@@ -439,7 +440,7 @@ class KineticsChannelModelFilterBipolarNoNorm(nn.Module):
     
 class KineticsChannelModelFilterAmacrine(nn.Module):
     def __init__(self, bnorm=True, drop_p=0, scale_kinet=False, recur_seq_len=5, n_units=5, 
-                 noise=.05, bias=True, linear_bias=False, chans=[8,8], bn_moment=.01, softplus=True, 
+                 noise=.05, bias=True, linear_bias=False, chans=[8,8], softplus=True, 
                  inference_exp=False, img_shape=(40,50,50), ksizes=(15,11), centers=None):
         super(KineticsChannelModelFilterAmacrine, self).__init__()
         
@@ -452,10 +453,8 @@ class KineticsChannelModelFilterAmacrine(nn.Module):
         self.ksizes = ksizes 
         self.linear_bias = linear_bias 
         self.noise = noise
-        self.bn_moment = bn_moment 
         self.centers = centers
         
-        self.bnorm = bnorm
         self.drop_p = drop_p
         self.scale_kinet = scale_kinet
         self.seq_len = recur_seq_len
@@ -469,14 +468,11 @@ class KineticsChannelModelFilterAmacrine(nn.Module):
                                            bias=self.bias, drop_p=self.drop_p))
         shape = update_shape(shape, self.ksizes[0])
         self.shapes.append(tuple(shape))
-        modules.append(Flatten())
-        modules.append(nn.BatchNorm1d(self.chans[0]*shape[0]*shape[1], momentum=self.bn_moment))
         modules.append(GaussianNoise(std=self.noise))     
         modules.append(nn.ReLU())
         self.bipolar = nn.Sequential(*modules)
 
         modules = []
-        modules.append(Reshape((-1, self.chans[0], shape[0], shape[1])))
         modules.append(LinearStackedConv2d(self.chans[0],self.chans[1],
                                            kernel_size=self.ksizes[1], abs_bnorm=False, 
                                            bias=self.bias, drop_p=self.drop_p))
@@ -485,8 +481,6 @@ class KineticsChannelModelFilterAmacrine(nn.Module):
         n_states = 4
         self.h_shapes.append((n_states, self.chans[1], shape[0]*shape[1]))
         self.h_shapes.append((self.chans[1], shape[0]*shape[1]))
-        modules.append(Flatten())
-        modules.append(nn.BatchNorm1d(self.chans[1]*shape[0]*shape[1], momentum=self.bn_moment))
         modules.append(GaussianNoise(std=self.noise))
         modules.append(nn.Sigmoid())
         modules.append(Reshape((-1, self.chans[1], shape[0] * shape[1])))
@@ -501,7 +495,6 @@ class KineticsChannelModelFilterAmacrine(nn.Module):
         modules.append(Temperal_Filter(self.seq_len, 1))
         modules.append(nn.Linear(self.chans[1]*shape[0]*shape[1], 
                                  self.n_units, bias=self.linear_bias))
-        modules.append(nn.BatchNorm1d(self.n_units, momentum=self.bn_moment))
         modules.append(nn.Softplus())
         self.ganglion = nn.Sequential(*modules)
 
@@ -520,5 +513,74 @@ class KineticsChannelModelFilterAmacrine(nn.Module):
         fx = torch.stack(list(h1), dim=1) #(B,D,N)
         if self.scale_kinet:
             fx = self.kinet_scale(fx)
+        fx = self.ganglion(fx)
+        return fx, [h0, h1]
+    
+class LNK(nn.Module):
+    def __init__(self, bias, dt):
+        super(LNK, self).__init__()
+        self.dt = dt
+        self.filter = Temperal_Filter(tem_len=40, spatial=0)
+        modules = []
+        modules.append(Add(bias))
+        modules.append(nn.Sigmoid())
+        self.nonlinearity = nn.Sequential(*modules)
+        self.kinetics = Kinetics(self.dt)
+        
+    def forward(self, x, hs):
+        out = self.filter(x) * self.dt
+        out = self.nonlinearity(out)
+        out, hs = self.kinetics(out, hs)
+        return out, hs
+    
+class KineticsOnePixelChannel(nn.Module):
+    def __init__(self, recur_seq_len=5, n_units=5, dt=0.01,
+                 bias=True, linear_bias=False, chans=[8,8], softplus=True, img_shape=(40,)):
+        super(KineticsOnePixelChannel, self).__init__()
+        
+        self.n_units = n_units
+        self.chans = chans 
+        self.softplus = softplus 
+        self.bias = bias 
+        self.img_shape = img_shape 
+        self.linear_bias = linear_bias 
+        self.dt = dt
+        self.seq_len = recur_seq_len
+        self.h_shapes = []
+
+        self.bipolar_weight = nn.Parameter(torch.rand(self.chans[0], self.img_shape[0]))
+        self.bipolar_bias = nn.Parameter(torch.rand(self.chans[0]))
+
+        self.kinetics = Kinetics_channel(chan=self.chans[0], dt=self.dt)
+
+        self.amacrine_filter = Temperal_Filter(self.seq_len, 2)
+        self.amacrine_weight = nn.Parameter(torch.rand(self.chans[1], self.chans[0]))
+        self.amacrine_bias = nn.Parameter(torch.rand(self.chans[1]))
+
+        modules = []
+        modules.append(nn.Linear(self.chans[1], self.n_units, bias=self.linear_bias))
+        modules.append(nn.Softplus())
+        self.ganglion = nn.Sequential(*modules)
+        
+        n_states = 4
+        self.h_shapes.append((n_states, self.chans[0], 1))
+        self.h_shapes.append((self.chans[0], 1))
+        
+    def forward(self, x, hs):
+        """
+        x - FloatTensor (B, C)
+        hs - list [(B,S,C),(D,B,C)]
+        
+        """
+        
+        fx = (self.bipolar_weight * x[:,None]).sum(dim=-1) + self.bipolar_bias
+        fx = F.sigmoid(fx)[:,:,None] #(B,C,1)
+        fx, h0 = self.kinetics(fx, hs[0]) 
+        hs[1].append(fx)
+        h1 = hs[1]
+        fx = torch.stack(list(h1), dim=1) #(B,D,C,1)
+        fx = self.amacrine_filter(fx).squeeze(-1) #(B,C)
+        fx = (self.amacrine_weight * fx[:,None]).sum(dim=-1) + self.amacrine_bias
+        fx = F.relu(fx)
         fx = self.ganglion(fx)
         return fx, [h0, h1]

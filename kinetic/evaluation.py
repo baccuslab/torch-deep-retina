@@ -15,8 +15,8 @@ def pearsonr_eval(model, data, n_units, reset_int, device):
                 hs = get_hs(model, 1, device)
             x = x.to(device)
             out, hs = model(x, hs)
-            val_pred.append(out.detach().cpu().numpy().squeeze())
-            val_targ.append(y.detach().numpy().squeeze())
+            val_pred.append(out.detach().cpu().numpy().squeeze(0))
+            val_targ.append(y.detach().numpy().squeeze(0))
         val_pred = np.stack(val_pred, axis=0)
         val_targ = np.stack(val_targ, axis=0)
         for cell in range(n_units):

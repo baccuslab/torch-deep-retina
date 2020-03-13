@@ -1081,24 +1081,14 @@ class DalesSkipConnection(nn.Module):
         return torch.cat([x,fx], dim=1)
 
 class Kinetics(nn.Module):
-    def __init__(self, dt=0.001):
+    def __init__(self, dt=0.01):
         super().__init__()
         self.ka = nn.Parameter(torch.rand(1).abs()/10)
         self.kfi = nn.Parameter(torch.rand(1).abs()/10)
         self.kfr = nn.Parameter(torch.rand(1).abs()/10)
         self.ksi = nn.Parameter(torch.rand(1).abs()/10)
         self.ksr = nn.Parameter(torch.rand(1).abs()/10)
-        self.dt = 0.001
-
-    def extra_repr(self):
-        return "dt={}".format(self.dt)
-
-    def clamp_params(self, low, high):
-        self.ka.data  = torch.clamp(self.ka.data,  low, high)
-        self.kfi.data = torch.clamp(self.kfi.data, low, high)
-        self.kfr.data = torch.clamp(self.kfr.data, low, high)
-        self.ksi.data = torch.clamp(self.ksi.data, low, high)
-        self.ksr.data = torch.clamp(self.ksr.data, low, high)
+        self.dt = dt
 
     def forward(self, rate, pop):
         """
@@ -1112,7 +1102,6 @@ class Kinetics(nn.Module):
                 2: I1
                 3: I2
         """
-        self.clamp_params(-.99999,.99999)
         dt = self.dt
         ka  = self.ka.abs()*rate*pop[:,0]
         kfi = self.kfi.abs()*pop[:,1]
@@ -1145,7 +1134,7 @@ class RunningNorm1d(nn.Module):
     #    return 'n_units={}, momentum={}'.format(self.n_units, self.momentum)
 
 class Kinetics_channel(nn.Module):
-    def __init__(self, chan=8, dt=0.001):
+    def __init__(self, chan=8, dt=0.01):
         super().__init__()
         self.ka = nn.Parameter(torch.rand(chan, 1).abs()/10)
         self.kfi = nn.Parameter(torch.rand(chan, 1).abs()/10)
@@ -1153,16 +1142,6 @@ class Kinetics_channel(nn.Module):
         self.ksi = nn.Parameter(torch.rand(chan, 1).abs()/10)
         self.ksr = nn.Parameter(torch.rand(chan, 1).abs()/10)
         self.dt = dt
-
-    def extra_repr(self):
-        return "dt={}".format(self.dt)
-
-    def clamp_params(self, low, high):
-        self.ka.data  = torch.clamp(self.ka.data,  low, high)
-        self.kfi.data = torch.clamp(self.kfi.data, low, high)
-        self.kfr.data = torch.clamp(self.kfr.data, low, high)
-        self.ksi.data = torch.clamp(self.ksi.data, low, high)
-        self.ksr.data = torch.clamp(self.ksr.data, low, high)
 
     def forward(self, rate, pop):
         """
@@ -1176,7 +1155,6 @@ class Kinetics_channel(nn.Module):
                 2: I1
                 3: I2
         """
-        #self.clamp_params(-.99999, .99999)
         dt = self.dt
         ka  = self.ka.abs() * rate * pop[:, 0]
         kfi = self.kfi.abs() * pop[:,1]
