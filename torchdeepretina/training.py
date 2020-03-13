@@ -1,12 +1,9 @@
 import os
-import sys
-from time import sleep
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn import PoissonNLLLoss, MSELoss
 import torch.nn.functional as F
-import os.path as path
 import torchdeepretina.utils as utils
 import torchdeepretina.io as tdrio
 import torchdeepretina.pruning as tdrprune
@@ -55,13 +52,6 @@ class Trainer:
         self.prev_acc = None
 
     def train(self,hyps,verbose=True):
-        # Set manual seed
-        hyps['seed'] = utils.try_key(hyps,'seed',None)
-        if hyps['seed'] is None:
-            hyps['seed'] = int(time.time())
-        torch.manual_seed(hyps['seed'])
-        np.random.seed(hyps['seed'])
-
         if utils.try_key(hyps, "retinotopic", False):
             train_method = getattr(self, "retinotopic_loop")
         else:
@@ -110,6 +100,15 @@ class Trainer:
             cross_val_idx = min(hyps['n_cv_folds']-1,cross_val_idx)
             cross_val_range = range(cross_val_idx,cross_val_idx+1)
         for cv_idx in cross_val_range:
+            # Set manual seed
+            hyps['seed'] = utils.try_key(hyps,'seed',None)
+            if hyps['seed'] is None:
+                hyps['seed'] = int(time.time())
+            if hyps['seed'] == "exp_num":
+                hyps['seed'] = hyps['exp_num']
+            torch.manual_seed(hyps['seed'])
+            np.random.seed(hyps['seed'])
+
             hyps['cross_val_idx'] = cv_idx
             hyps['exp_num'] = get_exp_num(hyps['exp_name'])
             hyps['save_folder'] = get_save_folder(hyps)
@@ -122,7 +121,6 @@ class Trainer:
             hyps["n_units"] = train_data.y.shape[-1]
             hyps['centers'] = train_data.centers
             model, data_distr = get_model_and_distr(hyps, train_data)
-            og_state_dict = model.state_dict()
             print("train shape:", data_distr.train_shape)
             print("val shape:", data_distr.val_shape)
 
@@ -131,17 +129,18 @@ class Trainer:
             # Make optimization objects (lossfxn, optimizer, scheduler)
             optimizer, scheduler, loss_fn = get_optim_objs(hyps, model,
                                                     train_data.centers)
+            og_state_dict = model.state_dict()
+            og_optim_dict = optimizer.state_dict()
 
             # Training
             if hyps['exp_name'] == "test":
                 hyps['n_epochs'] = 2
                 hyps['prune_intvl'] = 2
             n_epochs = hyps['n_epochs']
-            if hyps['prune']:
-                if hyps['prune_layers'] == 'all' or\
-                                                 hyps['prune_layers']==[]:
-                    layers = utils.get_conv_layer_names(model)
-                    hyps['prune_layers'] = layers[:-1]
+            if hyps['prune_layers'] == 'all' or\
+                                         hyps['prune_layers']==[]:
+                layers = utils.get_conv_layer_names(model)
+                hyps['prune_layers'] = layers[:-1]
             zero_dict ={d:set() for d in hyps['prune_layers']}
             epoch = -1
             zero_bias = utils.try_key(hyps,'zero_bias',True)
@@ -281,8 +280,9 @@ class Trainer:
                                            'test', del_prev=del_prev)
 
                 # Integrated Gradient Pruning
-                prune = hyps['prune'] and epoch >= n_epochs
-                if prune and epoch % hyps['prune_intvl'] == 0:
+                prune = hyps['prune'] and epoch >= n_epochs-1
+                temp = (epoch-n_epochs) % hyps['prune_intvl'] == 0
+                if prune and temp:
                     if epoch <= (n_epochs+hyps['prune_intvl']):
                         prune_dict = { "zero_dict":zero_dict,
                                        "prev_state_dict":None,
@@ -290,27 +290,31 @@ class Trainer:
                                        "intg_idx":0,
                                        "prev_acc":-1,
                                        "prev_lr":cur_lr}
-
-                    reset_lr = utils.try_key(hyps,'reset_lr',False)
-                    reset_lr = reset_lr and not isinstance(scheduler,
-                                                           NullScheduler)
-                    if reset_lr:
-                        # Reset learning rate if using scheduler
-                        for param_group in optimizer.param_groups:
-                            param_group['lr'] = hyps['lr']
-                    cur_lr = next(iter(optimizer.param_groups))['lr']
+                        if hyps['exp_name'] == "test":
+                            val_acc = 0
 
                     reset_sd = utils.try_key(hyps,'reset_sd',False)
-                    sd = None
-                    if reset_sd: sd = og_sd
+                    reset_lr = utils.try_key(hyps,'reset_lr',False)
+                    reset_lr = reset_lr and not isinstance(scheduler,
+                                                       NullScheduler)
+                    cur_lr = next(iter(optimizer.param_groups))['lr']
 
                     prune_dict = tdrprune.prune_channels(model, hyps,
                                                        data_distr,
                                                        val_acc=val_acc,
                                                        lr=cur_lr,
-                                                       reset_sd=sd,
                                                        **prune_dict)
                     stop_training = prune_dict['stop_pruning']
+                    if not stop_training and reset_sd:
+                        model.load_state_dict(og_state_dict)
+                        optimizer.load_state_dict(og_optim_dict)
+                        for param_group in optimizer.param_groups:
+                            param_group['lr'] = hyps['lr']
+                    if reset_lr and prune_dict['prev_acc']!=val_acc:
+                        # Reset learning rate if using scheduler
+                        # and latest pruning was neglected
+                        for param_group in optimizer.param_groups:
+                            param_group['lr'] = hyps['lr']
                     zero_dict = prune_dict['zero_dict']
                     zero_bias = utils.try_key(hyps,'zero_bias',True)
                     tdrprune.zero_chans(model, zero_dict,zero_bias)
@@ -923,7 +927,9 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
         hyps['prune'] = utils.try_key(hyps, 'prune', False)
         hyps['abssum'] = utils.try_key(hyps, 'abssum', False)
         hyps['prune_layers'] = utils.try_key(hyps, 'prune_layers', [])
-        hyps['prune_intvl'] = utils.try_key(hyps, 'prune_intvl', 10)
+        hyps['prune_intvl'] = utils.try_key(hyps, 'prune_intvl', None)
+        if hyps['prune_intvl'] is None:
+            hyps['prune_intvl'] = hyps['n_epochs']
         hyps['alpha_steps'] = utils.try_key(hyps, 'alpha_steps', 5)
         hyps['intg_bsize'] = utils.try_key(hyps, 'intg_bsize', 500)
         hyps['scheduler'] = utils.try_key(hyps, 'scheduler',

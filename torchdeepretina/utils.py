@@ -755,7 +755,6 @@ def inspect(model, X, insp_keys={}, batch_size=500, to_numpy=True,
 
     return layer_outs
 
-
 def get_stim_grad(model, X, layer, cell_idx, batch_size=500,
                                            layer_shape=None,
                                            to_numpy=True,
