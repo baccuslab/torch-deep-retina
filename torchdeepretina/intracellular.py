@@ -609,7 +609,9 @@ def model2model_one2one_cors(model1, model2,
 
 def get_intr_cors(model, stim_dict, mem_pot_dict,
                               layers={"sequential.2", "sequential.8"},
-                              batch_size=500, slide_steps=0,
+                              batch_size=500,
+                              slide_steps=0,
+                              window=True,
                               verbose=False):
     """
     Takes a model and dicts of stimuli and membrane potentials to find
@@ -632,6 +634,9 @@ def get_intr_cors(model, stim_dict, mem_pot_dict,
         slides the stimulus in strides by this amount in an attempt
         to align the receptive fields of the interneurons with the
         ganglion cells
+
+    window - bool
+        if true, stimulus is windowed prior to being run through model.
 
     returns:
         intr_df - pandas DataFrame
@@ -681,7 +686,8 @@ def get_intr_cors(model, stim_dict, mem_pot_dict,
                                               row_shift=xshift,
                                               col_shift=yshift)
                 stim = tdrstim.spatial_pad(stim, W=H, H=W)
-                stim = tdrstim.rolling_window(stim, D)
+                if window:
+                    stim = tdrstim.rolling_window(stim, D)
 
                 if verbose:
                     temp = cell_file.split("/")[-1].split(".")[0]

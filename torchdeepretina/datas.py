@@ -13,6 +13,7 @@ from scipy.stats import zscore
 import pyret.filtertools as ft
 import torch
 import torchdeepretina.stimuli as tdrstim
+from torchdeepretina.stimuli import rolling_window
 import torchdeepretina.utils as utils
 
 NUM_BLOCKS = {
@@ -181,9 +182,8 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0,
         # reshape into the Toeplitz matrix (nsamps, hist, # *stim_dim)
         stim_reshaped = stim[valid_indices]
         if history is not None and history > 0:
-            stim_reshaped = tdrstim.rolling_window(stim_reshaped,
-                                                         history,
-                                                         time_axis=0)
+            stim_reshaped = rolling_window(stim_reshaped, history,
+                                                          time_axis=0)
 
         # get the response for this cell (nsamples, ncells)
         s = 'response/firing_rate_10ms'
@@ -198,8 +198,7 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0,
         stream = f[train_or_test]['response/binned'][cells]
         spk_hist = np.array(stream).T[valid_indices]
         if history is not None and history > 0:
-            spk_hist = tdrstim.rolling_window(spk_hist, history,
-                                                    time_axis=0)
+            spk_hist = rolling_window(spk_hist, history, time_axis=0)
 
         # get the ganglion cell receptive field centers
         if expt in CENTERS:
@@ -249,7 +248,9 @@ def loadintrexpt(expt, cells, stim_type, history, H=None, W=None,
                                      cutout_width=None,
                                      norm_stats=None,
                                      train_or_test="train",
-                                     data_path="~/interneuron_data"):
+                                     data_path="~/interneuron_data",
+                                     cross_val_idx=None,
+                                     n_cv_folds=None):
     """
     Loads an experiment from an h5 file on disk
 
@@ -289,33 +290,61 @@ def loadintrexpt(expt, cells, stim_type, history, H=None, W=None,
     train_or_test: str (valid: 'train','test')
         determines if test data or train data will be returned. if
         test data is selected and it is interneuron data being
-        returned then lines stimulus is included in data
+        returned then lines stimulus is included in data. if using
+        cross_val_idx and n_cv_folds, 'test' will return the isolated
+        portion of the data. otherwise the large portion will be
+        returned.
 
     data_path : string
         path to the data folders
+
+    cross_val_idx : int or None
+        if int, the data will be split such that 1 of the n_cv_folds
+        splits is kept seperate from the rest of the data. this
+        cross_val_idx parameter determines the index of the held out
+        portion. depending on the value of train_or_test, the isolated
+        portion or the large portion will be returned. 'test' returns
+        the isolated portion.
+
+    n_cv_folds : int or None
+        if None, cross validation will be ignored. if int, denotes the
+        number of splits of the data to be completed.
     """
     if ".h5" != expt[-3:]: expt = expt + ".h5"
     files = [expt]
     if stim_type == "naturalscene" or stim_type == "whitenoise":
         stim_keys = {"boxes"}
+    elif stim_type == "all":
+        stim_keys = {"boxes", "lines"}
     else:
         stim_keys = {stim_type}
     if train_or_test == "test":
         stim_keys.add("lines")
+
+    if history is None: history = 0
     train_stim,mem_pots,_ = load_interneuron_data(data_path,
                                                 files=files,
+                                                filter_length=history,
                                                 stim_keys=stim_keys,
-                                                join_stims=True)
+                                                join_stims=True,
+                                                window=True)
     if H is None: H = train_stim[files[0]].shape[1]
     if W is None: W = H
     train_stim = tdrstim.spatial_pad(train_stim[files[0]], H=H, W=W)
-    mem_pot = mem_pots[files[0]]
+    mem_pot = mem_pots[files[0]].T
+
+    if n_cv_folds is not None and cross_val_idx is not None:
+        train_stims, mem_pots = cv_split([train_stim, mem_pot],
+                                         cv_idx=cross_val_idx,
+                                         n_folds=n_cv_folds)
+        idx = 1 if train_or_test == "test" else 0
+        train_stims, mem_pots = train_stims[idx], mem_pots[idx]
 
     if cells=="all":
-        cells = list(range(len(mem_pots)))
+        cells = list(range(mem_pots.shape[1]))
     elif isinstance(cells,  int):
         cells = [cells]
-    mem_pot = mem_pot[cells].T
+    mem_pot = mem_pot[:,cells]
 
     stats = norm_stats
     if stats is None:
@@ -334,8 +363,6 @@ def loadintrexpt(expt, cells, stim_type, history, H=None, W=None,
                                    span=cutout_width,
                                    pad_to=train_stim.shape[-1])
         train_stim = train_stim.astype('float32')
-    if history is not None and history != 0:
-        train_stim = tdrstim.rolling_window(train_stim, history)
     return Exptdata(train_stim, mem_pot, None, stats, cells, centers)
 
 def load_test_data(hyps,verbose=False):
@@ -369,11 +396,13 @@ def load_test_data(hyps,verbose=False):
                               norm_stats=hyps['norm_stats'])
     return data
 
-def load_interneuron_data(root_path="~/interneuron_data/", files=None,
-                                                  filter_length=40,
-                                                  stim_keys={"boxes"},
-                                                  join_stims=False,
-                                                  trunc_join=True):
+def load_interneuron_data(root_path="~/interneuron_data/",
+                          files=None,
+                          filter_length=40,
+                          stim_keys={"boxes"},
+                          join_stims=False,
+                          trunc_join=True,
+                          window=False):
     """ 
     Load data
 
@@ -390,6 +419,8 @@ def load_interneuron_data(root_path="~/interneuron_data/", files=None,
     trunc_join: bool
        truncates the joined stimuli to be of equal length. 
        Only applies if join_stims is true.
+    window: bool
+        if true, windows the stimulus with the argued filter_length
 
     Returns:
         if using join_stims then no stim_type key exists!!!
@@ -404,6 +435,8 @@ def load_interneuron_data(root_path="~/interneuron_data/", files=None,
                 membrane potentials for each cell within the
                 file (N_CELLS, T-filter_length)
     """
+    if filter_length==0:
+        window=False
     if files is None:
         files = [f+".h5" for f in INTR_FILES]
     full_files = [os.path.expanduser(os.path.join(root_path, name))\
@@ -436,6 +469,10 @@ def load_interneuron_data(root_path="~/interneuron_data/", files=None,
                             temp = f[k+'/stimuli']
                             temp = np.asarray(temp, dtype=np.float32)
                             stims[file_name][k]=prepare_stim(temp, k)
+                            if window:
+                                s = rolling_window(stims[file_name][k],
+                                                   filter_length)
+                                stims[file_name][k] = s
                             s = 'detrended_membrane_potential'
                             temp = np.asarray(f[k][s])
                             temp = temp[:,filter_length:]
@@ -454,12 +491,20 @@ def load_interneuron_data(root_path="~/interneuron_data/", files=None,
                     zero_dim=[s[0] for i,s in enumerate(shapes)]
                 one_dim = [s[1] for s in shapes]
                 two_dim = [s[2] for s in shapes]
-                shape = [np.sum(zero_dim), np.max(one_dim),
-                                            np.max(two_dim)]
+                if window:
+                    shape = [np.sum(zero_dim)-filter_length*len(shapes),
+                                              filter_length,
+                                              np.max(one_dim),
+                                              np.max(two_dim)]
+                else:
+                    shape = [np.sum(zero_dim), np.max(one_dim),
+                                               np.max(two_dim)]
                 stims[file_name] = np.empty(shape, dtype=np.float32)
 
                 zero_dim = [s[0] for s in mem_shapes] # Num cells
-                mem_shape = [np.max(zero_dim), shape[0]-filter_length]
+                mem_shape = [np.max(zero_dim), shape[0]]
+                if not window: 
+                    mem_shape[1] -= filter_length
                 mem_pots[file_name] = np.empty(mem_shape,
                                         dtype=np.float32)
 
@@ -478,19 +523,56 @@ def load_interneuron_data(root_path="~/interneuron_data/", files=None,
                         prepped = tdrstim.spatial_pad(prepped,
                                           stims[file_name].shape[-2],
                                           stims[file_name].shape[-1])
+                    if window:
+                        prepped = rolling_window(prepped,
+                                                 filter_length)
                     endx = startx+len(prepped)
                     stims[file_name][startx:endx] = prepped
                     s = 'detrended_membrane_potential'
                     mem_pot = np.asarray(f[k][s])
                     if trunc_join:
                         mem_pot = mem_pot[:,:trunc_len]
-                    if i == 0:
+                    if i == 0 or window:
                         mem_pot = mem_pot[:,filter_length:]
                     mendx = mstartx+mem_pot.shape[1]
                     mem_pots[file_name][:,mstartx:mendx] = mem_pot
                     startx = endx
                     mstartx = mendx
     return stims, mem_pots, full_files
+
+def cv_split(Xs, cv_idx, n_folds):
+    """
+    Splits indices into validation and training
+
+    Xs: list of list-likes
+        a list of data lists to be split in the same way. ie the
+        first element of Xs is X and the second element is
+        Y. Must all be of same length in first dimension
+    cv_idx: int or None
+        cross validation index. if int, the data will be split
+        such that 1 of the n_folds splits is kept seperate from
+        the rest of the data. this cross_val_idx parameter
+        determines the index of the held out portion. depending on
+        the value of train_or_test, the isolated portion or the
+        large portion will be returned. 'test' returns the
+        isolated portion.
+    n_folds: int or None
+        if None, cross validation will be ignored. if int, denotes the
+        number of splits of the data to be completed.
+    """
+    data_len = len(Xs[0])
+    cv_p = 1/n_folds
+    fold_size = data_len*cv_p
+    splits = []
+    startx = int(cv_idx*fold_size)
+    endx = int(startx+fold_size)
+    for X in Xs:
+        s_ = np.zeros(len(X)).astype(np.bool)
+        s_[startx:endx] = True
+        not_fold = X[~s_]
+        fold = X[s_]
+        splits.append([not_fold, fold])
+    return splits
 
 class DataObj:
     def __init__(self, data, idxs):
@@ -596,6 +678,11 @@ class DataDistributor:
         self.shift_labels = shift_labels
         self.X = data.X
         self.y = data.y
+        if isinstance(self.X, torch.Tensor):
+            self.X = np.asarray(self.X)
+        if isinstance(self.y, torch.Tensor):
+            self.y = np.asarray(self.y)
+
         if shift_labels:
             self.y = self.shift_in_groups(self.y, group_size=200)
         if zscorey:
@@ -607,39 +694,24 @@ class DataDistributor:
             self.y_std =  None
 
         if seq_len > 1:
-            self.X = tdrstim.rolling_window(self.X, seq_len)
-            self.y = tdrstim.rolling_window(self.y, seq_len)
+            self.X = rolling_window(self.X, seq_len)
+            self.y = rolling_window(self.y, seq_len)
         if recurrent:
             self.X = self.order_into_batches(self.X, batch_size)
             self.y = self.order_into_batches(self.y, batch_size)
-        if type(self.X) == type(np.array([])):
-            if shuffle:
-                self.perm = np.random.permutation(self.X.shape[0])
-                self.perm = self.perm.astype('int')
-            else:
-                self.perm = np.arange(self.X.shape[0]).astype('int')
+        if shuffle:
+            self.perm = np.random.permutation(self.X.shape[0])
+            self.perm = self.perm.astype('int')
         else:
-            if shuffle and cross_val_idx is None:
-                self.perm = torch.randperm(self.X.shape[0]).long()
-            else:
-                self.perm = torch.arange(self.X.shape[0]).long()
+            self.perm = np.arange(self.X.shape[0]).astype('int')
 
         # Split indices into validation and training
-        val_size = int(len(self.perm)*1/n_cv_folds)
-        if cross_val_idx is None or 0:
-            self.val_idxs = self.perm[:val_size]
-            self.train_idxs = self.perm[val_size:]
-        elif cross_val_idx == n_cv_folds-1:
-            self.val_idxs = self.perm[-val_size:]
-            self.train_idxs = self.perm[:-val_size]
-        else:
-            cv_idx = cross_val_idx*val_size
-            self.val_idxs = self.perm[cv_idx:cv_idx+val_size]
-            cat = np.concatenate if isinstance(self.X,np.ndarray) else\
-                                                            torch.cat
-            arr = [self.perm[:cv_idx],
-                    self.perm[cv_idx+val_size:]]
-            self.train_idxs = cat(arr)
+        if cross_val_idx is None:
+            cross_val_idx = 0
+        idxs = cv_split([self.perm], cv_idx=cross_val_idx,
+                                     n_folds=n_cv_folds)
+        self.train_idxs, self.val_idxs = idxs[0]
+
         self.train_X = DataObj(self.X, self.train_idxs)
         self.train_y = DataObj(self.y, self.train_idxs)
         self.val_X = DataObj(self.X, self.val_idxs)
