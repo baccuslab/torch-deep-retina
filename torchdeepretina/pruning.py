@@ -22,8 +22,8 @@ def zero_chans(model, chan_dict, zero_bias=True):
     """
     for layer in chan_dict.keys():
         # Assumes layer name is of form 'sequential.<idx>'
-        idx = int(layer.split(".")[-1])
         for chan in chan_dict[layer]:
+            idx = int(layer.split(".")[-1])
             if isinstance(model.sequential[idx],LinearStackedConv2d):
                 modu = model.sequential[idx].convs[-1]
                 shape = modu.weight.data[chan].shape
@@ -44,7 +44,6 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
                                                 prev_min_chan,
                                                 val_acc, prev_acc,
                                                 lr, prev_lr,
-                                                reset_sd=None,
                                                 **kwargs):
     """
     Handles the channel pruning calculations. Should be called every
@@ -92,10 +91,6 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
             the current learning rate
         prev_lr: float
             the learning rate from before the last pruning
-        reset_sd: None or torch State Dict
-            If None, will have no effect. If state dict is argued,
-            the model will be reset to this state dict after the
-            next channel to be pruned is decided.
 
     Returns:
         dict:
@@ -123,12 +118,11 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
         zero_dict[layer].remove(prev_min_chan)
         # Return weights to previous values
         model.load_state_dict(prev_state_dict)
-        intg_idx += 1
+        intg_idx += 1 # Indicates we want to focus on the next layer now
         new_drop_layer = True
     
     # Only want to else if reached end of zeroable channels
-    drop_layer = (val_acc>=prev_acc-tolerance or new_drop_layer)
-    if intg_idx<len(prune_layers) and drop_layer:
+    if intg_idx<len(prune_layers):
         print("Calculating Integrated Gradient | Layer:",
                                   prune_layers[intg_idx])
         # Calc intg grad
@@ -166,8 +160,6 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
         prev_min_chan = min_chan
         s = "Dropping channel {} in layer {}"
         print(s.format(min_chan, layer))
-        if reset_sd is not None:
-            model.load_state_dict(reset_sd)
     else:
         print("No more layers in prune_layers list. "+\
                                     "Stopping Training")
