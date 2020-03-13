@@ -579,7 +579,8 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'],
                                             filter_length=filt_len,
                                             files=files,
                                             stim_keys=stim_keys,
-                                            join_stims=True)
+                                            join_stims=True,
+                                            window=True)
     stim_dict, mem_pot_dict, _ = interneuron_data
     # Using join_stims returns a dict with keys of the file names and
     # values of the ndarray stimulus and membrane potentials. In this
@@ -601,7 +602,8 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'],
                                            layers=set(layers),
                                            batch_size=500,
                                            slide_steps=slide_steps,
-                                           verbose=verbose)
+                                           verbose=verbose,
+                                           window=False)
     if ret_model_rfs:
         dups = ['cell_file', 'cell_idx']
         temp_df = df.sort_values(by='cor', ascending=False)
@@ -653,6 +655,7 @@ def get_analysis_figs(folder, model, metrics=None, ret_phenom=True,
 
 def analyze_model(folder, make_figs=True, make_model_rfs=False,
                                                  slide_steps=0,
+                                                 intrnrn_stim='boxes',
                                                  verbose=True):
     """
     Calculates model performance on the testset and calculates
@@ -670,14 +673,20 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
         the number of slides to try. Note that it operates in both
         the x and y dimension so the total number of attempts is
         equal to slide_steps squared.
+    intrnrn_stim - str {'boxes', 'lines', 'all', 'none', or None}
+        determines the stimulus that should be used for the interneuron
+        correlations, if the correlations should be calculated at all
     """
     hyps = tdrio.get_hyps(folder)
     table = get_analysis_table(folder, hyps=hyps)
     if 'save_folder' in table:
-        table['save_folder'] = folder
+        table['save_folder'] = [folder]
 
     model = tdrio.load_model(folder)
     metrics = get_metrics(folder)
+    table['val_acc']    = [ metrics['val_acc'][-1]  ]
+    table['val_loss']   = [ metrics['val_loss'][-1] ]
+    table['train_loss'] = [ metrics['loss'][-1]     ]
     hyps['norm_stats'] = metrics['norm_stats']
     model.eval()
     model.to(DEVICE)
@@ -687,9 +696,11 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
         pruning.zero_chans(model, zero_dict)
         keys = sorted(list(zero_dict.keys()))
         pruned_chans = []
+        n_dropped_chans = []
         s = ""
         for pi, k in enumerate(keys):
             diff = model.chans[pi]-len(zero_dict[k])
+            n_dropped_chans.append(len(zero_dict[k]))
             pruned_chans.append(diff)
             chans = [str(c) for c in zero_dict[k]]
             s += "\n{}: {}".format(k,",".join(chans))
@@ -697,7 +708,10 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
             print("Pruned Channels:"+s)
         if 'pruned_chans' not in table:
             table['pruned_chans'] = []
+        if 'n_dropped_chans' not in table:
+            table['n_dropped_chans'] = []
         table['pruned_chans'].append(pruned_chans) # Pruned chan count
+        table['n_dropped_chans'].append(n_dropped_chans)
     # Figs
     if make_figs:
         if verbose:
@@ -714,30 +728,43 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
     layers = []
     layers = tdrutils.get_conv_layer_names(model)
     layers = sorted(layers, key=lambda x: int(x.split(".")[-1]))
-    if verbose:
-        print("Calculating intrnrn correlations for:", layers)
-    intr_df = get_intr_cors(model, layers=layers,
-                                    slide_steps=slide_steps,
-                                    verbose=verbose)
+    if intrnrn_stim is not None and intrnrn_stim.lower() != "none":
+        if verbose:
+            print("Calculating intrnrn correlations for:", layers)
+
+        if intrnrn_stim.lower() == "all": stim_keys = {"boxes",
+                                                       "lines"}
+        else: stim_keys = {intrnrn_stim}
+        intr_df = get_intr_cors(model, layers=layers,
+                                       stim_keys=stim_keys,
+                                       slide_steps=slide_steps,
+                                       verbose=verbose)
+        # Drop duplicates and average over celll type
+        bests = intr_df.sort_values(by='cor',ascending=False)
+        bests = bests.drop_duplicates(['cell_file', 'cell_idx'])
+        loc = bests['cell_type']=="bipolar"
+        bip_intr_cor = bests.loc[loc,'cor'].mean()
+        df['bipolar_intr_cor'] = bip_intr_cor
+        loc = bests['cell_type']=="amacrine"
+        amc_intr_cor = bests.loc[loc,'cor'].mean()
+        df['amacrine_intr_cor'] = amc_intr_cor
+        loc = bests['cell_type']=="horizontal"
+        hor_intr_cor = bests.loc[loc,'cor'].mean()
+        df['horizontal_intr_cor'] = hor_intr_cor
+        df['intr_cor'] = bests['cor'].mean()
+    else:
+        intr_df = pd.DataFrame()
+        df['bipolar_intr_cor'] = None
+        df['amacrine_intr_cor'] = None
+        df['horizontal_intr_cor'] = None
+        df['intr_cor'] = None
     intr_df['save_folder'] = folder
+
     if make_model_rfs:
         rfs = sample_model_rfs(model, layers=layers, verbose=verbose)
         save_name = os.path.join(folder, "model_rf")
         tdrvis.plot_model_rfs(rfs, save_name)
 
-    # Drop duplicates and average over celll type
-    bests = intr_df.sort_values(by='cor',ascending=False)
-    bests = bests.drop_duplicates(['cell_file', 'cell_idx'])
-    loc = bests['cell_type']=="bipolar"
-    bip_intr_cor = bests.loc[loc,'cor'].mean()
-    df['bipolar_intr_cor'] = bip_intr_cor
-    loc = bests['cell_type']=="amacrine"
-    amc_intr_cor = bests.loc[loc,'cor'].mean()
-    df['amacrine_intr_cor'] = amc_intr_cor
-    loc = bests['cell_type']=="horizontal"
-    hor_intr_cor = bests.loc[loc,'cor'].mean()
-    df['horizontal_intr_cor'] = hor_intr_cor
-    df['intr_cor'] = bests['cor'].mean()
     if verbose:
         print("Interneuron Correlations:")
         print("Bipolar Avg:", bip_intr_cor)
@@ -767,9 +794,10 @@ def evaluate_ln(ln, hyps):
     return df
 
 def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
-                                                        save_dfs=True,
-                                                        slide_steps=0,
-                                                        verbose=True):
+                                                  save_dfs=True,
+                                                  slide_steps=0,
+                                                  intrnrn_stim='boxes',
+                                                  verbose=True):
     """
     Evaluates model on test set, calculates interneuron correlations,
     and creates figures.
@@ -790,6 +818,9 @@ def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
         the number of slides to try. Note that it operates in both
         the x and y dimension so the total number of attempts is
         equal to slide_steps squared.
+    intrnrn_stim - str {'boxes', 'lines', 'all', 'none', or None}
+        determines the stimulus that should be used for the interneuron
+        correlations, if the correlations should be calculated at all
     """
     model_folders = tdrio.get_model_folders(main_folder)
     csvs = ['model_data.csv', 'intr_data.csv']
@@ -816,6 +847,7 @@ def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
         anal_dfs = analyze_model(save_folder, make_figs=make_figs,
                                         make_model_rfs=make_model_rfs,
                                         slide_steps=slide_steps,
+                                        intrnrn_stim=intrnrn_stim,
                                         verbose=verbose)
         for i,csv in enumerate(csvs):
             if save_folder not in save_folders[csv]:
