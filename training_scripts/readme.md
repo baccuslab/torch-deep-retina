@@ -17,6 +17,8 @@ The hyperparams.json should have a list of all the desired user setting for the 
     * the number of cross validation folds to use
 * `save_every_epoch`: bool
     * A boolean determining if the model `state_dict` should be saved for every epoch, or only the most recent epoch.
+* `seed`: int, None, or `"exp_num"`
+    * This is the random seed for both pytorch and numpy. If None is argued, the current value of `time.time()` is used. If the string `"exp_num"` is used, the seed takes on the value of the assigned experiment number. This makes comparitive searches a little bit easier.
 
 * `model_type`: str
     * The string name of the main model class to be used for training. Options are each of the classes defined in `models.py`
