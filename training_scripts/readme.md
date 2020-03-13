@@ -7,6 +7,8 @@ The hyperparams.json should have a list of all the desired user setting for the 
 # Possible Hyperparameters
 * `exp_name`: str
     * The name of the main experiment. Model folders will be saved within a folder of this name.
+* `exp_num_offset`: int
+    * This value is added to the determined experiment number. This allows for trainings to be performed on different machines without `exp_num` conflicts.
 * `n_repeats`: int
     * The number of times to repeat any given hyperparameter set
 * `cross_val`: bool

@@ -111,6 +111,8 @@ class Trainer:
 
             hyps['cross_val_idx'] = cv_idx
             hyps['exp_num'] = get_exp_num(hyps['exp_name'])
+            if 'exp_num_offset' in hyps:
+                    hyps['exp_num'] += hyps['exp_num_offset']
             hyps['save_folder'] = get_save_folder(hyps)
             s = "Beginning training for {} -- CV {}"
             s = s.format(hyps['save_folder'],cv_idx)
@@ -378,6 +380,8 @@ class Trainer:
         batch_size = hyps['batch_size']
 
         hyps['exp_num'] = get_exp_num(hyps['exp_name'])
+        if 'exp_num_offset' in hyps:
+                hyps['exp_num'] += hyps['exp_num_offset']
         hyps['save_folder'] = get_save_folder(hyps)
         print("Beginning training for {}".format(hyps['save_folder']))
 
