@@ -229,3 +229,55 @@ def get_hyps(folder):
     hyps = tdrutils.load_json(hyps_json)
     return hyps
 
+def get_next_exp_num(exp_name):
+    """
+    Finds the next open experiment id number.
+
+    exp_name: str
+        path to the main experiment folder that contains the model
+        folders
+    """
+    folders = get_model_folders(exp_name)
+    exp_nums = set()
+    for folder in folders:
+        exp_num = foldersort(folder)
+        exp_nums.add(exp_num)
+    for i in range(len(exp_nums)):
+        if i not in exp_nums:
+            return i
+    return len(exp_nums)
+
+def exp_num_exists(exp_num, exp_name):
+    """
+    Determines if the argued experiment number already exists for the
+    argued experiment name.
+
+    exp_num: int
+        the number to be determined if preexisting
+    exp_name: str
+        path to the main experiment folder that contains the model
+        folders
+    """
+    folders = get_model_folders(exp_name)
+    for folder in folders:
+        num = foldersort(folder)
+        if exp_num == num:
+            return True
+    return False
+
+def make_save_folder(hyps):
+    """
+    Creates the save name for the model.
+
+    hyps: dict
+        keys:
+            exp_name: str
+            exp_num: int
+            search_keys: str
+    """
+    save_folder = "{}/{}_{}".format(hyps['exp_name'],
+                                    hyps['exp_name'],
+                                    hyps['exp_num'])
+    save_folder += hyps['search_keys']
+    return save_folder
+

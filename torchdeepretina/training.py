@@ -100,6 +100,15 @@ class Trainer:
             cross_val_idx = min(hyps['n_cv_folds']-1,cross_val_idx)
             cross_val_range = range(cross_val_idx,cross_val_idx+1)
         for cv_idx in cross_val_range:
+            hyps['cross_val_idx'] = cv_idx
+            hyps['exp_num'] = tdrio.get_next_exp_num(hyps['exp_name'])
+            print("pre:", hyps['exp_num'])
+            if 'exp_num_offset' in hyps:
+                hyps['exp_num'] += int(hyps['exp_num_offset'])
+                while tdrio.exp_num_exists(hyps['exp_num'],
+                                           hyps['exp_name']):
+                    hyps['exp_num']+=1
+                print("post:", hyps['exp_num'])
             # Set manual seed
             hyps['seed'] = utils.try_key(hyps,'seed',None)
             if hyps['seed'] is None:
@@ -109,11 +118,8 @@ class Trainer:
             torch.manual_seed(hyps['seed'])
             np.random.seed(hyps['seed'])
 
-            hyps['cross_val_idx'] = cv_idx
-            hyps['exp_num'] = get_exp_num(hyps['exp_name'])
-            if 'exp_num_offset' in hyps:
-                    hyps['exp_num'] += hyps['exp_num_offset']
-            hyps['save_folder'] = get_save_folder(hyps)
+            hyps['save_folder'] = tdrio.make_save_folder(hyps)
+            print("save:", hyps['save_folder'])
             s = "Beginning training for {} -- CV {}"
             s = s.format(hyps['save_folder'],cv_idx)
             print(s)
@@ -379,10 +385,10 @@ class Trainer:
         torch.cuda.empty_cache()
         batch_size = hyps['batch_size']
 
-        hyps['exp_num'] = get_exp_num(hyps['exp_name'])
+        hyps['exp_num'] = tdrio.get_next_exp_num(hyps['exp_name'])
         if 'exp_num_offset' in hyps:
                 hyps['exp_num'] += hyps['exp_num_offset']
-        hyps['save_folder'] = get_save_folder(hyps)
+        hyps['save_folder'] = tdrio.make_save_folder(hyps)
         print("Beginning training for {}".format(hyps['save_folder']))
 
         # Get Data, Make Model, Record Initial Hyps and Model
@@ -661,40 +667,6 @@ def hyper_search(hyps, hyp_ranges, early_stopping=10,
         else:
             print("Skipped {} cells {}".format(hyps['dataset'],
                                                hyps['cells']))
-
-def get_exp_num(exp_name):
-    """
-    Finds the next open experiment id number.
-
-    exp_name: str
-        path to the main experiment folder that contains the model
-        folders
-    """
-    folders = tdrio.get_model_folders(exp_name)
-    exp_nums = set()
-    for folder in folders:
-        exp_num = tdrio.foldersort(folder)
-        exp_nums.add(exp_num)
-    for i in range(len(exp_nums)):
-        if i not in exp_nums:
-            return i
-    return len(exp_nums)
-
-def get_save_folder(hyps):
-    """
-    Creates the save name for the model.
-
-    hyps: dict
-        keys:
-            exp_name: str
-            exp_num: int
-            search_keys: str
-    """
-    save_folder = "{}/{}_{}".format(hyps['exp_name'],
-                                    hyps['exp_name'],
-                                    hyps['exp_num'])
-    save_folder += hyps['search_keys']
-    return save_folder
 
 def print_train_update(error, l1, model, n_loops, i):
     loss = error +  l1
