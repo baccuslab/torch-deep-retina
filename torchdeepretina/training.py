@@ -102,13 +102,11 @@ class Trainer:
         for cv_idx in cross_val_range:
             hyps['cross_val_idx'] = cv_idx
             hyps['exp_num'] = tdrio.get_next_exp_num(hyps['exp_name'])
-            print("pre:", hyps['exp_num'])
             if 'exp_num_offset' in hyps:
                 hyps['exp_num'] += int(hyps['exp_num_offset'])
                 while tdrio.exp_num_exists(hyps['exp_num'],
                                            hyps['exp_name']):
                     hyps['exp_num']+=1
-                print("post:", hyps['exp_num'])
             # Set manual seed
             hyps['seed'] = utils.try_key(hyps,'seed',None)
             if hyps['seed'] is None:
@@ -119,7 +117,6 @@ class Trainer:
             np.random.seed(hyps['seed'])
 
             hyps['save_folder'] = tdrio.make_save_folder(hyps)
-            print("save:", hyps['save_folder'])
             s = "Beginning training for {} -- CV {}"
             s = s.format(hyps['save_folder'],cv_idx)
             print(s)
