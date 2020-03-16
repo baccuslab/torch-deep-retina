@@ -103,6 +103,12 @@ def get_checkpoints(folder, checkpt_exts={'p', 'pt', 'pth'}):
     return checkpts
 
 def foldersort(x):
+    """
+    A sorting key function to order folder names with the format:
+    <path_to_folder>/<exp_name>_<exp_num>_<ending_folder_name>/
+
+    x: str
+    """
     splt = x.split("/")[-1].split("_")
     for i,s in enumerate(splt[1:]):
         try:

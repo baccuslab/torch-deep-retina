@@ -673,8 +673,8 @@ def get_exp_num(exp_name):
     folders = tdrio.get_model_folders(exp_name)
     exp_nums = set()
     for folder in folders:
-        splt = folder.split("/")[-1].split(exp_name)[1].split("_")[1]
-        exp_nums.add(int(splt))
+        exp_num = tdrio.foldersort(folder)
+        exp_nums.add(exp_num)
     for i in range(len(exp_nums)):
         if i not in exp_nums:
             return i
