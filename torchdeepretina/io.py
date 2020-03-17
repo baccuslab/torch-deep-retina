@@ -2,7 +2,8 @@ import torch
 import pickle
 from torchdeepretina.models import *
 from torchdeepretina.custom_modules import *
-import torchdeepretina.utils as tdrutils
+import torchdeepretina.utils as utils
+import torchdeepretina.pruning as tdrprune
 import os
 
 def save_ln(model,file_name,hyps=None):
@@ -210,10 +211,12 @@ def load_model(path,verbose=True):
             print(i,"State Dict:", sk)
             print(i,"Model:", mk)
     model.norm_stats = data['norm_stats']
-    if "zero_dict" in data:
-        model.zero_dict = data['zero_dict']
+    model.zero_dict = utils.try_key(data,'zero_dict',dict())
+    if "hyps" in data:
+        model.zero_bias = utils.try_key(data['hyps'],'zero_bias',True)
     else:
-        model.zero_dict = dict()
+        model.zero_bias = True
+    tdrprune.zero_chans(model, model.zero_dict, model.zero_bias)
     return model
 
 def get_hyps(folder):
@@ -226,7 +229,7 @@ def get_hyps(folder):
     """
     folder = os.path.expanduser(folder)
     hyps_json = os.path.join(folder, "hyperparams.json")
-    hyps = tdrutils.load_json(hyps_json)
+    hyps = utils.load_json(hyps_json)
     return hyps
 
 def get_next_exp_num(exp_name):
