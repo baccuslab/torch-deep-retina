@@ -126,16 +126,20 @@ class Trainer:
             hyps["n_units"] = train_data.y.shape[-1]
             hyps['centers'] = train_data.centers
             model, data_distr = get_model_and_distr(hyps, train_data)
-            print("train shape:", data_distr.train_shape)
-            print("val shape:", data_distr.val_shape)
-
-            record_session(hyps, model)
-
             # Make optimization objects (lossfxn, optimizer, scheduler)
             optimizer, scheduler, loss_fn = get_optim_objs(hyps, model,
                                                     train_data.centers)
+            if 'startpt' in hyps and hyps['startpt'] is not None:
+                checkpt = tdrio.load_checkpoint(hyps['startpt'])
+                model.load_state_dict(checkpt['model_state_dict'])
+                optimizer.load_state_dict(checkpt['optim_state_dict'])
+
             og_state_dict = model.state_dict()
             og_optim_dict = optimizer.state_dict()
+
+            print("train shape:", data_distr.train_shape)
+            print("val shape:", data_distr.val_shape)
+            record_session(hyps, model)
 
             # Training
             if hyps['exp_name'] == "test":
@@ -146,9 +150,15 @@ class Trainer:
                                          hyps['prune_layers']==[]:
                 layers = utils.get_conv_layer_names(model)
                 hyps['prune_layers'] = layers[:-1]
-            zero_dict ={d:set() for d in hyps['prune_layers']}
-            epoch = -1
+            zero_dict = {d:set() for d in hyps['prune_layers']}
             zero_bias = utils.try_key(hyps,'zero_bias',True)
+            if 'startpt' in hyps and hyps['startpt'] is not None:
+                checkpt = tdrio.load_checkpoint(hyps['startpt'])
+                if 'zero_dict' in checkpt:
+                    zero_dict = checkpt['zero_dict']
+                if 'zero_bias' in checkpt['hyps']:
+                    hyps['zero_bias'] = checkpt['hyps']['zero_bias']
+            epoch = -1
             stop_training = False
             while not stop_training:
                 epoch += 1
@@ -765,9 +775,6 @@ def get_model_and_distr(hyps, train_data):
                                     shift_labels=shift_labels,
                                     zscorey=zscorey)
     data_distr.torch()
-    if 'start_checkpt' in hyps and hyps['start_checkpt'] is not None:
-        checkpt = tdrio.load_checkpoint(hyps['start_checkpt'])
-        model.load_state_dict(checkpt['model_state_dict'])
     return model, data_distr
 
 def static_eval(x, label, model, loss_fn):
@@ -921,7 +928,11 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
             # Load q
             hyps['search_keys'] = ""
             for k in keys:
-                hyps['search_keys'] += "_" + str(k)+str(hyps[k])
+                v = str(hyps[k])
+                if k == "startpt" and hyps[k] is not None:
+                    cp = tdrio.load_checkpoint(v)
+                    v = str(cp['exp_name'])+str(cp['exp_num'])
+                hyps['search_keys'] += "_" + str(k) + v
             hyper_q.put({k:v for k,v in hyps.items()})
 
     # Non-base call. Sets a hyperparameter to a new search value and
