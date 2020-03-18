@@ -281,6 +281,11 @@ def get_response(model, stim, model_layers, batch_size=500,
         stim = tdrstim.spatial_pad(stim, H=model.img_shape[1],
                                          W=model.img_shape[2])
     prev_cuda = next(model.parameters()).is_cuda
+    chan = None
+    spat_idx = None
+    if cell_idx is not None:
+        chan,row,col = cell_idx
+        spat_idx = (int(row),int(col))
     model.to(DEVICE)
     if use_ig:
         response = dict()
@@ -290,9 +295,10 @@ def get_response(model, stim, model_layers, batch_size=500,
                 continue
             intg_grad, gc_resps = tdrutils.integrated_gradient(model,
                                                 stim,
-                                                batch_size=batch_size,
                                                 layer=layer,
-                                                gc_idx=cell_idx,
+                                                batch_size=batch_size,
+                                                chans=chan,
+                                                spat_idx=spat_idx,
                                                 to_numpy=to_numpy,
                                                 verbose=verbose)
             response[layer] = intg_grad
@@ -316,130 +322,6 @@ def get_response(model, stim, model_layers, batch_size=500,
     if not prev_cuda:
         model.cpu()
     return response
-
-def model2model_cors(model1, model2, model1_layers=[],
-                                            model2_layers=[],
-                                            stim=None,
-                                            batch_size=500,
-                                            contrast=1.0,
-                                            n_samples=5000,
-                                            n_repeats=3,
-                                            use_ig=True,
-                                            verbose=True):
-    """
-    Takes two models and correlates the activations at each layer.
-    Returns a dict of correlation marices.
-
-    model1 - torch Module
-    model2 - torch Module
-    stim - ndarray (T,H,W) or None
-        optional argument to specify the stimulus. If none, stimulus
-        defaults to whitenoise
-    model1_layers - set or list of strs
-        the layers of model 1 to be correlated
-    model2_layers - set or list of strs
-        the layers of model 2 to be correlated
-    batch_size: int
-        size of batches when performing computations on GPU
-    contrast: float
-        contrast of whitenoise stimulus for model input
-    n_samples: int
-        number of time points of stimulus for model input
-    n_repeats: int
-        number of times to repeat whitenoise stimulus in temporal dim.
-        Essentially adjusts the frame rate of the video. Larger values
-        of n_repeats leads to slower video frame rates.
-    use_ig: bool
-        if true, uses integrated gradient rather than activations for
-        model correlations. if the specified layer is outputs, then
-        use_ig is ignored
-
-    returns:
-        intr_cors - dict
-                - mod1_layer: list
-                - mod1_chan: list
-                - mod1_row: list
-                - mod1_col: list
-                - mod2_layer: list
-                - mod2_chan: list
-                - mod2_row: list
-                - mod2_col: list
-                - contrast: list
-                - cor: list
-    """
-    intr_cors = {
-        "mod1_layer":[],
-        "mod1_chan":[],
-        "mod1_row":[],
-        "mod1_col":[],
-        "mod2_layer":[],
-        "mod2_chan":[],
-        "mod2_row":[],
-        "mod2_col":[],
-        "contrast":[],
-        "cor":[],
-    }
-    if len(model1_layers) == 0:
-        model1_layers = get_conv_layer_names(model1)
-    if len(model2_layers) == 0:
-        model2_layers = get_conv_layer_names(model2)
-    model1_cuda = next(model1.parameters()).is_cuda
-    model2_cuda = next(model2.parameters()).is_cuda
-    model2.cpu()
-
-    nx = min(model1.img_shape[1], model2.img_shape[1])
-
-    if stim is None:
-        stim = tdrstim.repeat_white(n_samples, nx=nx,
-                                        contrast=contrast,
-                                        n_repeats=n_repeats,
-                                        rand_spat=True)
-
-    # Collect Responses
-    model1.to(DEVICE)
-    response1 = get_response(model1, stim, use_ig=use_ig,
-                                        model_layers=model1_layers,
-                                        batch_size=batch_size,
-                                        verbose=verbose)
-    model1.cpu()
-    model2.to(DEVICE)
-    response2 = get_response(model2, stim, use_ig=use_ig,
-                                           model_layers=model2_layers,
-                                           batch_size=batch_size,
-                                           verbose=verbose)
-    model2.cpu()
-
-    for mod1_layer in intr_cors.keys():
-        resp1 = response1[mod1_layer]
-        resp1 = resp1.reshape(len(resp1), -1)
-        for mod2_layer in intr_cors[mod1_layer].keys():
-            resp2 = response2[mod2_layer]
-            resp2 = resp2.reshape(len(resp2),-1)
-            cor_mtx = tdrutils.mtx_cor(resp1,resp2,
-                                    batch_size=batch_size,
-                                    to_numpy=True)
-            for mod1_idx in range(cor_mtx.shape[0]):
-                for mod2_idx in range(cor_mtx.shape[1]):
-                    intr_cors['contrast'].append(contrast)
-                    cor = cor_mtx[mod1_idx,mod2_idx]
-                    intr_cors['cor'].append(cor)
-                    (chan,row,col) = np.unravel_index(mod1_idx,
-                                          response1[mod1_layer].shape)
-                    intr_cors['mod1_layer'].append(mod1_layer)
-                    intr_cors['mod1_chan'].append(chan)
-                    intr_cors['mod1_row'].append(row)
-                    intr_cors['mod1_col'].append(col)
-                    (chan,row,col) = np.unravel_index(mod2_idx,
-                                          response1[mod2_layer].shape)
-                    intr_cors['mod2_layer'].append(mod2_layer)
-                    intr_cors['mod2_chan'].append(chan)
-                    intr_cors['mod2_row'].append(row)
-                    intr_cors['mod2_col'].append(col)
-    if model1_cuda:
-        model1.to(DEVICE)
-    if model2_cuda:
-        model2.to(DEVICE)
-    return intr_cors
 
 def model2model_cor_mtxs(model1, model2,
                       model1_layers={"sequential.0", "sequential.6"},

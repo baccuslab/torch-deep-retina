@@ -289,7 +289,7 @@ class PermutationSimilarity:
 
         return sim
 
-def perm_similarity(X,Y,test_X=None,test_Y=None, grad_fit=False,
+def perm_similarity(X,Y,test_X=None,test_Y=None, grad_fit=True,
                                                  lr=0.001,
                                                  tol=0.0001,
                                                  patience=10,

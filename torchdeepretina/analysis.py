@@ -364,18 +364,17 @@ def get_model_rfs(model, data_frame, contrast=1, use_grad=False,
         rfs[unit_id] = sta
     return rfs
 
-def get_model2model_cors(model1, model2, model1_layers=[],
+def get_model2model_sims(model1, model2, model1_layers=[],
                                          model2_layers=[],
                                          stim=None,
                                          response1=None,
                                          response2=None,
-                                         contrast=1, n_samples=5000,
+                                         contrast=1,
+                                         n_samples=5000,
                                          use_ig=False,
-                                         ret_model1_rfs=False,
-                                         ret_model2_rfs=False,
                                          verbose=True):
     """
-    Gets and returns a DataFrame of the best activation correlations
+    Gets and returns a dict of the best activation correlations
     between the two models.
 
     model1 - torch Module
@@ -390,20 +389,15 @@ def get_model2model_cors(model1, model2, model1_layers=[],
     use_ig: bool
         if true, correlations are completed using the integrated
         gradient
-    only_max: bool
-        if true, returns only the maximum correlation calculations. If
-        false, all correlation combinations are calculated.
 
     Returns:
         cors: dict
             keys: str
                 the model1 layer names
             vals: float
-                the maximum correlation between a single layer in
-                model1 and all the layers in model2
+                the correlation between a single layer in model1 and
+                all the layers in model2
     """
-    model1.eval()
-    model2.eval()
     if len(model1_layers) == 0:
         model1_layers = tdrutils.get_conv_layer_names(model1)[:-1]
     if len(model2_layers) == 0:
@@ -412,26 +406,52 @@ def get_model2model_cors(model1, model2, model1_layers=[],
         print("Correlating Model Layers")
         print("Model1:", model1_layers)
         print("Model2:", model2_layers)
+
+    model1_cuda = next(model1.parameters()).is_cuda
+    model2_cuda = next(model2.parameters()).is_cuda
+    model1.eval()
+    model2.eval()
+    model2.cpu()
+
+    nx = min(model1.img_shape[1], model2.img_shape[1])
+
+    if stim is None and (response1 is None or response2 is None):
+        stim = tdrstim.repeat_white(n_samples, nx=nx,
+                                     contrast=contrast,
+                                     n_repeats=n_repeats,
+                                     rand_spat=True)
+
+    # Collect responses
     with torch.no_grad():
-        intr_cors = tdrintr.model2model_cor_mtxs(model1,model2,
-                                        model1_layers=model1_layers,
-                                        model2_layers=model2_layers,
-                                        stim=stim,
-                                        response1=response1,
-                                        response2=response2,
-                                        use_ig=use_ig,
-                                        batch_size=500,
-                                        contrast=contrast,
-                                        n_samples=n_samples,
-                                        verbose=verbose)
-    cors = dict()
-    for l1 in model1_layers:
-        all_cors = []
-        for l2 in model2_layers:
-            all_cors.append(intr_cors[l1][l2])
-        layer = np.concatenate(all_cors, axis=-1)
-        cors[l1] = np.max(layer, axis=-1).mean()
-    return cors
+        model1.to(DEVICE)
+        if response1 is None:
+            response1 = tdrintr.get_response(model1, stim,
+                                            use_ig=use_ig,
+                                            model_layers=model1_layers,
+                                            batch_size=batch_size,
+                                            verbose=verbose)
+        model1.cpu()
+        model2.to(DEVICE)
+        if response2 is None:
+            response2 = tdrintr.get_response(model2, stim,
+                                            use_ig=use_ig,
+                                            model_layers=model2_layers,
+                                            batch_size=batch_size,
+                                            verbose=verbose)
+        model2.cpu()
+
+    sims = {m1_layer:{m2_layer:None for m2_layer in\
+                        model2_layers} for m1_layer in model1_layers}
+
+    for mod1_layer in sims.keys():
+        resp1 = response1[mod1_layer]
+        resp1 = resp1.reshape(len(resp1), -1)
+        for mod2_layer in sims[mod1_layer].keys():
+            resp2 = response2[mod2_layer]
+            resp2 = resp2.reshape(len(resp2),-1)
+            sim = tdrutils.perm_similarity(resp1, resp2)
+            sims[mod1_layer][mod2_layer] = sim
+    return sims
 
 def get_model2model_cca(model1, model2, model1_layers=[],
                                         model2_layers=[],
@@ -836,8 +856,7 @@ def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
             save_folders[csv] = set()
     for folder in model_folders:
         save_folder = os.path.join(main_folder, folder)
-        if save_folder in save_folders[csvs[0]] and\
-                                save_folder in save_folders[csvs[1]]:
+        if save_folder in save_folders[csvs[0]]:
             if verbose:
                 print("Skipping",folder," due to previous record")
             continue
@@ -873,7 +892,8 @@ def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
     return dfs
 
 def get_resps(model, stim, model_layers, batch_size=1000,
-                                            to_numpy=True):
+                                         to_numpy=True,
+                                         verbose=False):
     """
     Helper function to collect responses and dry code.
 
@@ -890,18 +910,22 @@ def get_resps(model, stim, model_layers, batch_size=1000,
                 the activations for the layer
     """
     with torch.no_grad():
+        if verbose:
+            print("Collecting Activations")
         act_resp = tdrintr.get_response(model, stim,
                                         model_layers,
                                         batch_size=batch_size,
                                         use_ig=False,
                                         to_numpy=to_numpy,
-                                        verbose=False)
+                                        verbose=verbose)
+        if verbose:
+            print("Collecting Integrated Gradient")
         ig_resp = tdrintr.get_response(model, stim,
                                         model_layers,
                                         batch_size=batch_size,
                                         use_ig=True,
                                         to_numpy=to_numpy,
-                                        verbose=False)
+                                        verbose=verbose)
     return act_resp, ig_resp
 
 def similarity_pipeline(model_paths, n_samples=20000,
@@ -954,7 +978,8 @@ def similarity_pipeline(model_paths, n_samples=20000,
         "model1":[],
         "model2":[],
         "cor_type":[],
-        "layer":[],
+        "m1_layer":[],
+        "m2_layer":[],
         "cor":[],
     }
     main_df = pd.DataFrame(table)
@@ -988,10 +1013,11 @@ def similarity_pipeline(model_paths, n_samples=20000,
         model1.to(DEVICE)
         model1_layers = tdrutils.get_conv_layer_names(model1)[:-1]
         if verbose:
-            print("Computing Responses")
+            print("Computing Model1 Responses")
         act_resp1, ig_resp1 = get_resps(model1, stim, model1_layers,
                                                 batch_size=batch_size,
-                                                to_numpy=True)
+                                                to_numpy=True,
+                                                verbose=verbose)
         model1 = model1.cpu()
         for j in range(len(model_paths)):
             if i==j: continue
@@ -1012,12 +1038,13 @@ def similarity_pipeline(model_paths, n_samples=20000,
             model2.to(DEVICE)
             model2_layers = tdrutils.get_conv_layer_names(model2)[:-1]
             if verbose:
-                print("Computing Responses")
+                print("Computing Model2 Responses")
             with torch.no_grad():
                 act_resp2, ig_resp2 = get_resps(model2, stim,
                                                 model2_layers,
                                                 batch_size=batch_size,
-                                                to_numpy=True)
+                                                to_numpy=True,
+                                                verbose=verbose)
             model2 = model2.cpu()
 
             ################### Correlation
@@ -1026,22 +1053,25 @@ def similarity_pipeline(model_paths, n_samples=20000,
                 # Activation Max Correlation
                 if verbose:
                     print("Beginning Activation Correlations")
-                act_cor_dict = get_model2model_cors(model1, model2,
+                act_cor_dict = get_model2model_sims(model1, model2,
                                                 response1=act_resp1,
                                                 response2=act_resp2,
                                                 stim=stim,
                                                 use_ig=False,
                                                 verbose=verbose)
                 stats_string += "\nActivation Correlations:\n"
-                for layer in act_cor_dict.keys():
-                    table['model1'].append(model_paths[i])
-                    table['model2'].append(model_paths[j])
-                    table['cor_type'].append("act_cor")
-                    table['layer'].append(layer)
-                    table['cor'].append(act_cor_dict[layer])
-                    stats_string += "{}: {}\n".format(layer,
-                                                    act_cor_dict[layer])
-
+                for layer1 in act_cor_dict.keys():
+                    for layer2 in act_cor_dict[layer1].keys():
+                        table['model1'].append(model_paths[i])
+                        table['model2'].append(model_paths[j])
+                        table['cor_type'].append("act_cor")
+                        table['m1_layer'].append(layer1)
+                        table['m2_layer'].append(layer2)
+                        cor = act_cor_dict[layer1][layer2]
+                        table['cor'].append(cor)
+                        stats_string += "{}-{}: {}\n".format(layer1,
+                                                             layer2,
+                                                             cor)
                 torch.cuda.empty_cache()
                 # Integrated Gradient Max Correlation
                 if verbose:
@@ -1053,52 +1083,57 @@ def similarity_pipeline(model_paths, n_samples=20000,
                                                  use_ig=True,
                                                  verbose=verbose)
                 stats_string += "IG Correlations:\n"
-                for layer in ig_cor_dict.keys():
-                    table['model1'].append(model_paths[i])
-                    table['model2'].append(model_paths[j])
-                    table['cor_type'].append("ig_cor")
-                    table['layer'].append(layer)
-                    table['cor'].append(ig_cor_dict[layer])
-                    stats_string += "{}: {}\n".format(layer,
-                                                ig_cor_dict[layer])
+                for layer1 in ig_cor_dict.keys():
+                    for layer2 in ig_cor_dict[layer1].keys():
+                        table['model1'].append(model_paths[i])
+                        table['model2'].append(model_paths[j])
+                        table['cor_type'].append("act_cor")
+                        table['m1_layer'].append(layer1)
+                        table['m2_layer'].append(layer2)
+                        cor = ig_cor_dict[layer1][layer2]
+                        table['cor'].append(cor)
+                        stats_string += "{}: {}\n".format(layer1,
+                                                          layer2,
+                                                          cor)
 
             ################### CCA
             torch.cuda.empty_cache()
             if calc_cca:
-                if verbose:
-                    print("Beginning Activation CCA")
-                act_cca = get_model2model_cca(model1, model2,
-                                                response1=act_resp1,
-                                                response2=act_resp2,
-                                                stim=stim,
-                                                use_ig=False,
-                                                np_cca=np_cca,
-                                                verbose=verbose)
-                table['model1'].append(model_paths[i])
-                table['model2'].append(model_paths[j])
-                table['cor_type'].append("act_cca")
-                table['layer'].append("all")
-                table['cor'].append(act_cca)
-                stats_string += "Activs CCA: {}\n".format(act_cca)
+                print("CCA Not Currently Functional")
+                #if verbose:
+                #    print("Beginning Activation CCA")
+                #act_cca = get_model2model_cca(model1, model2,
+                #                                response1=act_resp1,
+                #                                response2=act_resp2,
+                #                                stim=stim,
+                #                                use_ig=False,
+                #                                np_cca=np_cca,
+                #                                verbose=verbose)
+                #table['model1'].append(model_paths[i])
+                #table['model2'].append(model_paths[j])
+                #table['cor_type'].append("act_cca")
+                #table['layer'].append("all")
+                #table['cor'].append(act_cca)
+                #stats_string += "Activs CCA: {}\n".format(act_cca)
 
-                torch.cuda.empty_cache()
+                #torch.cuda.empty_cache()
 
-                # Integrated Gradient CCA
-                if verbose:
-                    print("Beginning Integrated Gradient CCA")
-                ig_cca = get_model2model_cca(model1, model2,
-                                                response1=ig_resp1,
-                                                response2=ig_resp2,
-                                                stim=stim,
-                                                use_ig=True,
-                                                np_cca=np_cca,
-                                                verbose=verbose)
-                table['model1'].append(model_paths[i])
-                table['model2'].append(model_paths[j])
-                table['cor_type'].append("ig_cca")
-                table['layer'].append("all")
-                table['cor'].append(ig_cca)
-                stats_string += "IG CCA: {}\n".format(ig_cca)
+                ## Integrated Gradient CCA
+                #if verbose:
+                #    print("Beginning Integrated Gradient CCA")
+                #ig_cca = get_model2model_cca(model1, model2,
+                #                                response1=ig_resp1,
+                #                                response2=ig_resp2,
+                #                                stim=stim,
+                #                                use_ig=True,
+                #                                np_cca=np_cca,
+                #                                verbose=verbose)
+                #table['model1'].append(model_paths[i])
+                #table['model2'].append(model_paths[j])
+                #table['cor_type'].append("ig_cca")
+                #table['layer'].append("all")
+                #table['cor'].append(ig_cca)
+                #stats_string += "IG CCA: {}\n".format(ig_cca)
             if verbose:
                 print(stats_string)
             if table_checkpts:
