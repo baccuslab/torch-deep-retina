@@ -229,13 +229,13 @@ class PermutationSimilarity:
             prev_loss = perm_loss
             tup = self.grad_step(C, perm_mtx, lr, alpha=alpha)
             loss, perm_loss, aux_loss, perm_mtx = tup
-            s = "Loss:{:05}, Perm:{:05}, Aux:{:05}"
+            s = "Loss:{:05f}, Perm:{:05f}, Aux:{:05f}"
             s = s.format(loss.item(),perm_loss.item(),aux_loss.item())
-            print(s, end="       \r")
+            print(s, end="   \r")
             count += 1
-        cols = np.argmax(perm_mtx.data.cpu().numpy(), axis=-1)
-        perm = (perm_mtx.data/perm_mtx.data.norm(2))
-        return np.arange(len(C)).astype("int"), cols
+        cols = np.argmax(perm_mtx.data.abs().cpu().numpy(), axis=-1)
+        rows = np.arange(len(C)).astype("int")
+        return rows, cols
     
     def grad_step(self, C, perm_mtx, lr, alpha=0.6):
         """
@@ -252,7 +252,8 @@ class PermutationSimilarity:
             the portion of the loss dedicated to the permutation mtx
             manipulations
         """
-        perm = perm_mtx.abs()/perm_mtx.norm(2)
+        perm_mtx.data = perm_mtx.data.abs()
+        perm = perm_mtx/perm_mtx.norm(2)
         perm_loss = (C*perm).mean()
         aux_loss = 0.001*perm_mtx.norm(1)
         loss = alpha*aux_loss + (1-alpha)*perm_loss
@@ -284,7 +285,9 @@ class PermutationSimilarity:
         tX, tY = self.transform(X, Y)
         denom = np.linalg.norm(tX, axis=0) * np.linalg.norm(tY, axis=0)
         numer = np.sum(tX * tY, axis=0)
-        return np.mean(numer / denom)
+        sim = np.mean(numer / denom)
+
+        return sim
 
 def perm_similarity(X,Y,test_X=None,test_Y=None, grad_fit=False,
                                                  lr=0.001,
@@ -326,6 +329,9 @@ def perm_similarity(X,Y,test_X=None,test_Y=None, grad_fit=False,
             the number of finishing loops to do after the loss has
             converged
         algorithm
+
+    Returns:
+        ccor: float
     """
     if isinstance(X,torch.Tensor):
         X = X.data.cpu().numpy()

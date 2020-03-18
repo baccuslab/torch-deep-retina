@@ -86,6 +86,6 @@ if __name__ == "__main__":
     exp_folder = hyps['exp_name']
     torch.cuda.empty_cache()
     dfs = analysis_pipeline(exp_folder, make_figs=True, save_dfs=True,
-                            make_model_rfs=True, verbose=True)
+                            make_model_rfs=False, verbose=True)
 
     print(exp_folder, "Training Complete")
