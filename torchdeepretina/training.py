@@ -92,6 +92,10 @@ class Trainer:
         torch.cuda.empty_cache()
         batch_size = hyps['batch_size']
 
+        hyps['seed'] = utils.try_key(hyps,'seed',None)
+        if hyps['seed'] is None:
+            hyps['seed'] = int(time.time())
+
         if hyps['cross_val']:
             cross_val_range = range(hyps['n_cv_folds'])
         else:
@@ -108,9 +112,6 @@ class Trainer:
                                            hyps['exp_name']):
                     hyps['exp_num']+=1
             # Set manual seed
-            hyps['seed'] = utils.try_key(hyps,'seed',None)
-            if hyps['seed'] is None:
-                hyps['seed'] = int(time.time())
             if hyps['seed'] == "exp_num":
                 hyps['seed'] = hyps['exp_num']
             torch.manual_seed(hyps['seed'])
@@ -766,8 +767,10 @@ def get_model_and_distr(hyps, train_data):
     zscorey = False if 'zscorey' not in hyps else hyps['zscorey']
     cross_val_idx = hyps['cross_val_idx']
     n_cv_folds = hyps['n_cv_folds']
+    rand_sample = utils.try_key(hyps,"rand_sample",None)
     data_distr = DataDistributor(train_data, batch_size=batch_size,
                                     shuffle=hyps['shuffle'],
+                                    rand_sample=rand_sample,
                                     cross_val_idx=cross_val_idx,
                                     n_cv_folds=n_cv_folds,
                                     recurrent=False,

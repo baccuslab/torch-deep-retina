@@ -63,6 +63,8 @@ The hyperparams.json should have a list of all the desired user setting for the 
     * only relevant if using "PoissonNLLLoss" function. If true, inputs are exponentiated before poisson loss is calculated.
 * `shuffle`: bool
     * boolean determining if the order of samples with in a batch should be shuffled. This does not shuffle the sequence itself.
+* `rand_sample`: bool or None
+    * boolean determining if the sampled batches should have randomized order. If None, defaults to value of `shuffle`. When used in conjunction with `shuffle`, allows you to train with a set randomized order of data, or allows you to split the data into training and validation sets with preserved order but still randomize the data during training. Generally, however, the value should be true or null.
 
 * `batch_size`: int
     * the number of samples to used in a single step of SGD
