@@ -706,6 +706,9 @@ class DataDistributor:
             self.perm = np.arange(self.X.shape[0]).astype('int')
 
         # Split indices into validation and training
+        # If using shuffled indices, seeding is handled before cross
+        # validation setup, so the random index order is preserved
+        # between different folds.
         if cross_val_idx is None:
             cross_val_idx = 0
         idxs = cv_split([self.perm], cv_idx=cross_val_idx,

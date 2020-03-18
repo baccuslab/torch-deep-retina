@@ -21,6 +21,8 @@ The hyperparams.json should have a list of all the desired user setting for the 
     * A boolean determining if the model `state_dict` should be saved for every epoch, or only the most recent epoch.
 * `seed`: int, None, or `"exp_num"`
     * This is the random seed for both pytorch and numpy. If None is argued, the current value of `time.time()` is used. If the string `"exp_num"` is used, the seed takes on the value of the assigned experiment number. This makes comparitive searches a little bit easier.
+* `startpt`: string or None
+    * This is the file path to the desired starting checkpoint if any. Will load the model state dict from the argued checkpoint in addition to the optimizer state dict and the zero dict with the appropriate value for `zero_bias`.
 
 * `model_type`: str
     * The string name of the main model class to be used for training. Options are each of the classes defined in `models.py`
@@ -61,6 +63,8 @@ The hyperparams.json should have a list of all the desired user setting for the 
     * only relevant if using "PoissonNLLLoss" function. If true, inputs are exponentiated before poisson loss is calculated.
 * `shuffle`: bool
     * boolean determining if the order of samples with in a batch should be shuffled. This does not shuffle the sequence itself.
+* `rand_sample`: bool or None
+    * boolean determining if the sampled batches should have randomized order. If None, defaults to value of `shuffle`. When used in conjunction with `shuffle`, allows you to train with a set randomized order of data, or allows you to split the data into training and validation sets with preserved order but still randomize the data during training. Generally, however, the value should be true or null.
 
 * `batch_size`: int
     * the number of samples to used in a single step of SGD
