@@ -290,8 +290,11 @@ def get_response(model, stim, model_layers, batch_size=500,
     if use_ig:
         response = dict()
         gc_resps = None
+        last_layer = tdrutils.get_conv_layer_names(model)[-1]
         for layer in model_layers:
-            if layer == "outputs":
+            if verbose:
+                print("Layer:", layer)
+            if layer == "outputs" or layer==last_layer:
                 continue
             intg_grad, gc_resps = tdrutils.integrated_gradient(model,
                                                 stim,
@@ -302,7 +305,7 @@ def get_response(model, stim, model_layers, batch_size=500,
                                                 to_numpy=to_numpy,
                                                 verbose=verbose)
             response[layer] = intg_grad
-        if "outputs" in model_layers:
+        if "outputs" in model_layers or last_layer in model_layers:
             if gc_resps is None:
                 bsize = batch_size
                 temp = tdrutils.inspect(model, stim, batch_size=bsize,
@@ -311,7 +314,10 @@ def get_response(model, stim, model_layers, batch_size=500,
                                                     no_grad=no_grad,
                                                     verbose=verbose)
                 gc_resps = temp['outputs']
-            response['outputs'] = gc_resps
+            if "outputs" in model_layers:
+                response['outputs'] = gc_resps
+            if last_layer in model_layers:
+                response[last_layer] = gc_resps
     else:
         response = tdrutils.inspect(model,stim,batch_size=batch_size,
                                                insp_keys=model_layers,

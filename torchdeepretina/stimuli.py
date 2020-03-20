@@ -1038,7 +1038,7 @@ def concat(*args, nx=50, nh=40):
     nx : int, optional
         Number of spatial dimensions (default: 50)
     """
-    c = np.vstack(map(lambda s: spatial_pad(s, nx), args))
+    c = np.vstack(map(lambda s: spatialize(s, nx), args))
     c = c.astype('float32')
     return rolling_window(c, nh)
 
@@ -1155,7 +1155,10 @@ def spatialize(array, nx):
     nx : int
         The number of desired spatial dimensions (along one edge)
     """
-    return np.broadcast_to(array, (array.shape[0], nx, nx))
+    if nx % array.shape[1] == 0:
+        return np.broadcast_to(array, (array.shape[0], nx, nx))
+    else:
+        return spatial_pad(array,nx)
 
 
 def flash(flash_dur, delay, nsamples, intensity=-1.):

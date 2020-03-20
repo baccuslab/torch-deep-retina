@@ -262,7 +262,7 @@ def sample_model_rfs(model, layers=[], use_grad=True, verbose=False):
         "col":[]
     }
 
-    if len(layers) == 0:
+    if layers is None or len(layers) == 0:
         layers = tdrutils.get_conv_layer_names(model)
     if isinstance(layers[0],int):
         layer_names = tdrutils.get_conv_layer_names(model)
@@ -291,7 +291,7 @@ def sample_model_rfs(model, layers=[], use_grad=True, verbose=False):
     rfs = get_model_rfs(model, df, use_grad=use_grad, verbose=verbose)
     return rfs
 
-def get_model_rfs(model, data_frame, contrast=1, use_grad=False,
+def get_model_rfs(model, data_frame, contrast=1, use_grad=True,
                                                   verbose=False):
     """
     Searches through each entry in the data frame and computes an STA
@@ -328,13 +328,14 @@ def get_model_rfs(model, data_frame, contrast=1, use_grad=False,
         rng = tqdm(rng)
     for i in rng:
         layer, chan, row, col = data_frame.loc[:,keys].iloc[i]
-        chan, row, col = int(chan),int(row),int(col)
-        if row is None and col is None:
+        chan = int(chan)
+        if row is None or col is None or np.isnan(row) or np.isnan(col):
             layer_idx = -1
             cell_idx = chan
             unit_id = (layer,chan)
         else:
             layer_idx = tdrutils.get_layer_idx(model, layer)
+            row,col = int(row),int(col)
             cell_idx = (chan,row,col)
             unit_id = (layer,chan,row,col)
         if (layer,chan) in rf_dups:
@@ -910,16 +911,12 @@ def get_resps(model, stim, model_layers, batch_size=1000,
                 the activations for the layer
     """
     with torch.no_grad():
-        if verbose:
-            print("Collecting Activations")
         act_resp = tdrintr.get_response(model, stim,
                                         model_layers,
                                         batch_size=batch_size,
                                         use_ig=False,
                                         to_numpy=to_numpy,
                                         verbose=verbose)
-        if verbose:
-            print("Collecting Integrated Gradient")
         ig_resp = tdrintr.get_response(model, stim,
                                         model_layers,
                                         batch_size=batch_size,
@@ -1076,7 +1073,7 @@ def similarity_pipeline(model_paths, n_samples=20000,
                 # Integrated Gradient Max Correlation
                 if verbose:
                     print("Beginning Integrated Grdient Correlations")
-                ig_cor_dict = get_model2model_cors(model1, model2,
+                ig_cor_dict = get_model2model_sims(model1, model2,
                                                  response1=ig_resp1,
                                                  response2=ig_resp2,
                                                  stim=stim,

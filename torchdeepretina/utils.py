@@ -26,7 +26,9 @@ def get_shifts(row_steps=0, col_steps=0, n_row=50, n_col=50,
     Iterator that returns all possible shift combinations for a
     stimulus that is (n_row, n_col) dims. Used with get_intr_cors to
     ensure that receptive fields of the model units and recordings
-    are overlapping.
+    are overlapping. Can also be viewed as sliding coordinates over
+    a fixed window. Using word slide here because I've searched for
+    this function many times with that word.
 
     row_steps: int
         The number of row shifts to perform evenly spaced within the
@@ -129,6 +131,9 @@ class PermutationSimilarity:
             X = X.data.cpu().numpy()
         if isinstance(Y,torch.Tensor):
             Y = Y.data.cpu().numpy()
+        self.swap_XY = X.shape[-1] > Y.shape[-1]
+        if self.swap_XY:
+            X,Y = Y,X
         self.xmean = X.mean(0)
         self.ymean = Y.mean(0)
         X_c = X-self.xmean
@@ -136,13 +141,15 @@ class PermutationSimilarity:
 
         xty = X_c.T@Y_c
         C = -xty - np.min(xty)
+        C[np.isnan(C)] = 0
 
         rows,cols = linear_sum_assignment(C)
         self.rows = rows
         self.cols = cols
 
     def grad_fit(self, X, Y, lr=0.001, tol=0.0001, patience=10,
-                                                    alpha=0.5):
+                                                    alpha=0.5,
+                                                    verbose=False):
         """
         Fits the permutation matrix between X and Y. Assumes time is
         in first dimension and number of neurons is in second. Uses
@@ -171,6 +178,9 @@ class PermutationSimilarity:
             X = torch.FloatTensor(X)
         if isinstance(Y,np.ndarray):
             Y = torch.FloatTensor(Y)
+        self.swap_XY = X.shape[-1] > Y.shape[-1]
+        if self.swap_XY:
+            X,Y = Y,X
         self.xmean = X.mean(0)
         self.ymean = Y.mean(0)
         X_c = (X-self.xmean)
@@ -186,12 +196,14 @@ class PermutationSimilarity:
 
         rows,cols = self.train_perm_mtx(C,lr=lr,tol=tol,
                                                 patience=patience,
-                                                alpha=alpha)
+                                                alpha=alpha,
+                                                verbose=verbose)
         self.rows = rows
         self.cols = cols
 
     def train_perm_mtx(self, C, lr=0.001, tol=0.0001, patience=10,
-                                                      alpha=0.5):
+                                                      alpha=0.5,
+                                                      verbose=False):
         """
         Uses gradient descent to find the one-hot matrix that
         minimizes the cost of C.
@@ -229,9 +241,11 @@ class PermutationSimilarity:
             prev_loss = perm_loss
             tup = self.grad_step(C, perm_mtx, lr, alpha=alpha)
             loss, perm_loss, aux_loss, perm_mtx = tup
-            s = "Loss:{:05f}, Perm:{:05f}, Aux:{:05f}"
-            s = s.format(loss.item(),perm_loss.item(),aux_loss.item())
-            print(s, end="   \r")
+            if verbose:
+                s = "Loss:{:05f}, Perm:{:05f}, Aux:{:05f}"
+                s = s.format(loss.item(),perm_loss.item(),
+                                         aux_loss.item())
+                print(s, end="   \r")
             count += 1
         cols = np.argmax(perm_mtx.data.abs().cpu().numpy(), axis=-1)
         rows = np.arange(len(C)).astype("int")
@@ -271,11 +285,18 @@ class PermutationSimilarity:
         X: ndarray or FloatTensor
         Y: ndarray or FloatTensor
         """
+        if len(X.shape) > 2:
+            X = X.reshape(len(X),-1)
+        if len(Y.shape) > 2:
+            Y = Y.reshape(len(Y),-1)
         if isinstance(X,torch.Tensor):
             X = X.data.cpu().numpy()
         if isinstance(Y,torch.Tensor):
             Y = Y.data.cpu().numpy()
-        tX = (X - self.xmean)
+        if self.swap_XY:
+            X,Y = Y,X
+        X_c = (X - self.xmean)
+        tX = X_c[:,self.rows]
         Y_c = (Y - self.ymean)
         tY = Y_c[:,self.cols]
         return tX, tY
@@ -284,9 +305,14 @@ class PermutationSimilarity:
         """Return the canonical correlation coefficients."""
         tX, tY = self.transform(X, Y)
         denom = np.linalg.norm(tX, axis=0) * np.linalg.norm(tY, axis=0)
+        denom += 1e-5
         numer = np.sum(tX * tY, axis=0)
-        sim = np.mean(numer / denom)
-
+        sim = numer / denom
+        zeroed = len(sim)-len(sim[~np.isnan(sim)])
+        if zeroed>0:
+            print("num chans zeroed:", zeroed)
+        sim = sim[~np.isnan(sim)]
+        sim = np.mean(sim)
         return sim
 
 def perm_similarity(X,Y,test_X=None,test_Y=None, grad_fit=True,
@@ -333,6 +359,10 @@ def perm_similarity(X,Y,test_X=None,test_Y=None, grad_fit=True,
     Returns:
         ccor: float
     """
+    if len(X.shape) > 2:
+        X = X.reshape(len(X),-1)
+    if len(Y.shape) > 2:
+        Y = Y.reshape(len(Y),-1)
     if isinstance(X,torch.Tensor):
         X = X.data.cpu().numpy()
     if isinstance(Y,torch.Tensor):
@@ -354,7 +384,8 @@ def perm_similarity(X,Y,test_X=None,test_Y=None, grad_fit=True,
         print("Beggining fit")
     if grad_fit:
         perm_obj.grad_fit(X,Y,lr=lr,tol=tol,patience=patience,
-                                                  alpha=alpha)
+                                                  alpha=alpha,
+                                                  verbose=verbose)
     else:
         perm_obj.fit(X, Y)
     if verbose:
@@ -1260,8 +1291,11 @@ def compute_sta(model, layer, cell_index, layer_shape=None,
     """
     # generate some white noise
     if X is None:
-        X = tdrstim.concat(contrast*np.random.randn(n_samples,
-                                        *model.img_shape[1:]))
+        X = tdrstim.repeat_white(n_samples,nx=model.img_shape[1],
+                                           contrast=contrast,
+                                           n_repeats=3,
+                                           rand_spat=True)
+        X = tdrstim.rolling_window(X,model.img_shape[0])
     X = torch.FloatTensor(X)
     X.requires_grad = True
 
@@ -1545,10 +1579,11 @@ def revcor_sta(model, layer, cell_index, layer_shape=None,
     to_numpy: bool
         returns values as numpy arrays if true, else as torch tensors
     """
-    noise = contrast*np.random.randn(n_samples,*model.img_shape[1:])
-    nh = model.img_shape[0]
-    nx = model.img_shape[1]
-    X = tdrstim.concat(noise, nh=nh, nx=nx)
+    noise = tdrstim.repeat_white(n_samples,nx=model.img_shape[1],
+                                           contrast=contrast,
+                                           n_repeats=3,
+                                           rand_spat=True)
+    X = tdrstim.rolling_window(noise)
     with torch.no_grad():
         response = inspect(model, X, insp_keys=set([layer]),
                                       batch_size=batch_size,

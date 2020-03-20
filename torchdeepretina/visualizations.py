@@ -496,8 +496,15 @@ def plot_model_rfs(rfs, save_root="modelrfs", save_ext=".png", ret_figs=False):
     figs = []
     for tup in rfs.keys():
         sta = rfs[tup]
-        layer,chan,row,col = tup
-        save_name = "{}_{}_chan{}_row{}col{}{}".format(save_root, layer,chan,row,col, save_ext)
+        if len(tup)==4:
+            layer,chan,row,col = tup
+            save_name = "{}_{}_chan{}_row{}col{}{}".format(save_root, layer,chan,row,col, save_ext)
+        elif len(tup)==2:
+            layer,chan = tup
+            save_name = "{}_{}_cell{}{}".format(save_root, layer, chan, save_ext)
+        else:
+            print("tup:", tup)
+            assert False, "something went wrong"
         fig = plot_rf(sta, save_name)
         if ret_figs:
             figs.append(fig)

@@ -156,8 +156,8 @@ def reversing_grating(model, size=5, phase=0., filt_depth=40):
     grating = tdrstim.grating(barsize=(size, 0), phase=(phase, 0.0),
                                                intensity=(1.0, 1.0),
                                                us_factor=1, blur=0)
-    X = tdrstim.concat(tdrstim.reverse(grating, halfperiod=50,
-                                 nsamples=300), nh=filt_depth)
+    X = tdrstim.reverse(grating, halfperiod=50, nsamples=300)
+    X = tdrstim.rolling_window(X,filt_depth)
     X_torch = torch.from_numpy(X).to(DEVICE)
     with torch.no_grad():
         if model.recurrent:
@@ -308,7 +308,8 @@ def oms_random_differential(model, duration=5, sample_rate=30,
         diff_response = None
         global_response = None
     else:
-        x = torch.FloatTensor(tdrstim.concat(diff_vid, nh=filt_depth))
+        x = torch.FloatTensor(tdrstim.rolling_window(diff_vid,
+                                                     filt_depth))
         x = x.to(DEVICE)
         with torch.no_grad():
             if model.recurrent:
@@ -323,7 +324,7 @@ def oms_random_differential(model, duration=5, sample_rate=30,
                 resp = model(x)
         diff_response = resp.cpu().detach().numpy()
 
-        x = tdrstim.concat(global_vid, nh=filt_depth)
+        x = tdrstim.rolling_window(global_vid, filt_depth)
         x = torch.FloatTensor(x).to(DEVICE)
         with torch.no_grad():
             if model.recurrent:
@@ -431,7 +432,8 @@ def oms_differential(model, duration=5, sample_rate=30, pre_frames=40,
         diff_response = None
         global_response = None
     else:
-        x = torch.FloatTensor(tdrstim.concat(diff_vid, nh=filt_depth))
+        x = torch.FloatTensor(tdrstim.rolling_window(diff_vid,
+                                                     filt_depth))
         x = x.to(DEVICE)
         with torch.no_grad():
             if model.recurrent:
@@ -446,8 +448,9 @@ def oms_differential(model, duration=5, sample_rate=30, pre_frames=40,
                 resp = model(x)
         diff_response = resp.cpu().detach().numpy()
 
-        x = torch.FloatTensor(tdrstim.concat(global_vid,
-                                            nh=filt_depth)).to(DEVICE)
+        x = torch.FloatTensor(tdrstim.rolling_window(global_vid,
+                                                     filt_depth))
+        x = x.to(DEVICE)
         with torch.no_grad():
             if model.recurrent:
                 hs = [torch.zeros(1,*h).to(device) for h in\
@@ -533,7 +536,7 @@ def oms_jitter(model, duration=5, sample_rate=30, pre_frames=40,
         fig = None
         response = None
     else:
-        x = torch.FloatTensor(tdrstim.concat(vid, nh=filt_depth))
+        x = torch.FloatTensor(tdrstim.rolling_window(vid, filt_depth))
         x = x.to(DEVICE)
         with torch.no_grad():
             if model.recurrent:
