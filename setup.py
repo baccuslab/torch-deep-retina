@@ -46,7 +46,7 @@ setup(name='torchdeepretina',
                          "deepdish",
                          "pyret",
                          "moviepy",
-                         "psutil"]
+                         "psutil"],
       py_modules=['torchdeepretina'],
       cmdclass={
           'install': PostInstallMoveFile,
