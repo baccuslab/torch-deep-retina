@@ -157,6 +157,8 @@ if __name__=="__main__":
                                                     ig_spat_loc=loc,
                                                     to_numpy=True,
                                                     verbose=verbose)
+                act_vecs[model_paths[j]] = act_resp2
+                ig_vecs[model_paths[j]] = ig_resp2
             model2 = model2.cpu()
             model1_shapes = [act_resp1[l].shape for l in model1_layers]
             model2_shapes = [act_resp2[l].shape for l in model2_layers]
@@ -289,3 +291,5 @@ if __name__=="__main__":
             s = "\n".join(s)
             print(s)
             print()
+        del act_vecs[model_paths[i]]
+        del ig_vecs[model_paths[i]]
