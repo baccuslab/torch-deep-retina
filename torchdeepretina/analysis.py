@@ -894,12 +894,21 @@ def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
 
 def get_resps(model, stim, model_layers, batch_size=1000,
                                          to_numpy=True,
+                                         ig_spat_loc=None,
                                          verbose=False):
     """
     Helper function to collect responses and dry code.
 
     stim: ndarray (T,H,W)
     model_layers: set of str
+    batch_size: int
+    to_numpy: bool
+        if true, returns results as numpy arrays
+    ig_spat_loc: None or tuple of ints (row,col) or (chan,row,col)
+        if tuple, will use this location for calculating the
+        integrated gradient. If chan is omitted or None, all channels
+        are used. If None, the default locations of the recordings are
+        used.
 
     Returns:
         tuple of responses, one raw and one integrated gradient.
@@ -921,6 +930,7 @@ def get_resps(model, stim, model_layers, batch_size=1000,
                                         model_layers,
                                         batch_size=batch_size,
                                         use_ig=True,
+                                        cell_idx=ig_spat_loc,
                                         to_numpy=to_numpy,
                                         verbose=verbose)
     return act_resp, ig_resp

@@ -28,13 +28,20 @@ import resource
 DEVICE = torch.device("cuda:0")
 
 if __name__=="__main__":
+    n_samples = 5000
+    window_lim = 5
+    verbose = True
+    table_checkpts = True
+    batch_size = 1000
+    grad_fit = False
     sim_folder = "similarity_csvs"
+
     if not os.path.exists(sim_folder):
         os.mkdir(sim_folder)
     grand_folders = sys.argv[1:]
     torch.cuda.empty_cache()
     model_paths = None
-    save_file = "similarities.csv"
+    save_file = "perm_similarities.csv"
     for grand_folder in grand_folders:
         print("Analyzing", grand_folder)
         paths = tdr.io.get_model_folders(grand_folder)
@@ -48,12 +55,6 @@ if __name__=="__main__":
     print("Models:")
     print("\n".join(model_paths))
     print("Saving to:", save_file)
-    n_samples = 5000
-    window_lim = 5
-    verbose = True
-    table_checkpts = True
-    batch_size = 1000
-    grad_fit = False
 
     table = {
         "model1":[],
@@ -105,19 +106,23 @@ if __name__=="__main__":
         else:
             model1.to(DEVICE)
             with torch.no_grad():
+                loc = (model1.shapes[-1][0]//2, model1.shapes[-1][1]//2)
+                loc = None if not model1.convgc else loc
                 act_resp1, ig_resp1 = tdr.analysis.get_resps(model1,
                                                     stim,
                                                     model1_layers,
                                                     batch_size=batch_size,
+                                                    ig_spat_loc=loc,
                                                     to_numpy=True,
                                                     verbose=verbose)
             act_vecs[model_paths[i]] = act_resp1
             ig_vecs[model_paths[i]] = ig_resp1
         model1 = model1.cpu()
 
-        for j in range(len(model_paths)):
+        for j in range(i+1,len(model_paths)):
             idx = (main_df['model1']==model_paths[i])
-            if model_paths[j] in set(main_df.loc[idx,"model2"]):
+            if model_paths[j] in set(main_df.loc[idx,"model2"])\
+                        or model_paths[i]==model_paths[j]:
                 print("Skipping:", model_paths[j])
                 continue
             if verbose:
@@ -139,17 +144,18 @@ if __name__=="__main__":
             else:
                 model2.to(DEVICE)
                 with torch.no_grad():
+                    loc =(model2.shapes[-1][0]//2,model2.shapes[-1][1]//2)
+                    loc = None if not model2.convgc else loc
                     act_resp2, ig_resp2 = tdr.analysis.get_resps(model2,
                                                     stim,
                                                     model2_layers,
                                                     batch_size=batch_size,
+                                                    ig_spat_loc=loc,
                                                     to_numpy=True,
                                                     verbose=verbose)
             model2 = model2.cpu()
             model1_shapes = [act_resp1[l].shape for l in model1_layers]
             model2_shapes = [act_resp2[l].shape for l in model2_layers]
-            print("m1shapes:", model1_shapes)
-            print("m2shapes:", model2_shapes)
 
             ################### Correlation
             torch.cuda.empty_cache()
@@ -202,8 +208,6 @@ if __name__=="__main__":
             stats_string += "IG Correlations:\n"
             model1_shapes = [ig_resp1[l].shape for l in model1_layers]
             model2_shapes = [ig_resp2[l].shape for l in model2_layers]
-            print("m1shapes:", model1_shapes)
-            print("m2shapes:", model2_shapes)
             for l1,s1 in zip(model1_layers,model1_shapes):
                 if len(s1)<=2:
                     continue
