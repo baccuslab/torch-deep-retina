@@ -5,7 +5,10 @@ center of the activation/integrated gradient tensors are correlated
 with all channels of the second model at different spatial locations
 centered around the spatial location of the first model. All values
 in the correlation matrix are recorded for the location with the best
-correlations.
+correlations. The metric used for best correlation is symmetric in that
+it is the average of all max correlations taken along rows and columns
+of the correlation matrix. When comparing a model with itself, the
+diagonal is set to -1 to avoid the obvious perfect correlation.
 
 This script can be used by arguing experiment folders like so:
 
@@ -29,7 +32,13 @@ import resource
 DEVICE = torch.device("cuda:0")
 
 if __name__=="__main__":
-    sim_folder = "similarity_csvs"
+    n_samples = 5000 # Number of samples used for comparison
+    window_lim = 5 # Half the size of the window centered on the comparison location
+    verbose = True
+    table_checkpts = True
+    batch_size = 1000
+    sim_folder = "similarity_csvs" # Folder to save comparison csv to
+
     if not os.path.exists(sim_folder):
         os.mkdir(sim_folder)
     grand_folders = sys.argv[1:]
@@ -49,12 +58,6 @@ if __name__=="__main__":
     print("Models:")
     print("\n".join(model_paths))
     print("Saving to:", save_file)
-    n_samples = 5000
-    window_lim = 5
-    verbose = True
-    table_checkpts = True
-    batch_size = 1000
-    grad_fit = False
 
     table = {
         "model1":[],
@@ -84,7 +87,7 @@ if __name__=="__main__":
         prev_comps = set(main_df.loc[idx,'model2'])
         missing_comp = False
         for path in model_paths:
-            if path != model_paths[i] and path not in prev_comps:
+            if path not in prev_comps:
                 missing_comp = True
                 break
         if not missing_comp:
@@ -108,20 +111,23 @@ if __name__=="__main__":
         else:
             model1.to(DEVICE)
             with torch.no_grad():
+                loc = (model1.shapes[-1][0]//2, model1.shapes[-1][1]//2)
+                loc = None if not model1.convgc else loc
                 act_resp1, ig_resp1 = tdr.analysis.get_resps(model1,
                                                     stim,
                                                     model1_layers,
                                                     batch_size=batch_size,
+                                                    ig_spat_loc=loc,
                                                     to_numpy=True,
                                                     verbose=verbose)
             act_vecs[model_paths[i]] = act_resp1
             ig_vecs[model_paths[i]] = ig_resp1
         model1 = model1.cpu()
 
-        for j in range(len(model_paths)):
+        for j in range(i,len(model_paths)):
             idx = (main_df['model1']==model_paths[i])
             if model_paths[j] in set(main_df.loc[idx,"model2"]):
-                print("Skipping:", model_paths[j])
+                print("Skipping", model_paths[j],"due to previous record")
                 continue
             if verbose:
                 s = "Comparing: {} to {} | {} comparisons left"
@@ -142,17 +148,18 @@ if __name__=="__main__":
             else:
                 model2.to(DEVICE)
                 with torch.no_grad():
+                    loc =(model2.shapes[-1][0]//2,model2.shapes[-1][1]//2)
+                    loc = None if not model2.convgc else loc
                     act_resp2, ig_resp2 = tdr.analysis.get_resps(model2,
                                                     stim,
                                                     model2_layers,
                                                     batch_size=batch_size,
+                                                    ig_spat_loc=loc,
                                                     to_numpy=True,
                                                     verbose=verbose)
             model2 = model2.cpu()
             model1_shapes = [act_resp1[l].shape for l in model1_layers]
             model2_shapes = [act_resp2[l].shape for l in model2_layers]
-            print("m1shapes:", model1_shapes)
-            print("m2shapes:", model2_shapes)
 
             ################### Correlation
             torch.cuda.empty_cache()
@@ -171,19 +178,27 @@ if __name__=="__main__":
                         lim = window_lim
                         for x in range(s2-lim,s2+lim+1):
                             for y in range(s2-lim,s2+lim+1):
-                                resp2 = act_resp2[l2][:,:,x,y]
-                                sims = mtx_cor(resp1,resp2)
+                                resp2 = act_resp2[l2][:,:,x,y].squeeze()
+                                sims = mtx_cor(resp1,resp2,to_numpy=True)
+                                if i == j and l1==l2: # Zero the obvious
+                                    rang = range(len(sims))
+                                    sims[rang,rang] = -1
+                                sims[np.isnan(sims)] = 0
                                 temp = [sims.max(0),sims.max(1)]
                                 temp = np.concatenate(temp)
                                 sim = np.mean(temp)
                                 if best_sim is None or sim > best_sim\
-                                            or np.isnan(best_sim):
+                                                or np.isnan(best_sim):
                                     best_sim = sim
                                     best_sims = sims
                                     best_xy = (x,y)
                     else:
                         resp2 = act_resp2[l2].squeeze()
                         sims = mtx_cor(resp1,resp2)
+                        if i == j and l1==l2: # Zero the obvious
+                            rang = range(len(sims))
+                            sims[rang,rang] = -1
+                        sims[np.isnan(sims)] = 0
                         temp = [sims.max(0),sims.max(1)]
                         temp = np.concatenate(temp)
                         best_sim = np.mean(temp)
@@ -212,8 +227,6 @@ if __name__=="__main__":
             stats_string += "IG Correlations:\n"
             model1_shapes = [ig_resp1[l].shape for l in model1_layers]
             model2_shapes = [ig_resp2[l].shape for l in model2_layers]
-            print("m1shapes:", model1_shapes)
-            print("m2shapes:", model2_shapes)
             for l1,s1 in zip(model1_layers,model1_shapes):
                 if len(s1)<=2:
                     continue
@@ -230,11 +243,15 @@ if __name__=="__main__":
                         for y in range(s2-lim,s2+lim+1):
                             resp2 = ig_resp2[l2][:,:,x,y]
                             sims = mtx_cor(resp1,resp2)
+                            if i == j and l1==l2: # Zero the obvious
+                                rang = range(len(sims))
+                                sims[rang,rang] = -1
+                            sims[np.isnan(sims)] = 0
                             temp = [sims.max(0),sims.max(1)]
                             temp = np.concatenate(temp)
                             sim = np.mean(temp)
                             if best_sim is None or sim > best_sim\
-                                        or np.isnan(best_sim):
+                                                or np.isnan(best_sim):
                                 best_sim = sim
                                 best_sims = sims
                                 best_xy = (x,y)

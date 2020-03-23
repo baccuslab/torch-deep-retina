@@ -253,9 +253,10 @@ def get_response(model, stim, model_layers, batch_size=500,
         model activation/ig layers to be collected
     use_ig: bool
         indicates if integrated gradient should be used
-    cell_idx: int or tuple of ints (chan, row, col)
+    cell_idx: int or tuple of ints (chan, row, col) or (row,col)
         ganglion cell(s) of interest. if None, uses all cells. If
-        tuple, must argue chan, row, and column
+        tuple, must argue row, and col. chan defaults to None if not
+        included.
     to_numpy: bool
         if true, all responses are converted to ndarrays
     no_grad: bool
@@ -284,7 +285,9 @@ def get_response(model, stim, model_layers, batch_size=500,
     chan = None
     spat_idx = None
     if cell_idx is not None:
-        chan,row,col = cell_idx
+        chan,row,col = None,cell_idx[-2],cell_idx[-1]
+        if len(cell_idx) == 3:
+            chan = cell_idx[0]
         spat_idx = (int(row),int(col))
     model.to(DEVICE)
     if use_ig:

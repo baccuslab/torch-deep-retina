@@ -359,14 +359,33 @@ def perm_similarity(X,Y,test_X=None,test_Y=None, grad_fit=True,
     Returns:
         ccor: float
     """
+    if len(X.shape) < 2:
+        X = X[:,None]
+    if len(Y.shape) < 2:
+        Y = Y[:,None]
+    if test_X is not None and len(test_X.shape) < 2:
+        test_X = test_X[:,None]
+    if test_Y is not None and len(test_Y.shape) < 2:
+        test_Y = test_Y[:,None]
+
     if len(X.shape) > 2:
         X = X.reshape(len(X),-1)
     if len(Y.shape) > 2:
         Y = Y.reshape(len(Y),-1)
+    if test_X is not None and len(test_X.shape) > 2:
+        test_X = test_X.reshape(len(test_X),-1)
+    if test_Y is not None and len(test_Y.shape) > 2:
+        test_Y = test_Y.reshape(len(test_Y),-1)
+
     if isinstance(X,torch.Tensor):
         X = X.data.cpu().numpy()
     if isinstance(Y,torch.Tensor):
         Y = Y.data.cpu().numpy()
+    if isinstance(test_X,torch.Tensor):
+        test_X = test_X.data.cpu().numpy()
+    if isinstance(test_Y,torch.Tensor):
+        test_Y = test_Y.data.cpu().numpy()
+
     if test_X is None or test_Y is None:
         test_p = 0.1
         if verbose:
@@ -892,7 +911,7 @@ def integrated_gradient(model, X, layer='sequential.2', chans=None,
         model: PyTorch Deep Retina models
         X: Input stimuli ndarray or torch FloatTensor (T,D,H,W)
         layer: str layer name
-        chans: int or list of ints
+        chans: int or list of ints or None
             the channels of interest. if None, uses all channels
         spat_idx: tuple of ints (row, col)
             the row and column of interest. if None, the spatial
@@ -1428,6 +1447,10 @@ def mtx_cor(X, Y, batch_size=500, to_numpy=False, zscore=True):
         cor_mtx: (C,K)
             the correlation matrix
     """
+    if len(X.shape) < 2:
+        X = X[:,None]
+    if len(Y.shape) < 2:
+        Y = Y[:,None]
     if len(X.shape) > 2:
         X = X.reshape(len(X), -1)
     if len(Y.shape) > 2:
