@@ -307,7 +307,7 @@ class PermutationSimilarity:
         denom = np.linalg.norm(tX, axis=0) * np.linalg.norm(tY, axis=0)
         denom += 1e-5
         numer = np.sum(tX * tY, axis=0)
-        sim = numer / denom
+        sim = (numer / denom).squeeze()
         zeroed = len(sim)-len(sim[~np.isnan(sim)])
         if zeroed>0:
             print("num chans zeroed:", zeroed)
