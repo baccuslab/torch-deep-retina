@@ -38,6 +38,8 @@ if __name__=="__main__":
     table_checkpts = True
     batch_size = 1000
     sim_folder = "similarity_csvs" # Folder to save comparison csv to
+    store_act_mtx = False # limits memory consumption if false
+    max_mtx_storage = None # Limits mem consumption if not None
 
     if not os.path.exists(sim_folder):
         os.mkdir(sim_folder)
@@ -105,22 +107,33 @@ if __name__=="__main__":
         model1_layers = tdr.utils.get_conv_layer_names(model1)
         if verbose:
             print("Computing Model1 Responses")
+        act_resp1 = None
+        ig_resp1 = None
         if model_paths[i] in act_vecs:
             act_resp1 = act_vecs[model_paths[i]]
+        if model_paths[i] in ig_vecs:
             ig_resp1 = ig_vecs[model_paths[i]]
-        else:
-            model1.to(DEVICE)
-            with torch.no_grad():
-                loc = (model1.shapes[-1][0]//2, model1.shapes[-1][1]//2)
-                loc = None if not model1.convgc else loc
-                act_resp1, ig_resp1 = tdr.analysis.get_resps(model1,
-                                                    stim,
-                                                    model1_layers,
-                                                    batch_size=batch_size,
-                                                    ig_spat_loc=loc,
-                                                    to_numpy=True,
-                                                    verbose=verbose)
-            act_vecs[model_paths[i]] = act_resp1
+
+        calc_act = act_resp1 is None
+        calc_ig = ig_resp1 is None
+        model1.to(DEVICE)
+        with torch.no_grad():
+            loc = (model1.shapes[-1][0]//2, model1.shapes[-1][1]//2)
+            loc = None if not model1.convgc else loc
+            act, ig = tdr.analysis.get_resps(model1,
+                                             stim,
+                                             model1_layers,
+                                             act=calc_act,
+                                             ig=calc_ig,
+                                             batch_size=batch_size,
+                                             ig_spat_loc=loc,
+                                             to_numpy=True,
+                                             verbose=verbose)
+            act_resp1 = act if calc_act else act_resp1
+            ig_resp1 = ig if calc_ig else ig_resp1
+        if max_mtx_storage is not None and len(ig_vecs)<max_mtx_storage:
+            if store_act_mtx:
+                act_vecs[model_paths[i]] = act_resp1
             ig_vecs[model_paths[i]] = ig_resp1
         model1 = model1.cpu()
 
@@ -137,27 +150,35 @@ if __name__=="__main__":
             stats_string = ""
 
             torch.cuda.empty_cache()
-            if verbose:
-                print("Computing Model2 Responses")
             model2 = tdr.io.load_model(model_paths[j])
             model2.eval()
             model2_layers = tdr.utils.get_conv_layer_names(model2)
+            if verbose:
+                print("Computing Model2 Responses")
+            act_resp2 = None
+            ig_resp2 = None
             if model_paths[j] in act_vecs:
                 act_resp2 = act_vecs[model_paths[j]]
+            if model_paths[j] in ig_vecs:
                 ig_resp2 = ig_vecs[model_paths[j]]
-            else:
-                model2.to(DEVICE)
-                with torch.no_grad():
-                    loc =(model2.shapes[-1][0]//2,model2.shapes[-1][1]//2)
-                    loc = None if not model2.convgc else loc
-                    act_resp2, ig_resp2 = tdr.analysis.get_resps(model2,
-                                                    stim,
-                                                    model2_layers,
-                                                    batch_size=batch_size,
-                                                    ig_spat_loc=loc,
-                                                    to_numpy=True,
-                                                    verbose=verbose)
-                act_vecs[model_paths[j]] = act_resp2
+            calc_act = act_resp2 is None
+            calc_ig = ig_resp2 is None
+            model2.to(DEVICE)
+            with torch.no_grad():
+                loc =(model2.shapes[-1][0]//2,model2.shapes[-1][1]//2)
+                loc = None if not model2.convgc else loc
+                act, ig = tdr.analysis.get_resps(model2,
+                                                 stim,
+                                                 model2_layers,
+                                                 act=calc_act,
+                                                 ig=calc_ig,
+                                                 batch_size=batch_size,
+                                                 ig_spat_loc=loc,
+                                                 to_numpy=True,
+                                                 verbose=verbose)
+            if max_mtx_storage is None or len(ig_vecs)<=max_mtx_storage:
+                if store_act_mtx:
+                    act_vecs[model_paths[j]] = act_resp2
                 ig_vecs[model_paths[j]] = ig_resp2
             model2 = model2.cpu()
             model1_shapes = [act_resp1[l].shape for l in model1_layers]

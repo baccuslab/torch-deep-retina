@@ -895,6 +895,7 @@ def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
 def get_resps(model, stim, model_layers, batch_size=1000,
                                          to_numpy=True,
                                          ig_spat_loc=None,
+                                         act=True,ig=True,
                                          verbose=False):
     """
     Helper function to collect responses and dry code.
@@ -909,6 +910,10 @@ def get_resps(model, stim, model_layers, batch_size=1000,
         integrated gradient. If chan is omitted or None, all channels
         are used. If None, the default locations of the recordings are
         used.
+    act: bool
+        if true, returns activation matrix
+    ig: bool
+        if true, returns integrated gradient matrix
 
     Returns:
         tuple of responses, one raw and one integrated gradient.
@@ -919,14 +924,18 @@ def get_resps(model, stim, model_layers, batch_size=1000,
             vals: FloatTensor
                 the activations for the layer
     """
+    act_resp = None
+    ig_resp = None
     with torch.no_grad():
-        act_resp = tdrintr.get_response(model, stim,
+        if act:
+            act_resp = tdrintr.get_response(model, stim,
                                         model_layers,
                                         batch_size=batch_size,
                                         use_ig=False,
                                         to_numpy=to_numpy,
                                         verbose=verbose)
-        ig_resp = tdrintr.get_response(model, stim,
+        if ig:
+            ig_resp = tdrintr.get_response(model, stim,
                                         model_layers,
                                         batch_size=batch_size,
                                         use_ig=True,
