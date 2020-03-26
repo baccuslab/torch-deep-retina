@@ -1,0 +1,12 @@
+exp_id: 'BN_CNN_Stack_NoNorm'
+img_shape: [40,50,50]
+Model:
+    name: 'BN_CNN_Stack_NoNorm'
+    ksizes: (15, 11)
+    checkpoint: '/home/xhding/saved_model/BN_CNN_Stack_NoNorm/epoch_045_loss_1.48_pearson_0.5669.pth'
+Data:
+    batch_size: 5000
+Optimize:
+    trunc_intvl: 1
+    l2: 1e-3
+    l1: 1e-4

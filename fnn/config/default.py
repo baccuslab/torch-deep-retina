@@ -5,7 +5,6 @@ _C = CfgNode()
 
 _C.exp_id = 'random'
 _C.img_shape = [40,50,50]
-_C.gpu = 1
 _C.epoch = 50
 _C.save_intvl = 5
 _C.save_path = '/home/xhding/saved_model'
@@ -26,7 +25,7 @@ _C.Model.strides = (1,1)
 _C.Model.filter_mod = 'single'
 
 _C.Data = CfgNode()
-_C.Data.data_path = '/home/salamander/experiments/data/'
+_C.Data.data_path = '/home/TRAIN_DATA'
 _C.Data.batch_size = 512
 _C.Data.val_size = 30000
 

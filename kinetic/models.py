@@ -398,7 +398,8 @@ class KineticsChannelModelFilterBipolarNoNorm(nn.Module):
         self.kinetics = Kinetics_channel(chan=self.chans[0], dt=0.01)
         
         if scale_kinet:
-            self.kinet_scale = ScaleShift((self.seq_len, self.chans[0], shape[0]*shape[1]))
+            #self.kinet_scale = ScaleShift((self.seq_len, self.chans[0], shape[0]*shape[1]))
+            self.kinet_scale = ScaleShift((self.seq_len, self.chans[0], 1))
 
         modules = []
         modules.append(Reshape((-1,self.seq_len, self.chans[0], shape[0], shape[1])))
@@ -515,23 +516,7 @@ class KineticsChannelModelFilterAmacrine(nn.Module):
             fx = self.kinet_scale(fx)
         fx = self.ganglion(fx)
         return fx, [h0, h1]
-    
-class LNK(nn.Module):
-    def __init__(self, bias, dt):
-        super(LNK, self).__init__()
-        self.dt = dt
-        self.filter = Temperal_Filter(tem_len=40, spatial=0)
-        modules = []
-        modules.append(Add(bias))
-        modules.append(nn.Sigmoid())
-        self.nonlinearity = nn.Sequential(*modules)
-        self.kinetics = Kinetics(self.dt)
-        
-    def forward(self, x, hs):
-        out = self.filter(x) * self.dt
-        out = self.nonlinearity(out)
-        out, hs = self.kinetics(out, hs)
-        return out, hs
+
     
 class KineticsOnePixelChannel(nn.Module):
     def __init__(self, recur_seq_len=5, n_units=5, dt=0.01,

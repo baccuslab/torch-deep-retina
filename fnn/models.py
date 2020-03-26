@@ -320,3 +320,45 @@ class BN_CNN_Stack(nn.Module):
         out = self.amacrine(out)
         out = self.ganglion(out)
         return out
+    
+class BN_CNN_Stack_NoNorm(nn.Module):
+    def __init__(self, n_units=5, noise=.05, chans=[8,8], softplus=True, 
+                 img_shape=(40,50,50), ksizes=(15,11)):
+        super(BN_CNN_Stack_NoNorm,self).__init__()
+        self.n_units = n_units
+        self.noise = noise
+        self.chans = chans
+        self.softplus = softplus
+        self.image_shape = img_shape
+        self.ksizes = ksizes
+        self.img_shape = img_shape
+        
+        shape = self.image_shape[1:]
+        
+        modules = []
+        modules.append(LinearStackedConv2d(self.img_shape[0], self.chans[0],
+                                           kernel_size=self.ksizes[0], conv_bias=False))
+        shape = update_shape(shape, self.ksizes[0])
+        modules.append(GaussianNoise(std=self.noise))
+        modules.append(nn.ReLU())
+        self.bipolar = nn.Sequential(*modules)
+        
+        modules = []
+        modules.append(LinearStackedConv2d(self.chans[0], self.chans[1],
+                                           kernel_size=self.ksizes[1], conv_bias=False))
+        shape = update_shape(shape, self.ksizes[1])
+        modules.append(Flatten())
+        modules.append(GaussianNoise(std=self.noise))
+        modules.append(nn.ReLU())
+        self.amacrine = nn.Sequential(*modules)
+        
+        modules = []
+        modules.append(nn.Linear(self.chans[1]*shape[0]*shape[1], self.n_units, bias=False))
+        modules.append(nn.Softplus())
+        self.ganglion = nn.Sequential(*modules)
+
+    def forward(self,x):
+        out = self.bipolar(x)
+        out = self.amacrine(out)
+        out = self.ganglion(out)
+        return out

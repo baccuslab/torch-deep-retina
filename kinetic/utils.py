@@ -13,6 +13,15 @@ def get_hs(model, batch_size, device):
         hs[1].append(torch.zeros(batch_size, *model.h_shapes[1]).to(device))
     return hs
 
+def get_hs_2(model, batch_size, device):
+    hs = []
+    hs.append(torch.zeros(batch_size, *model.h_shapes[0]).to(device))
+    hs[0][:,3] = 100.
+    hs.append(deque([],maxlen=model.seq_len))
+    for i in range(model.seq_len):
+        hs[1].append(torch.zeros(batch_size, *model.h_shapes[1]).to(device))
+    return hs
+
 def select_model(cfg, device):
     
     if cfg.Model.name == 'KineticsChannelModel':

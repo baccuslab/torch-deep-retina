@@ -8,4 +8,6 @@ Model:
     scale_kinet: False
     n_units: 1
 Data:
-    trunc_int: 500
+    trunc_int: 8
+Optimize:
+    lr: 5e-2

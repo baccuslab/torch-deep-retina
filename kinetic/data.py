@@ -26,6 +26,22 @@ class BatchRnnSampler(Sampler):
     def __len__(self):
         return (self.length // self.batch_size - self.seq_len + 1) * self.seq_len + self.seq_len -1
     
+class BatchRnnOneTimeSampler(Sampler):
+    
+    def __init__(self, length, batch_size):
+        self.length = length
+        self.batch_size = batch_size
+
+    def __iter__(self):
+        batch_idx = 0
+        while batch_idx < self.length // self.batch_size:
+            batch = [batch_idx + n * (self.length // self.batch_size) for n in range(self.batch_size)]
+            yield batch
+            batch_idx += 1
+
+    def __len__(self):
+        return self.length // self.batch_size
+    
 class TrainDataset(Dataset):
     
     def __init__(self, cfg):

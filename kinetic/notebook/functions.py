@@ -209,44 +209,6 @@ def contrast_adaptation_kinetic_occupancy_natural(model, device, c0, c1, duratio
 
     return Rs, As, I1s, I2s, responses, targets
 
-def contrast_adaptation_kinetic_occupancy_natural_reset(model, device, c0, c1, duration=50, delay=50, nsamples=140, nrepeats=10, filt_depth=40, stimuli=None, reset=600):
-    """Step change in contrast"""
-
-    
-    responses = []
-    Rs = []
-    As = []
-    I1s = []
-    I2s = []
-    with torch.no_grad():
-        resps = []
-        targs = []
-        R = []
-        A = []
-        I1 = []
-        I2 = []
-        for i in range(len(stimuli)):
-            if i % reset == 0:
-                hs = get_hs(model, 1, device)
-            resp, hs = model(stimuli[i:i+1][0].to(device), hs)
-            targs.append(stimuli[i:i+1][1])
-            resps.append(resp)
-            R.append(hs[0][0,0].mean().cpu().detach().numpy())
-            A.append(hs[0][0,1].mean().cpu().detach().numpy())
-            I1.append(hs[0][0,2].mean().cpu().detach().numpy())
-            I2.append(hs[0][0,3].mean().cpu().detach().numpy())
-        resp = torch.cat(resps, dim=0)
-
-        responses = resp.cpu().detach().numpy()
-        targets = torch.cat(targs, dim=0).detach().numpy()
-        
-    Rs = np.asarray(R)
-    As = np.asarray(A)
-    I1s = np.asarray(I1)
-    I2s = np.asarray(I2)
-
-    return Rs, As, I1s, I2s, responses, targets
-
 def inspect_rnn(model, curr_hs, data, device=torch.device('cuda:1')):
     hs = []
     hs.append(curr_hs[0].detach())
@@ -298,83 +260,6 @@ def stimulus_importance_rnn(model, X, gc_idx=None, alpha_steps=5,
     intg_grad = intg_grad.data.cpu().numpy()
     return intg_grad
 
-def contrast_adaptation_kinetic_center_deviation(model, device, c0, c1, duration=50, delay=50, nsamples=140, nrepeats=10, filt_depth=40):
-    """Step change in contrast"""
-
-    # the contrast envelope
-    envelope = stim.flash(duration, delay, nsamples, intensity=(c1 - c0))
-    envelope += c0
-
-    Rs = []
-    with torch.no_grad():
-        for _ in range(nrepeats):
-            x = np.random.randn(*envelope.shape) * envelope + 1
-            x = (x - x.mean())/x.std()
-            x = torch.from_numpy(stim.concat(x, nh=filt_depth)).to(device)
-  
-            hs = get_hs(model, 1, device)
-            R = np.zeros((8, 1296))
-            for i in range(x.shape[0]):
-                resp, hs = model(x[i:i+1], hs)
-                R += np.abs((hs[0][0,0] - hs[0][0,0][:,648][:,None]).cpu().detach().numpy())
-
-            Rs.append(R)
-
-    Rs = np.asarray(Rs).mean(axis=0)
-
-    return Rs
-
-def contrast_adaptation_kinetic_center_deviation_response(model, device, c0, c1, duration=50, delay=50, nsamples=140, nrepeats=10, filt_depth=40):
-    """Step change in contrast"""
-    """Step change in contrast"""
-
-    # the contrast envelope
-    envelope = stim.flash(duration, delay, nsamples, intensity=(c1 - c0))
-    envelope += c0
-
-    # generate a bunch of responses to random noise with the given contrast envelope
-    responses = []
-    Rs = []
-    As = []
-    I1s = []
-    I2s = []
-    with torch.no_grad():
-        for _ in range(nrepeats):
-            x = np.random.randn(*envelope.shape) * envelope + 1
-            x = (x - x.mean())/x.std()
-            x = torch.from_numpy(stim.concat(x, nh=filt_depth)).to(device)
-  
-            hs = get_hs(model, 1, device)
-            resps = []
-            R = []
-            A = []
-            I1 = []
-            I2 = []
-            for i in range(x.shape[0]):
-                resp, hs = model(x[i:i+1], hs)
-                resps.append(resp)
-                R.append((hs[0][0,0][4,640]-hs[0][0,0][4,648]).cpu().detach().numpy())
-                A.append((hs[0][0,0][4,640]-hs[0][0,0][4,648]).cpu().detach().numpy())
-                I1.append((hs[0][0,0][4,640]-hs[0][0,0][4,648]).cpu().detach().numpy())
-                I2.append((hs[0][0,0][4,640]-hs[0][0,0][4,648]).cpu().detach().numpy())
-            resp = torch.cat(resps, dim=0)
-
-            responses.append(resp.cpu().detach().numpy())
-            Rs.append(R)
-            As.append(A)
-            I1s.append(I1)
-            I2s.append(I2)
-            
-    responses = np.asarray(responses)
-    Rs = np.asarray(Rs).mean(axis=0)
-    As = np.asarray(As).mean(axis=0)
-    I1s = np.asarray(I1s).mean(axis=0)
-    I2s = np.asarray(I2s).mean(axis=0)
-    figs = viz.response1D(envelope[40:, 0, 0], responses.mean(axis=0))
-    (fig, (ax0,ax1)) = figs
-
-    return Rs, As, I1s, I2s
-    
 
 def contrast_adaptation_kinetic_where_occupancy(model, device, c0, c1, where, duration=50, delay=50, nsamples=140, nrepeats=10, filt_depth=40):
     """Step change in contrast"""
@@ -461,3 +346,101 @@ def contrast_adaptation_kinetic_average(model, device, c0, c1, duration=50, dela
     (fig, (ax0,ax1)) = figs
 
     return averages.mean(axis=0)
+
+def contrast_adaptation_kinetic_occupancy_onepixel(model, device, c0, c1, duration=50, delay=50, nsamples=140, nrepeats=10, filt_depth=40):
+    """Step change in contrast"""
+
+    # the contrast envelope
+    envelope = stim.flash(duration, delay, nsamples, intensity=(c1 - c0)).squeeze()
+    envelope += c0
+
+    # generate a bunch of responses to random noise with the given contrast envelope
+    responses = []
+    Rs = []
+    As = []
+    I1s = []
+    I2s = []
+    with torch.no_grad():
+        for _ in range(nrepeats):
+            x = np.random.randn(*envelope.shape) * envelope + 1
+            x = (x - x.mean())/x.std()
+            x = torch.from_numpy(stim.rolling_window(x, filt_depth, time_axis=0)).to(device)
+            hs = get_hs(model, 1, device)
+            resps = []
+            R = []
+            A = []
+            I1 = []
+            I2 = []
+            for i in range(x.shape[0]):
+                resp, hs = model(x[i:i+1], hs)
+                resps.append(resp)
+                R.append(hs[0][0,0].mean().cpu().detach().numpy())
+                A.append(hs[0][0,1].mean().cpu().detach().numpy())
+                I1.append(hs[0][0,2].mean().cpu().detach().numpy())
+                I2.append(hs[0][0,3].mean().cpu().detach().numpy())
+            resp = torch.cat(resps, dim=0)
+
+            responses.append(resp.cpu().detach().numpy())
+            Rs.append(R)
+            As.append(A)
+            I1s.append(I1)
+            I2s.append(I2)
+            
+    responses = np.asarray(responses)
+    Rs = np.asarray(Rs).mean(axis=0)
+    As = np.asarray(As).mean(axis=0)
+    I1s = np.asarray(I1s).mean(axis=0)
+    I2s = np.asarray(I2s).mean(axis=0)
+    figs = viz.response1D(envelope[40:, 0, 0], responses.mean(axis=0))
+    (fig, (ax0,ax1)) = figs
+
+    return Rs, As, I1s, I2s
+
+def contrast_adaptation_kinetic_occupancy_2(model, device, c0, c1, duration=50, delay=50, nsamples=140, nrepeats=10, filt_depth=40):
+    """Step change in contrast"""
+
+    # the contrast envelope
+    envelope = stim.flash(duration, delay, nsamples, intensity=(c1 - c0))
+    envelope += c0
+
+    # generate a bunch of responses to random noise with the given contrast envelope
+    responses = []
+    Rs = []
+    As = []
+    I1s = []
+    I2s = []
+    with torch.no_grad():
+        for _ in range(nrepeats):
+            x = np.random.randn(*envelope.shape) * envelope + 1
+            x = (x - x.mean())/x.std()
+            x = torch.from_numpy(stim.concat(x, nh=filt_depth)).to(device)
+            hs = get_hs_2(model, 1, device)
+            resps = []
+            R = []
+            A = []
+            I1 = []
+            I2 = []
+            for i in range(x.shape[0]):
+                resp, hs = model(x[i:i+1], hs)
+                resps.append(resp)
+                R.append(hs[0][0,0].mean().cpu().detach().numpy())
+                A.append(hs[0][0,1].mean().cpu().detach().numpy())
+                I1.append(hs[0][0,2].mean().cpu().detach().numpy())
+                I2.append(hs[0][0,3].mean().cpu().detach().numpy())
+            resp = torch.cat(resps, dim=0)
+
+            responses.append(resp.cpu().detach().numpy())
+            Rs.append(R)
+            As.append(A)
+            I1s.append(I1)
+            I2s.append(I2)
+            
+    responses = np.asarray(responses)
+    Rs = np.asarray(Rs).mean(axis=0)
+    As = np.asarray(As).mean(axis=0)
+    I1s = np.asarray(I1s).mean(axis=0)
+    I2s = np.asarray(I2s).mean(axis=0)
+    figs = viz.response1D(envelope[40:, 0, 0], responses.mean(axis=0))
+    (fig, (ax0,ax1)) = figs
+
+    return Rs, As, I1s, I2s

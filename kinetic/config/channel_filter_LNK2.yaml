@@ -1,0 +1,7 @@
+exp_id: 'channel_filter_LNK_NoNorm_UniScale'
+Model:
+    name: 'KineticsChannelModelFilterBipolarNoNorm'
+    checkpoint: ''
+    noise: 0.
+    linear_bias: False
+    scale_kinet: True

@@ -64,18 +64,30 @@ def white_noise(c0=0.05, c1=0.35, tot_len=300000, duration=20, dt=0.001):
     x = ((np.random.randn(*envelope.shape) * envelope + 1) * 3.).astype('float32')
     return x
     
-def organize(stim, resp, history, val_size=30000):
+def organize(stim, resp, history, val_size=30000, std_int=10, dt=0.01):
     stats = {}
     stats['mean'] = stim.mean()
     stats['std'] = stim.std()+1e-7
     stim = (stim-stats['mean'])/stats['std']
 
-    stim_reshaped = tdrstimuli.rolling_window(stim, history, time_axis=0)    
+    stim_reshaped = tdrstimuli.rolling_window(stim, history, time_axis=0)
+    stim_numpy = stim_reshaped[-resp.shape[0]:]
     stim_reshaped = torch.from_numpy(stim_reshaped[-resp.shape[0]:])
     resp = torch.from_numpy(resp)
     train_dataset = TensorDataset(stim_reshaped[:-val_size], resp[:-val_size][:,None])
     val_dataset = TensorDataset(stim_reshaped[-val_size:], resp[-val_size:][:,None])
-    return train_dataset, val_dataset, stats
+    
+    std_int_num = int(std_int / dt)
+    std_list = []
+    for i in range(stim_numpy[:-val_size].shape[0]//std_int_num):
+        current_std = np.std(stim_numpy[:-val_size][i*std_int_num:(i+1)*std_int_num])
+        std_list.append(current_std)
+    std_list = np.repeat(np.array(std_list), std_int_num)
+    if stim_numpy[:-val_size].shape[0] % std_int_num > 0:
+        std_list_tail = np.full((stim_numpy[:-val_size].shape[0] % std_int_num,), std_list[-1])
+        std_list = np.concatenate((std_list, std_list_tail))
+    
+    return train_dataset, val_dataset, stats, std_list
 
 def generate(data_path, stimuli, dt):
     

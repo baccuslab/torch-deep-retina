@@ -3,6 +3,7 @@ import argparse
 import torch
 import torch.nn as nn
 from torch.utils.data.dataloader import DataLoader
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 import numpy as np
 from tqdm import tqdm
 from collections import deque
@@ -19,6 +20,15 @@ parser.add_argument('--hyper', type=str, required=True)
 parser.add_argument('--dt', type=float, required=True)
 parser.add_argument('--stimuli', type=str, required=True)
 opt = parser.parse_args()
+
+def weighted_loss(out, y, loss_fn, indices, std_list):
+    
+    loss = 0
+    assert len(indices) == out.shape[0]
+    for i in range(len(indices)):
+        loss += loss_fn(out[i], y[i]) / std_list[indices[i]]
+    loss = loss / len(indices)
+    return loss
 
 def train(cfg):
     
@@ -44,15 +54,15 @@ def train(cfg):
         
     model.train()
     
-    loss_fn = nn.PoissonNLLLoss(log_input=False).to(device)
+    loss_fn = nn.MSELoss().to(device)
     
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.Optimize.lr, 
                                  weight_decay=cfg.Optimize.l2)
+    scheduler = ReduceLROnPlateau(optimizer, 'max', factor=0.2, patience=5)
     
     stim, resp = generate('/home/xhding/workspaces/lnkmodelcell10.mat', opt.stimuli, dt)
-    train_dataset, val_dataset, _ = organize(stim, resp[:,1], cfg.img_shape[0])
-    batch_sampler = BatchRnnSampler(length=len(train_dataset), batch_size=cfg.Data.batch_size,
-                                    seq_len=cfg.Data.trunc_int)
+    train_dataset, val_dataset, _, std_list = organize(stim, resp[:,1], cfg.img_shape[0], dt=dt)
+    batch_sampler = BatchRnnOneTimeSampler(length=len(train_dataset), batch_size=cfg.Data.batch_size)
     train_data = DataLoader(dataset=train_dataset, batch_sampler=batch_sampler)
     validation_data = DataLoader(dataset=val_dataset)
     
@@ -60,27 +70,22 @@ def train(cfg):
         epoch_loss = 0
         loss = 0
         hs = get_hs(model, cfg.Data.batch_size, device)
-        for idx,(x,y) in enumerate(tqdm(train_data)):
+        for idx,((x,y),indices) in enumerate(zip(tqdm(train_data), batch_sampler)):
             x = x.to(device)
             y = y.double().to(device)
             out, hs = model(x, hs)
-            loss += loss_fn(out.double(), y)
-            if idx % cfg.Data.trunc_int == 0:
-                h_0 = []
-                h_0.append(hs[0].detach())
-                h_0.append(deque([h.detach() for h in hs[1]], maxlen=model.seq_len))
+            loss += weighted_loss(out.double(), y, loss_fn, indices, std_list)
             if idx % cfg.Data.trunc_int == (cfg.Data.trunc_int - 1):
                 optimizer.zero_grad()
-                loss.backward()
+                loss.backward(retain_graph=True)
                 optimizer.step()
                 epoch_loss += loss.detach().cpu().numpy()
                 loss = 0
-                hs[0] = h_0[0].detach()
-                hs[1] = deque([h.detach() for h in h_0[1]], maxlen=model.seq_len)
                 
         epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size
         
         pearson = pearsonr_eval(model, validation_data, cfg.Model.n_units, len(validation_data), device)
+        scheduler.step(pearson)
         
         print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}'.format(epoch, epoch_loss, pearson))
         
