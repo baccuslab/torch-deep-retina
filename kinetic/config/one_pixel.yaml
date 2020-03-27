@@ -1,5 +1,6 @@
 exp_id: 'one_pixel_channel'
 img_shape: (40,)
+epoch: 500
 Model:
     name: 'KineticsOnePixelChannel'
     checkpoint: ''
@@ -9,5 +10,6 @@ Model:
     n_units: 1
 Data:
     trunc_int: 8
+    val_size: 3000
 Optimize:
     lr: 5e-2

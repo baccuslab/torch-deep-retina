@@ -4,4 +4,4 @@ Model:
     checkpoint: ''
     noise: 0.
     linear_bias: False
-    scale_kinet: False
+    scale_kinet: True

@@ -63,6 +63,14 @@ def white_noise(c0=0.05, c1=0.35, tot_len=300000, duration=20, dt=0.001):
     envelope = np.repeat(envelope, n_repeat)
     x = ((np.random.randn(*envelope.shape) * envelope + 1) * 3.).astype('float32')
     return x
+
+def LNK_stim(data, dt):
+    
+    stim = data['stim'][0]
+    if dt == 0.001:
+        return stim
+    if dt == 0.01:
+        return signal.resample(stim, stim.shape[0]//10)
     
 def organize(stim, resp, history, val_size=30000, std_int=10, dt=0.01):
     stats = {}
@@ -98,7 +106,7 @@ def generate(data_path, stimuli, dt):
     if stimuli == 'white_noise':
         stim = white_noise(dt=dt)
     if stimuli == 'LNK_stim':
-        stim = data['stim'][0]
+        stim = LNK_stim(data, dt)
     
     out = LNK(stim, data, dt)
     

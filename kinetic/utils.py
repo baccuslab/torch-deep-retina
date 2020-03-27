@@ -97,8 +97,9 @@ def LinearStack(conv_weights):
 
 def OnePixelModel(cfg, state_dict, dt, device):
     
-    model = KineticsOnePixelChannel(recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, dt=dt,
-                                    bias=cfg.Model.bias, linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
+    model = KineticsOnePixelChannel(recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, dt=dt, 
+                                    scale_kinet=cfg.Model.scale_kinet, bias=cfg.Model.bias, 
+                                    linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
                                     softplus=cfg.Model.softplus, img_shape=cfg.img_shape).to(device)
     
     conv_weights = []
@@ -112,6 +113,10 @@ def OnePixelModel(cfg, state_dict, dt, device):
     model.kinetics.ka.data = state_dict['kinetics.ka'].to(device)
     model.kinetics.kfi.data = state_dict['kinetics.kfi'].to(device)
     model.kinetics.kfr.data = state_dict['kinetics.kfr'].to(device)
+    
+    if cfg.Model.scale_kinet:
+        model.kinet_scale.scale_param.data = state_dict['kinet_scale.scale_param'].to(device)
+        model.kinet_scale.shift_param.data = state_dict['kinet_scale.shift_param'].to(device)
     
     model.amacrine_filter.filter.data = state_dict['amacrine.1.filter'].to(device).squeeze(dim=-1)
     

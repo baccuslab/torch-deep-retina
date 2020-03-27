@@ -61,7 +61,7 @@ def train(cfg):
     scheduler = ReduceLROnPlateau(optimizer, 'max', factor=0.2, patience=5)
     
     stim, resp = generate('/home/xhding/workspaces/lnkmodelcell10.mat', opt.stimuli, dt)
-    train_dataset, val_dataset, _, std_list = organize(stim, resp[:,1], cfg.img_shape[0], dt=dt)
+    train_dataset, val_dataset, _, std_list = organize(stim, resp[:,1], cfg.img_shape[0], val_size=cfg.Data.val_size, dt=dt)
     batch_sampler = BatchRnnOneTimeSampler(length=len(train_dataset), batch_size=cfg.Data.batch_size)
     train_data = DataLoader(dataset=train_dataset, batch_sampler=batch_sampler)
     validation_data = DataLoader(dataset=val_dataset)

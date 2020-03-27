@@ -519,7 +519,7 @@ class KineticsChannelModelFilterAmacrine(nn.Module):
 
     
 class KineticsOnePixelChannel(nn.Module):
-    def __init__(self, recur_seq_len=5, n_units=5, dt=0.01,
+    def __init__(self, recur_seq_len=5, n_units=5, dt=0.01, scale_kinet=False,
                  bias=True, linear_bias=False, chans=[8,8], softplus=True, img_shape=(40,)):
         super(KineticsOnePixelChannel, self).__init__()
         
@@ -532,11 +532,15 @@ class KineticsOnePixelChannel(nn.Module):
         self.dt = dt
         self.seq_len = recur_seq_len
         self.h_shapes = []
+        self.scale_kinet = scale_kinet
 
         self.bipolar_weight = nn.Parameter(torch.rand(self.chans[0], self.img_shape[0]))
         self.bipolar_bias = nn.Parameter(torch.rand(self.chans[0]))
 
         self.kinetics = Kinetics_channel(chan=self.chans[0], dt=self.dt)
+        
+        if scale_kinet:
+            self.kinet_scale = ScaleShift((self.seq_len, self.chans[0], 1))
 
         self.amacrine_filter = Temperal_Filter(self.seq_len, 2)
         self.amacrine_weight = nn.Parameter(torch.rand(self.chans[1], self.chans[0]))
@@ -564,6 +568,8 @@ class KineticsOnePixelChannel(nn.Module):
         hs[1].append(fx)
         h1 = hs[1]
         fx = torch.stack(list(h1), dim=1) #(B,D,C,1)
+        if self.scale_kinet:
+            fx = self.kinet_scale(fx)
         fx = self.amacrine_filter(fx).squeeze(-1) #(B,C)
         fx = (self.amacrine_weight * fx[:,None]).sum(dim=-1) + self.amacrine_bias
         fx = F.relu(fx)
