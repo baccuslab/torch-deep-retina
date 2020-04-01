@@ -180,6 +180,7 @@ def test_model(model, hyps, verbose=False):
         loss = lossfxn(response, torch.FloatTensor(data.y)).item()
     resp = response.data.numpy()
     pearson = scipy.stats.pearsonr
+    rec_intrs=False,
     cors = [pearson(resp[:,i], data.y[:,i])[0] for i in\
                                     range(resp.shape[1])]
     cor = np.mean(cors)
@@ -734,10 +735,9 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
         table['pruned_chans'].append(pruned_chans) # Pruned chan count
         table['n_dropped_chans'].append(n_dropped_chans)
     # Figs
-    if make_figs:
-        if verbose:
-            print("Making figures")
-        get_analysis_figs(folder, model, metrics, verbose=verbose)
+    if verbose:
+        print("Making figures")
+    get_analysis_figs(folder, model, metrics, ret_phenom=make_figs, verbose=verbose)
     # GC Testing
     gc_loss, gc_cor = test_model(model, hyps, verbose=verbose)
     table['test_acc'] = [gc_cor]
@@ -779,6 +779,7 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
         df['amacrine_intr_cor'] = None
         df['horizontal_intr_cor'] = None
         df['intr_cor'] = None
+    intr_df['intr_stim'] = intrnrn_stim 
     intr_df['save_folder'] = folder
 
     if make_model_rfs:
@@ -818,6 +819,7 @@ def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
                                                   save_dfs=True,
                                                   slide_steps=0,
                                                   intrnrn_stim='boxes',
+                                                  rec_intrs=True,
                                                   verbose=True):
     """
     Evaluates model on test set, calculates interneuron correlations,
@@ -842,8 +844,12 @@ def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
     intrnrn_stim - str {'boxes', 'lines', 'all', 'none', or None}
         determines the stimulus that should be used for the interneuron
         correlations, if the correlations should be calculated at all
+    rec_intrs: bool
+        if true will record the best interneuron correlations per
+        channel in one large csv
     """
     model_folders = tdrio.get_model_folders(main_folder)
+    # Model data must be first here
     csvs = ['model_data.csv', 'intr_data.csv']
     dfs = dict()
     save_folders = dict()
@@ -871,25 +877,27 @@ def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
                                         verbose=verbose)
         for i,csv in enumerate(csvs):
             if save_folder not in save_folders[csv]:
-                if 'empty' in dfs[csv]:
-                    dfs[csv] = anal_dfs[i]
-                else:
-                    dfs[csv] = dfs[csv].append(anal_dfs[i],sort=True)
+                if i==0 or rec_intrs:
+                    if 'empty' in dfs[csv]:
+                        dfs[csv] = anal_dfs[i]
+                    else:
+                        dfs[csv] = dfs[csv].append(anal_dfs[i],sort=True)
 
         if save_dfs:
             for i,csv in enumerate(csvs):
-                path = os.path.join(main_folder,csv)
-                if i==1 and os.path.exists(path):
-                    temp = pd.read_csv(path,sep="!",nrows=10)
-                    dfs[csv][temp.columns].to_csv(path, sep="!",
-                                                index=False,
-                                                header=False,
-                                                mode='a')
-                    dfs[csv] = dfs[csv].iloc[:0]
-                else:
-                    dfs[csv].to_csv(path, sep="!", index=False,
-                                                 header=True,
-                                                 mode='w')
+                if i == 0 or rec_intrs:
+                    path = os.path.join(main_folder,csv)
+                    if i==1 and os.path.exists(path):
+                        temp = pd.read_csv(path,sep="!",nrows=10)
+                        dfs[csv][temp.columns].to_csv(path, sep="!",
+                                                    index=False,
+                                                    header=False,
+                                                    mode='a')
+                        dfs[csv] = dfs[csv].iloc[:0]
+                    else:
+                        dfs[csv].to_csv(path, sep="!", index=False,
+                                                     header=True,
+                                                     mode='w')
     return dfs
 
 def get_resps(model, stim, model_layers, batch_size=1000,
