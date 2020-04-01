@@ -57,6 +57,8 @@ The hyperparams.json should have a list of all the desired user setting for the 
     * if string, "all" is only option which collects all cell recordings from the dataset. Otherwise, you can argue only the specific cells you would like to train with. See `datas.py` for more details.
 * `stim_type`: str
     * the name of the h5 file (without the `.h5` extension) contained within the dataset folder
+* `shift_labels`: bool
+    * if true, the training labels are grouped and shifted by a random amounts within the group. This acts as a random control.
 * `lossfxn`: str
     * The name of the loss function that should be used for training the model. Currently options are "PoissonNLLLoss" and "MSELoss"
 * `log_poisson`: bool
