@@ -762,9 +762,8 @@ def get_model_and_distr(hyps, train_data):
     model = model.to(DEVICE)
     batch_size = hyps['batch_size']
     seq_len = 1
-    shift_labels = False if 'shift_labels' not in hyps else\
-                                        hyps['shift_labels']
-    zscorey = False if 'zscorey' not in hyps else hyps['zscorey']
+    shift_labels = utils.try_key(hyps,'shift_labels',False)
+    zscorey = utils.try_key(hyps,'zscorey',False)
     cross_val_idx = hyps['cross_val_idx']
     n_cv_folds = hyps['n_cv_folds']
     rand_sample = utils.try_key(hyps,"rand_sample",None)
