@@ -43,10 +43,11 @@ if __name__ == "__main__":
     for grand_folder in grand_folders:
         print("Analyzing", grand_folder)
         dfs = analysis.analysis_pipeline(grand_folder,
-                                      make_figs=True,
-                                      make_model_rfs=True,
+                                      make_figs=False,
+                                      make_model_rfs=False,
                                       slide_steps=0,
-                                      intrnrn_stim='all',
+                                      intrnrn_stim='boxes',
                                       save_dfs=True,
+                                      rec_intrs=False, #If false, cors are still calculated, details just aren't recorded
                                       verbose=True)
 
