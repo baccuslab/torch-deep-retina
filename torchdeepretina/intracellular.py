@@ -712,15 +712,15 @@ def get_cor_generalization(model, stim_dict, mem_pot_dict,
                 for l,layer in enumerate(layers):
                     if verbose:
                         name = cell_file.split("/")[-1]
-                        s = "Evaluating file:{}, stim:{}, idx:{},\
-                                                         layer:{}"
+                        s = "Evaluating file:{}, stim:{}, idx:{}, "
+                        s += "layer:{}"
                         print(s.format(name,stim_type,cell_idx,layer))
                     resp = responses[stim_type][layer]
                     cor_map = correlation_map(pots[cell_idx],resp)
                     for chan in range(len(cor_map)):
                         idx = np.argmax(cor_map[chan].ravel())
                         r = cor_map[chan].ravel()[idx]
-                        idx = np.unravel_idx(idx, cor_map[chan].shape)
+                        idx = np.unravel_index(idx, cor_map[chan].shape)
                         row, col = idx
                         table['cell_file'].append(cell_file)
                         table['cell_idx'].append(cell_idx)
