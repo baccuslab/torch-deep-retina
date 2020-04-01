@@ -134,6 +134,21 @@ class TDRModel(nn.Module):
             except:
                 pass
 
+    def tile_output(self,state):
+        """
+        Sets all GrabUnits modules to the argued grab mode. This means
+        if the argued state is False, the GrabUnits will isolate the
+        desired units, if True, the GrabUnits will perform the identity
+        operation.
+
+        state: bool
+            if true, the model output will be tiled. if false, any
+            GrabUnits modules will perform as expected.
+        """
+        for _,modu in self.named_modules():
+            if isinstance(modu,GrabUnits):
+                modu.grab = not state
+
 class BNCNN(TDRModel):
     """
     The batchnorm model from Deep Learning Reveals ... 
@@ -396,7 +411,7 @@ class LinearStackedBNCNN(TDRModel):
         """
         for p in self.parameters():
             p.requires_grad = not deactiv
-
+    
     def tiled_forward(self,x):
         """
         Removes the grab-units layer, providing the full convolutional
@@ -407,7 +422,7 @@ class LinearStackedBNCNN(TDRModel):
         fx = self.sequential[:-3](x) # Remove GrabUnits layer
         bnorm = self.sequential[-2]
         # Perform 2d batchnorm using 1d parameters from training
-        fx =torch.nn.functional.batch_norm(fx,bnorm.running_mean.data,
+        fx = torch.nn.functional.batch_norm(fx,bnorm.running_mean.data,
                                             bnorm.running_var.data,
                                             weight=bnorm.scale.abs(),
                                             bias=bnorm.shift, 
