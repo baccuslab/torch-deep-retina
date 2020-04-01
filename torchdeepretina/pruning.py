@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import torchdeepretina.utils as tdrutils
-from torchdeepretina.custom_modules import LinearStackedConv2d
+from torchdeepretina.custom_modules import LinearStackedConv2d,AbsBatchNorm2d, AbsBatchNorm1d
 
 if torch.cuda.is_available():
     DEVICE = torch.device('cuda:0')
@@ -38,6 +38,7 @@ def zero_chans(model, chan_dict, zero_bias=True):
                                    torch.zeros(*shape[1:]).to(DEVICE)
                 if zero_bias and hasattr(modu, 'bias'):
                     model.sequential[idx].bias.data[chan] = 0
+    return model
 
 def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
                                                 prev_state_dict,
@@ -180,3 +181,118 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
                                 "intg_idx":intg_idx,
                                 "prev_acc":prev_acc,
                                 "prev_lr":prev_lr}
+
+def reduce_model(model, zero_dict):
+    """
+    This function removes the unused channels and disperses the bias
+    into the appropriate biases if zero_bias is false. Also changes
+    the zero_dict to reflect the new model architecture.
+
+    model: torch Module
+    zero_dict: dict
+        keys: str
+            layer names
+        vals: set of ints
+            the channels that have been pruned
+    zero_bias: bool
+        if true, convolutional biases are zeroed
+    """
+    n_pruned = np.sum([len(zero_dict[k]) for k in zero_dict.keys()])
+    if n_pruned == 0:
+        return model
+    was_cuda = False
+    if next(model.parameters()).is_cuda:
+        was_cuda = True
+    model = model.cpu()
+    model = tdrutils.stacked2conv(model)
+    conv_layers = tdrutils.get_conv_layer_names(model)
+    for layer in conv_layers:
+        if layer not in zero_dict: zero_dict[layer] = set()
+    bn_types = {AbsBatchNorm2d, AbsBatchNorm1d,
+                    torch.nn.BatchNorm2d, torch.nn.BatchNorm1d}
+    bn_layers = tdrutils.get_layer_names(model, bn_types)
+    convs = [tdrutils.get_module_by_name(model,c) for c in conv_layers]
+    for conv in convs:
+        if conv.bias is None:
+            zeros = torch.zeros(conv.weight.shape[0])
+            conv.bias = nn.Parameter(zeros)
+    bnorms = [tdrutils.get_module_by_name(model,c) for c in bn_layers]
+    for i in range(len(conv_layers)):
+        conv = convs[i]
+        bnorm = bnorms[i]
+        # Currently only support for 2d batchnorm
+        bnorm2d = isinstance(bnorm,AbsBatchNorm2d)
+        bnorm2d = bnorm2d or isinstance(bnorm, torch.nn.BatchNorm2d)
+        assert (i == len(conv_layers)-1) or bnorm2d
+        absbn = isinstance(bnorm, AbsBatchNorm2d)
+        absbn = absbn or isinstance(bnorm, AbsBatchNorm1d)
+
+        old_shape = conv.weight.shape
+        old_weight = conv.weight.data
+        old_bias = conv.bias.data
+        if absbn:
+            old_scale = bnorm.scale.data
+            old_shift = bnorm.shift.data
+            if bnorm.abs_bias: old_shift = old_shift.abs()
+        else:
+            old_scale = bnorm.weight.data
+            old_shift = bnorm.bias.data
+        old_mean = bnorm.running_mean.data
+        old_var = bnorm.running_var.data
+
+        in_chans = old_shape[1] # Only applies in zeroth layer
+        keep_idxs = range(old_shape[1])
+        if i > 0:
+            in_chans = out_chans
+            func = lambda x: x not in zero_dict[conv_layers[i-1]]
+            keep_idxs = list(filter(func, range(old_shape[1])))
+
+        out_chans = old_shape[0]-len(zero_dict[conv_layers[i]])
+
+        new_shape = (out_chans,in_chans,*old_shape[2:])
+        new_weight = torch.zeros(new_shape)
+        new_bias = torch.zeros(new_shape[0])
+        new_scale = torch.zeros(new_shape[0])
+        new_shift = torch.zeros(new_shape[0])
+        new_mean = torch.zeros(new_shape[0])
+        new_var = torch.zeros(new_shape[0])
+        new_j = 0
+        for j in range(old_shape[0]):
+            if j not in zero_dict[conv_layers[i]]:
+                new_weight[new_j] = old_weight[j,keep_idxs]
+                new_bias[new_j] = old_bias[j]
+                new_scale[new_j] = old_scale[j]
+                new_shift[new_j] = old_shift[j]
+                new_mean[new_j] = old_mean[j]
+                new_var[new_j] = old_var[j]
+                new_j+=1
+            elif i < len(conv_layers)-1:
+                scale = old_scale.data[j]
+                shift = old_shift.data[j]
+                mean = bnorm.running_mean.data[j]
+                var = bnorm.running_var.data[j]
+                eps = bnorm.eps
+                bias = (old_bias[j]-mean)/torch.sqrt(var+eps)
+                bias = bias*scale + shift
+                weight = convs[i+1].weight.data
+                for o in range(weight.shape[0]):
+                    temp = torch.sum(weight[o,j]*bias)
+                    convs[i+1].bias.data[o] += temp
+        assert new_j == new_shape[0]
+        convs[i].weight.data = new_weight
+        convs[i].bias.data = new_bias
+        convs[i].in_channels = in_chans
+        convs[i].out_channels = out_chans
+        if absbn:
+            bnorms[i].scale.data = new_scale
+            bnorms[i].shift.data = new_shift
+        else:
+            bnorms[i].weight.data = new_scale
+            bnorms[i].bias.data = new_shift
+        bnorms[i].running_mean.data = new_mean
+        bnorms[i].running_var.data = new_var
+    model.chans = [c.weight.data.shape[0] for c in convs]
+    if was_cuda: model.to(DEVICE)
+    return model
+
+
