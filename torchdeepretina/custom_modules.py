@@ -90,6 +90,7 @@ class GrabUnits(nn.Module):
         self.img_shape = img_shape
         self.coords = self.centers2coords(centers,ksizes,img_shape)
         self.chans = torch.arange(len(centers)).long()
+        self.grab = True
 
     def centers2coords(self, centers, ksizes, img_shape):
         """
@@ -130,8 +131,9 @@ class GrabUnits(nn.Module):
         return [row,col]
 
     def forward(self, x):
-        units = x[...,:,self.chans,self.coords[:,0],self.coords[:,1]]
-        return units
+        if self.grab:
+            return x[...,:,self.chans,self.coords[:,0],self.coords[:,1]]
+        return x
 
     def extra_repr(self):
         coords = ["c{}: {}".format(i,self.coords[i]) for i in\
