@@ -55,11 +55,11 @@ def get_cutout(stimulus, center, span=20, pad_to=50):
         the coordinate for the cutout to be centered on
     span: int
         the height and width of the cutout
-    pad: int
+    pad_to: int
         pads the cutout with zeros on every side by pad amount
         if 0, no padding occurs
     """
-    if pad_to < span:
+    if pad_to is None or pad_to < span:
         pad_to = span
     row = (max(0,center[0]-span//2), min(center[0]+span//2+(span%2),
                                                 stimulus.shape[-2]))
