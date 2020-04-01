@@ -308,9 +308,10 @@ class PermutationSimilarity:
         denom += 1e-5
         numer = np.sum(tX * tY, axis=0)
         sim = (numer / denom).squeeze()
-        sim[np.isnan(sim)] = 0
-        sim = np.mean(sim)
-        return sim
+        sim = sim[~np.isnan(sim)]
+        if len(sim) > 0:
+            return np.mean(sim)
+        return 0
 
 def perm_similarity(X,Y,test_X=None,test_Y=None, grad_fit=True,
                                                  lr=0.001,
@@ -532,6 +533,29 @@ def load_json(file_name):
         j = json.loads(s)
     return j
 
+def get_layer_names(model, layer_types):
+    """
+    Finds the layer names of the argued types in the model. Does not
+    return names of sublayers.
+
+    inputs:
+        model: torch nn Module object
+        layer_types: set of classes
+            the class types that you want the layer names of within the
+            model
+
+    returns:
+        names: list of str
+            list of all the module names in the model that have types
+            within the argued layer_types set
+    """
+    assert len(layer_types) > 0, "Must argue a type!"
+    names = []
+    for i,(name,modu) in enumerate(model.named_modules()):
+        if len(name.split(".")) == 2 and type(modu) in layer_types:
+            names.append(name)
+    return names
+
 def get_conv_layer_names(model, conv_types=None):
     """
     Finds the layer names of convolutions in the model. Does not
@@ -551,11 +575,7 @@ def get_conv_layer_names(model, conv_types=None):
         conv_types.add(nn.Conv2d)
         conv_types.add(LinearStackedConv2d)
         conv_types.add(nn.Linear)
-    conv_names = []
-    for i,(name,modu) in enumerate(model.named_modules()):
-        if len(name.split(".")) == 2 and type(modu) in conv_types:
-            conv_names.append(name)
-    return conv_names
+    return get_layer_names(model, conv_types)
 
 def get_layer_name_sets(model, delimeters=[nn.ReLU,nn.Softplus,
                                                      nn.Tanh]):
@@ -902,7 +922,7 @@ def integrated_gradient(model, X, layer='sequential.2', chans=None,
                                                     verbose=False):
     """
     Returns the integrated gradient for a particular stimulus at the
-    arged layer.
+    argued layer.
 
     Inputs:
         model: PyTorch Deep Retina models
@@ -1441,7 +1461,7 @@ def mtx_cor(X, Y, batch_size=500, to_numpy=False, zscore=True):
         if true, both X and Y are normalized over the T dimension
 
     Returns:
-        cor_mtx: (C,K)
+        cor_mtx: (C,K) or (C*H*W, K*H1*W1)
             the correlation matrix
     """
     if len(X.shape) < 2:
@@ -1697,6 +1717,19 @@ def multi_shuffle(arrays):
             arrays[j][idx:idx+1] = temp
             del temp
     return arrays
+
+def stacked2conv(model):
+    """
+    Converts a model with LinearStackedConv2d modules to Conv2d
+    modules.
+
+    model: torch Module
+    """
+    for i,modu in enumerate(model.sequential):
+        if isinstance(modu, LinearStackedConv2d):
+            conv = stackedconv2d_to_conv2d(modu)
+            model.sequential[i] = conv
+    return model
 
 def stackedconv2d_to_conv2d(stackedconv2d):
     """
