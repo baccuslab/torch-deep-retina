@@ -39,22 +39,40 @@ import resource
 
 DEVICE = torch.device("cuda:0")
 
+def get_chan_count(df, path):
+    idx = df['save_folder']==path
+    chan_str = df.loc[idx]
+    if len(chan_str) > 0:
+        chan_str = chan_str.iloc[0]['chans'][1:-1]
+        chans = chan_str.split(", ")[:2]
+        return np.sum([int(c) for c in chans])
+    print(path,"not found in model_data.csv")
+    return -1
+
 if __name__=="__main__":
     n_samples = 5000 # Number of samples used for comparison
     window_lim = 5 # Half the size of the window centered on the comparison location
     verbose = True
     table_checkpts = True
+    grad_fit = False
     batch_size = 1000
     sim_folder = "similarity_csvs" # Folder to save comparison csv to
-    save_ext = "all_similarities.csv"
+    save_ext = "similarities.csv"
     store_act_mtx = False # limits memory consumption if false
     max_mtx_storage = None # Limits mem consumption if not None
+    same_chans_only = True # If true, models are only compared with models with the same channel counts. Does not work for pruned models.
+    
+    if same_chans_only:
+        save_ext = "same_"+save_ext
+    else:
+        save_ext = "all_"+save_ext
 
     if not os.path.exists(sim_folder):
         os.mkdir(sim_folder)
     grand_folders = sys.argv[1:]
     torch.cuda.empty_cache()
     model_paths = None
+    model_info_df = pd.DataFrame()
     for grand_folder in grand_folders:
         print("Analyzing", grand_folder)
         paths = tdr.io.get_model_folders(grand_folder)
@@ -64,6 +82,10 @@ if __name__=="__main__":
         else:
             model_paths = model_paths + paths
         save_file = grand_folder.replace("/","") + "_" + save_ext
+        temp_path = os.path.join(grand_folder,"model_data.csv")
+        if os.path.exists(temp_path):
+            temp = pd.read_csv(temp_path,sep="!")
+            model_info_df = model_info_df.append(temp,sort=True)
     save_file = os.path.join(sim_folder,save_file)
     print("Models:")
     print("\n".join(model_paths))
@@ -92,14 +114,22 @@ if __name__=="__main__":
     ig_vecs = dict()
 
     for i in range(len(model_paths)):
+        if same_chans_only:
+            tot_chans1 = get_chan_count(model_info_df, model_paths[i])
         # Check if model has already been compared to all other models
         idx = (main_df['model1']==model_paths[i])
         prev_comps = set(main_df.loc[idx,'model2'])
         missing_comp = False
-        for path in model_paths:
+        for path in model_paths[i:]:
             if path not in prev_comps:
-                missing_comp = True
-                break
+                if same_chans_only and "save_folder" in model_info_df:
+                    tot_chans = get_chan_count(model_info_df, path)
+                    if tot_chans1 == tot_chans:
+                        missing_comp = True
+                        break
+                else:
+                    missing_comp = True
+                    break
         if not missing_comp:
             print("Skipping", model_paths[i],
                     "due to previous records")
@@ -111,6 +141,8 @@ if __name__=="__main__":
 
         ############### Prep
         model1 = tdr.io.load_model(model_paths[i])
+        model1 = tdr.pruning.reduce_model(model1,model1.zero_dict)
+        m1_chans = np.sum(model1.chans[:2])
         model1.eval()
         model1_layers = tdr.utils.get_conv_layer_names(model1)
         if verbose:
@@ -139,7 +171,7 @@ if __name__=="__main__":
                                              verbose=verbose)
             act_resp1 = act if calc_act else act_resp1
             ig_resp1 = ig if calc_ig else ig_resp1
-        if max_mtx_storage is not None and len(ig_vecs)<max_mtx_storage:
+        if max_mtx_storage is None or len(ig_vecs)<max_mtx_storage:
             if store_act_mtx:
                 act_vecs[model_paths[i]] = act_resp1
             ig_vecs[model_paths[i]] = ig_resp1
@@ -156,8 +188,19 @@ if __name__=="__main__":
                                         len(model_paths)-j)
                 print(s)
 
+            if same_chans_only:
+                tot_chans = get_chan_count(model_info_df, model_paths[i])
+                if tot_chans != tot_chans1:
+                    print("Skipping", model_paths[j],"to diff chan count")
+                    continue
+
             torch.cuda.empty_cache()
             model2 = tdr.io.load_model(model_paths[j])
+            model2 = tdr.pruning.reduce_model(model2, model2.zero_dict)
+            m2_chans = np.sum(model2.chans[:2])
+            if same_chans_only and (m2_chans != m1_chans):
+                print("Skipping due to different channel counts")
+                continue
             model2.eval()
             model2_layers = tdr.utils.get_conv_layer_names(model2)
             if verbose:
@@ -183,7 +226,9 @@ if __name__=="__main__":
                                                  ig_spat_loc=loc,
                                                  to_numpy=True,
                                                  verbose=verbose)
-            if max_mtx_storage is None or len(ig_vecs)<=max_mtx_storage:
+                act_resp2 = act if calc_act else act_resp2
+                ig_resp2 = ig if calc_ig else ig_resp2
+            if max_mtx_storage is None or len(ig_vecs)<max_mtx_storage:
                 if store_act_mtx:
                     act_vecs[model_paths[j]] = act_resp2
                 ig_vecs[model_paths[j]] = ig_resp2
@@ -215,8 +260,13 @@ if __name__=="__main__":
                                     rang = range(len(sims))
                                     sims[rang,rang] = -1
                                 sims[np.isnan(sims)] = 0
-                                temp = [sims.max(0),sims.max(1)]
-                                temp = np.concatenate(temp)
+                                if sims.shape[0] < sims.shape[1]:
+                                    temp = sims.max(1)
+                                elif sims.shape[0] > sims.shape[1]:
+                                    temp = sims.max(0)
+                                else:
+                                    temp = [sims.max(0),sims.max(1)]
+                                    temp = np.concatenate(temp)
                                 sim = np.mean(temp)
                                 if best_sim is None or sim > best_sim\
                                                 or np.isnan(best_sim):
@@ -230,8 +280,13 @@ if __name__=="__main__":
                             rang = range(len(sims))
                             sims[rang,rang] = -1
                         sims[np.isnan(sims)] = 0
-                        temp = [sims.max(0),sims.max(1)]
-                        temp = np.concatenate(temp)
+                        if sims.shape[0] < sims.shape[1]:
+                            temp = sims.max(1)
+                        elif sims.shape[0] > sims.shape[1]:
+                            temp = sims.max(0)
+                        else:
+                            temp = [sims.max(0),sims.max(1)]
+                            temp = np.concatenate(temp)
                         best_sim = np.mean(temp)
                         best_xy = (0,0)
                     for chan1 in range(len(sims)):
@@ -277,8 +332,13 @@ if __name__=="__main__":
                                 rang = range(len(sims))
                                 sims[rang,rang] = -1
                             sims[np.isnan(sims)] = 0
-                            temp = [sims.max(0),sims.max(1)]
-                            temp = np.concatenate(temp)
+                            if sims.shape[0] < sims.shape[1]:
+                                temp = sims.max(1)
+                            elif sims.shape[0] > sims.shape[1]:
+                                temp = sims.max(0)
+                            else:
+                                temp = [sims.max(0),sims.max(1)]
+                                temp = np.concatenate(temp)
                             sim = np.mean(temp)
                             if best_sim is None or sim > best_sim\
                                                 or np.isnan(best_sim):
@@ -407,5 +467,7 @@ if __name__=="__main__":
             s = "\n".join(s)
             print(s)
             print()
-        del act_vecs[model_paths[i]]
-        del ig_vecs[model_paths[i]]
+        if store_act_mtx and model_paths[i] in act_vecs:
+            del act_vecs[model_paths[i]]
+        if model_paths[i] in ig_vecs:
+            del ig_vecs[model_paths[i]]
