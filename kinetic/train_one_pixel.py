@@ -21,27 +21,23 @@ parser.add_argument('--dt', type=float, required=True)
 parser.add_argument('--stimuli', type=str, required=True)
 opt = parser.parse_args()
 
-def weighted_loss(out, y, loss_fn, indices, std_list):
-    
-    loss = 0
-    assert len(indices) == out.shape[0]
-    for i in range(len(indices)):
-        loss += loss_fn(out[i], y[i]) / std_list[indices[i]]
-    loss = loss / len(indices)
-    return loss
-
 def train(cfg):
     
     dt = opt.dt
     
     device = torch.device('cuda:'+str(opt.gpu))
     
+    model = select_model(cfg, device)
+    model.dt = dt
+    
+    optimizer = torch.optim.Adam(model.parameters(), lr=cfg.Optimize.lr, 
+                                 weight_decay=cfg.Optimize.l2)
+        
     if cfg.Model.checkpoint != '':
         checkpoint = torch.load(cfg.Model.checkpoint, map_location=device)
-        model = OnePixelModel(cfg, checkpoint['model_state_dict'], dt, device)
-    else:
-        model = select_model(cfg, device)
-        model.dt = dt
+        model.load_state_dict(checkpoint['model_state_dict'])
+        start_epoch = checkpoint['epoch'] + 1
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     
     if not os.path.exists(os.path.join(cfg.save_path, cfg.exp_id)):
         os.mkdir(os.path.join(cfg.save_path, cfg.exp_id))
@@ -56,33 +52,40 @@ def train(cfg):
     
     loss_fn = nn.MSELoss().to(device)
     
-    optimizer = torch.optim.Adam(model.parameters(), lr=cfg.Optimize.lr, 
-                                 weight_decay=cfg.Optimize.l2)
     scheduler = ReduceLROnPlateau(optimizer, 'max', factor=0.2, patience=5)
     
     stim, resp = generate('/home/xhding/workspaces/lnkmodelcell10.mat', opt.stimuli, dt)
-    train_dataset, val_dataset, _, std_list = organize(stim, resp[:,1], cfg.img_shape[0], val_size=cfg.Data.val_size, dt=dt)
+    train_dataset, val_dataset, _ = organize(stim, resp[:,1], cfg.img_shape[0], val_size=cfg.Data.val_size, dt=dt)
     batch_sampler = BatchRnnOneTimeSampler(length=len(train_dataset), batch_size=cfg.Data.batch_size)
     train_data = DataLoader(dataset=train_dataset, batch_sampler=batch_sampler)
     validation_data = DataLoader(dataset=val_dataset)
     
     for epoch in range(start_epoch, start_epoch + cfg.epoch):
         epoch_loss = 0
-        loss = 0
         hs = get_hs(model, cfg.Data.batch_size, device)
-        for idx,((x,y),indices) in enumerate(zip(tqdm(train_data), batch_sampler)):
+        y_preds = []
+        y_targs = []
+        for idx,(x,y) in enumerate(tqdm(train_data)):
             x = x.to(device)
             y = y.double().to(device)
             out, hs = model(x, hs)
-            loss += weighted_loss(out.double(), y, loss_fn, indices, std_list)
-            if idx % cfg.Data.trunc_int == (cfg.Data.trunc_int - 1):
+            y_preds.append(out.double())
+            y_targs.append(y)
+            if idx % cfg.Data.loss_bin == (cfg.Data.loss_bin - 1):
+                y_pred = torch.stack(y_preds, dim=2)
+                y_targ = torch.stack(y_targs, dim=2)
+                loss = temporal_frequency_normalized_loss(y_pred, y_targ, loss_fn, device, num_units=cfg.Model.n_units, dt=dt)
                 optimizer.zero_grad()
                 loss.backward(retain_graph=True)
                 optimizer.step()
                 epoch_loss += loss.detach().cpu().numpy()
-                loss = 0
+                y_preds = []
+                y_targs = []
+            if idx % cfg.Data.trunc_int == (cfg.Data.trunc_int - 1):
+                hs[0] = hs[0].detach()
+                hs[1] = deque([h.detach() for h in hs[1]], maxlen=model.seq_len)
                 
-        epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size
+        epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size * cfg.Data.loss_bin
         
         pearson = pearsonr_eval(model, validation_data, cfg.Model.n_units, len(validation_data), device)
         scheduler.step(pearson)

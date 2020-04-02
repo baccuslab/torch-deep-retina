@@ -29,6 +29,7 @@ _C.Data.data_path = '/home/TRAIN_DATA'
 _C.Data.batch_size = 512
 _C.Data.val_size = 30000
 _C.Data.trunc_int = 8
+_C.Data.loss_bin = 1000
 
 _C.Optimize = CfgNode()
 _C.Optimize.lr = 1e-3

@@ -1,6 +1,8 @@
 import os
 import json
 import torch
+import torch.nn as nn
+from scipy import signal
 from collections import deque
 from kinetic.models import *
 
@@ -65,9 +67,10 @@ def select_model(cfg, device):
                           bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
                           img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
     if cfg.Model.name == 'KineticsOnePixelChannel':
-        model = KineticsOnePixelChannel(recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, dt=0.01,
-                                    bias=cfg.Model.bias, linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
-                                    softplus=cfg.Model.softplus, img_shape=cfg.img_shape).to(device)
+        model = KineticsOnePixelChannel(recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, dt=0.01, 
+                                        scale_kinet=cfg.Model.scale_kinet, bias=cfg.Model.bias, 
+                                        linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
+                                        softplus=cfg.Model.softplus, img_shape=cfg.img_shape).to(device)
         
     return model
 
@@ -131,6 +134,41 @@ def OnePixelModel(cfg, state_dict, dt, device):
     model.float()
     
     return model
+
+def temporal_frequency_normalized_loss(y_pred, y_targ, loss_fn, device, cut_off=4, num_units=1, filter_len=11, dt=0.01):
+    
+    numtaps = filter_len
+    f = cut_off
+    fs = int(1./dt)
+    conv_filters = {}
+    for pass_zero in ['lowpass', 'highpass']:
+        lp_filter = signal.firwin(numtaps, f, pass_zero=pass_zero, fs=fs)
+        conv_filter = nn.Conv1d(num_units, num_units, filter_len, groups=num_units, bias=False)
+        conv_filter.weight.data = torch.from_numpy(np.flip(lp_filter).copy())[None, None, :].repeat(num_units, 1, 1)
+        conv_filter.weight.requires_grad = False
+        conv_filter = conv_filter.to(device)
+        conv_filters[pass_zero] = conv_filter
+    
+    y_pred_low = conv_filters['lowpass'](y_pred)
+    y_pred_high = conv_filters['highpass'](y_pred)
+    y_targ_low = conv_filters['lowpass'](y_targ)
+    y_targ_high = conv_filters['highpass'](y_targ)
+    
+    low_std = torch.std(y_targ_low, dim=-1)[:, :, None]
+    high_std = torch.std(y_targ_high, dim=-1)[:, :, None]
+    
+    y_pred_low_norm = y_pred_low / low_std
+    y_pred_high_norm = y_pred_high / high_std
+    y_targ_low_norm = y_targ_low / low_std
+    y_targ_high_norm = y_targ_high / high_std
+    
+    loss = loss_fn(y_pred_low_norm, y_targ_low_norm)
+    loss += loss_fn(y_pred_high_norm, y_targ_high_norm)
+    
+    return loss
+    
+    
+    
     
     
     

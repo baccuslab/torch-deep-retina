@@ -72,7 +72,7 @@ def LNK_stim(data, dt):
     if dt == 0.01:
         return signal.resample(stim, stim.shape[0]//10)
     
-def organize(stim, resp, history, val_size=30000, std_int=10, dt=0.01):
+def organize(stim, resp, history, val_size=30000, dt=0.01):
     stats = {}
     stats['mean'] = stim.mean()
     stats['std'] = stim.std()+1e-7
@@ -85,17 +85,7 @@ def organize(stim, resp, history, val_size=30000, std_int=10, dt=0.01):
     train_dataset = TensorDataset(stim_reshaped[:-val_size], resp[:-val_size][:,None])
     val_dataset = TensorDataset(stim_reshaped[-val_size:], resp[-val_size:][:,None])
     
-    std_int_num = int(std_int / dt)
-    std_list = []
-    for i in range(stim_numpy[:-val_size].shape[0]//std_int_num):
-        current_std = np.std(stim_numpy[:-val_size][i*std_int_num:(i+1)*std_int_num])
-        std_list.append(current_std)
-    std_list = np.repeat(np.array(std_list), std_int_num)
-    if stim_numpy[:-val_size].shape[0] % std_int_num > 0:
-        std_list_tail = np.full((stim_numpy[:-val_size].shape[0] % std_int_num,), std_list[-1])
-        std_list = np.concatenate((std_list, std_list_tail))
-    
-    return train_dataset, val_dataset, stats, std_list
+    return train_dataset, val_dataset, stats
 
 def generate(data_path, stimuli, dt):
     
