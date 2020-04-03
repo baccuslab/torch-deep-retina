@@ -142,15 +142,23 @@ class Trainer:
             print("val shape:", data_distr.val_shape)
             record_session(hyps, model)
 
-            # Training
+            # Initializations
             if hyps['exp_name'] == "test":
                 hyps['n_epochs'] = 2
                 hyps['prune_intvl'] = 2
-            n_epochs = hyps['n_epochs']
-            if hyps['prune_layers'] == 'all' or\
-                                         hyps['prune_layers']==[]:
+            if hyps['prune_layers'] == 'all' or hyps['prune_layers']==[]:
                 layers = utils.get_conv_layer_names(model)
                 hyps['prune_layers'] = layers[:-1]
+
+            hyps_prune = utils.try_key(hyps, 'prune', False)
+            reset_sd = utils.try_key(hyps,'reset_sd',False)
+            reset_lr = utils.try_key(hyps,'reset_lr',False)
+            reset_lr = reset_lr and not isinstance(scheduler,
+                                               NullScheduler)
+            n_epochs = hyps['n_epochs']
+            if hyps_prune and reset_sd:
+                n_epochs = hyps['prune_intvl']
+
             zero_dict = {d:set() for d in hyps['prune_layers']}
             zero_bias = utils.try_key(hyps,'zero_bias',True)
             if 'startpt' in hyps and hyps['startpt'] is not None:
@@ -159,11 +167,13 @@ class Trainer:
                     zero_dict = checkpt['zero_dict']
                 if 'zero_bias' in checkpt['hyps']:
                     hyps['zero_bias'] = checkpt['hyps']['zero_bias']
+
+            # Training Loop
             epoch = -1
             stop_training = False
             while not stop_training:
                 epoch += 1
-                stop_training = epoch >= n_epochs and not hyps['prune']
+                stop_training = epoch >= n_epochs and not hyps_prune
                 cv_s = "-- CV {}/{}".format(cv_idx, hyps['n_cv_folds'])
                 print("Beginning Epoch {}/{} -- ".format(epoch,n_epochs),
                                                      hyps['save_folder'],
@@ -296,9 +306,9 @@ class Trainer:
                                            'test', del_prev=del_prev)
 
                 # Integrated Gradient Pruning
-                prune = hyps['prune'] and epoch >= n_epochs-1
-                temp = (epoch-n_epochs) % hyps['prune_intvl'] == 0
-                if prune and temp:
+                prune = hyps_prune and epoch >= n_epochs-1
+                intvl = (epoch-n_epochs) % hyps['prune_intvl'] == 0
+                if prune and intvl:
                     if epoch <= (n_epochs+hyps['prune_intvl']):
                         prune_dict = { "zero_dict":zero_dict,
                                        "prev_state_dict":None,
@@ -309,10 +319,6 @@ class Trainer:
                         if hyps['exp_name'] == "test":
                             val_acc = 0
 
-                    reset_sd = utils.try_key(hyps,'reset_sd',False)
-                    reset_lr = utils.try_key(hyps,'reset_lr',False)
-                    reset_lr = reset_lr and not isinstance(scheduler,
-                                                       NullScheduler)
                     cur_lr = next(iter(optimizer.param_groups))['lr']
 
                     prune_dict = tdrprune.prune_channels(model, hyps,
@@ -321,11 +327,15 @@ class Trainer:
                                                        lr=cur_lr,
                                                        **prune_dict)
                     stop_training = prune_dict['stop_pruning']
-                    if not stop_training and reset_sd:
+                    if reset_sd:
                         model.load_state_dict(og_state_dict)
                         optimizer.load_state_dict(og_optim_dict)
                         for param_group in optimizer.param_groups:
                             param_group['lr'] = hyps['lr']
+                    else:
+                        for param_group in optimizer.param_groups:
+                            param_group['lr'] = prune_dict['prev_lr']
+
                     if reset_lr and prune_dict['prev_acc']!=val_acc:
                         # Reset learning rate if using scheduler
                         # and latest pruning was neglected
@@ -334,11 +344,15 @@ class Trainer:
                     zero_dict = prune_dict['zero_dict']
                     zero_bias = utils.try_key(hyps,'zero_bias',True)
                     tdrprune.zero_chans(model, zero_dict,zero_bias)
-                    # No matter what, set learning rate to the new prev_lr
-                    # Either we are resetting to previous value, or setting
-                    # to the current value
-                    for param_group in optimizer.param_groups:
-                        param_group['lr'] = prune_dict['prev_lr']
+
+                    # In this case we want to train out the final
+                    # pruned model using the normal number of epochs.
+                    # This will make the training look like a
+                    # non-pruning training while using the pruned model.
+                    if stop_training and reset_sd:
+                        stop_training = False
+                        hyps_prune = False
+                        n_epochs = hyps['n_epochs'] + epoch
 
                 # Print Epoch Stats
                 if prune:
@@ -910,6 +924,9 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
         hyps['abssum'] = utils.try_key(hyps, 'abssum', False)
         hyps['prune_layers'] = utils.try_key(hyps, 'prune_layers', [])
         hyps['prune_intvl'] = utils.try_key(hyps, 'prune_intvl', None)
+        hyps['prune_tolerance'] = utils.try_key(hyps,
+                                                'prune_tolerance',
+                                                0.01)
         if hyps['prune_intvl'] is None:
             hyps['prune_intvl'] = hyps['n_epochs']
         hyps['alpha_steps'] = utils.try_key(hyps, 'alpha_steps', 5)

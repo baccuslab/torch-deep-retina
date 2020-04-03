@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torchdeepretina.custom_modules import *
+from torchdeepretina.utils import get_conv_layer_names
 import numpy as np
 from scipy import signal
 
@@ -31,6 +32,8 @@ class TDRModel(nn.Module):
                                                 bnorm_d=1,
                                                 activ_fxn='ReLU',
                                                 finalstack=False,
+                                                n_layers=3,
+                                                stackconvs=True,
                                                 **kwargs):
         """
         n_units: int
@@ -79,6 +82,12 @@ class TDRModel(nn.Module):
             intermediate layers.
         finalstack: bool
             if true, final convolution is a LinearStackedConv2d
+        n_layers: int
+            number of neural network layers. Includes ganglion cell
+            layer
+        stackconvs: bool
+            if true, the convolutions are all linearstacked
+            convolutions
         """
         super().__init__()
         self.n_units = n_units
@@ -100,6 +109,8 @@ class TDRModel(nn.Module):
                              batchnorm are currently supported"
         self.activ_fxn = activ_fxn
         self.finalstack = finalstack
+        self.n_layers = n_layers
+        self.stackconvs = stackconvs
 
     def forward(self, x):
         return x
@@ -148,6 +159,37 @@ class TDRModel(nn.Module):
         for _,modu in self.named_modules():
             if isinstance(modu,GrabUnits):
                 modu.grab = not state
+
+    def get_shape(self,img_shape,layer_name):
+        """
+        Returns the shape (height,width) of the activation matrix at
+        the argued layer_name.
+
+        Inputs:
+            img_shape: tuple of ints (..., H, W)
+                the shape of the image
+            layer_name: str
+                the name of the layer of interest
+
+        Returns:
+            shape: tuple of ints (H1,W1)
+                returns None if layer_name does not exist in model
+        """
+        conv_names = set(get_conv_layer_names(self))
+        n_convs = 0
+        for name,modu in self.named_modules():
+            if name == layer_name:
+                break
+            elif name in conv_names:
+                n_convs+=1
+        if name != layer_name:
+            return None
+
+        shape = img_shape[-2:]
+        for i in range(n_convs+1):
+            ksize = self.ksizes[i]
+            shape = update_shape(shape,ksize)
+        return shape
 
 class BNCNN(TDRModel):
     """
@@ -546,19 +588,11 @@ class VaryModel(TDRModel):
     Built as a modular model that can assume the form of most other
     models in this package.
     """
-    def __init__(self, n_layers=3, stackconvs=True, drop_p=0,
-                                        one2one=False,
-                                        stack_ksizes=[3,3],
+    def __init__(self, drop_p=0, one2one=False, stack_ksizes=[3,3],
                                         stack_chans=[None,None],
                                         paddings=None, **kwargs):
         super().__init__(**kwargs)
         """
-        n_layers: int
-            number of neural network layers. Includes ganglion cell
-            layer
-        stackconvs: bool
-            if true, the convolutions are all linearstacked
-            convolutions
         drop_p: float
             the dropout probability for the linearly stacked
             convolutions
@@ -576,8 +610,6 @@ class VaryModel(TDRModel):
             defaults to 0.
         """
         self.name = 'VaryNet'
-        self.n_layers = n_layers
-        self.stackconvs = stackconvs
         self.drop_p = drop_p
         self.one2one = one2one
         if isinstance(stack_ksizes, int):
@@ -746,8 +778,6 @@ class RetinotopicModel(TDRModel):
             1/length
         """
         self.name = 'VaryNet'
-        self.n_layers = n_layers
-        self.stackconvs = stackconvs
         self.drop_p = drop_p
         self.one2one = one2one
         self.rand_onehot = rand_onehot

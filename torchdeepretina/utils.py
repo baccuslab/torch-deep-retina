@@ -953,8 +953,8 @@ def integrated_gradient(model, X, layer='sequential.2', chans=None,
     torch.set_grad_enabled(True) # Enable grad calculations
 
     layer_idx = get_layer_idx(model, layer=layer)
-    intg_grad = torch.zeros(len(X), model.chans[layer_idx],
-                                  *model.shapes[layer_idx])
+    shape = model.get_shape(X.shape[-2:], layer)
+    intg_grad = torch.zeros(len(X), model.chans[layer_idx],*shape)
     gc_activs = None
     model.to(DEVICE)
 
