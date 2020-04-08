@@ -60,7 +60,7 @@ if __name__=="__main__":
     save_ext = "similarities.csv"
     store_act_mtx = False # limits memory consumption if false
     max_mtx_storage = None # Limits mem consumption if not None
-    same_chans_only = True # If true, models are only compared with models with the same channel counts. Does not work for pruned models.
+    same_chans_only = False # If true, models are only compared with models with the same channel counts. Does not work for pruned models.
     
     if same_chans_only:
         save_ext = "same_"+save_ext
