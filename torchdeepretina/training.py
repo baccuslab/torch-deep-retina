@@ -355,7 +355,7 @@ class Trainer:
                         n_epochs = hyps['n_epochs'] + epoch
 
                 # Print Epoch Stats
-                if prune:
+                if prune or (not hyps_prune and hyps['prune']):
                     s = "Zeroed Channels:\n"
                     keys = sorted(list(zero_dict.keys()))
                     for k in keys:
