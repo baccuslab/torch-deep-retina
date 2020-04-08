@@ -85,7 +85,12 @@ if __name__ == "__main__":
     print("\n\nBeginning Analysis..")
     exp_folder = hyps['exp_name']
     torch.cuda.empty_cache()
-    dfs = analysis_pipeline(exp_folder, make_figs=True, save_dfs=True,
-                            make_model_rfs=False, verbose=True)
+    dfs = analysis_pipeline(exp_folder, make_figs=True,
+                                        make_model_rfs=True,
+                                        slide_steps=0,
+                                        intrnrn_stim='boxes',
+                                        save_dfs=True,
+                                        rec_intrs=False, #If false, cors are still calculated, details just aren't recorded
+                                        verbose=True)
 
     print(exp_folder, "Training Complete")

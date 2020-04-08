@@ -17,7 +17,11 @@ import matplotlib.cm as cm
 from scipy.fftpack import fft, fftshift, fftfreq
 from scipy.interpolate import interp1d
 from tqdm import tqdm
-from jetpack import errorplot
+try:
+    from jetpack import errorplot
+except:
+    print("Would be good to run:\n$ pip install -e git+git://github.com/nirum/jetpack.git@master#egg=jetpack")
+            
 import deepdish as dd
 
 if torch.cuda.is_available():

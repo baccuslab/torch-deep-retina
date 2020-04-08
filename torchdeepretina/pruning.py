@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import numpy as np
 import torchdeepretina.utils as tdrutils
 from torchdeepretina.custom_modules import LinearStackedConv2d,AbsBatchNorm2d, AbsBatchNorm1d

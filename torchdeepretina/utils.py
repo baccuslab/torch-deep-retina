@@ -751,20 +751,12 @@ def inspect(model, X, insp_keys={}, batch_size=500, to_numpy=True,
     """
     layer_outs = dict()
     handles = []
-    if "all" in insp_keys:
-        for i in range(len(model.sequential)):
-            key = "sequential."+str(i)
+    for key, mod in model.named_modules():
+        if key in insp_keys:
             hook = get_hook(layer_outs, key, to_numpy=to_numpy,
                                                  to_cpu=to_cpu)
-            handle = model.sequential[i].register_forward_hook(hook)
+            handle = mod.register_forward_hook(hook)
             handles.append(handle)
-    else:
-        for key, mod in model.named_modules():
-            if key in insp_keys:
-                hook = get_hook(layer_outs, key, to_numpy=to_numpy,
-                                                     to_cpu=to_cpu)
-                handle = mod.register_forward_hook(hook)
-                handles.append(handle)
     X = torch.FloatTensor(X)
 
     # prev_grad_state is used to ensure we do not mess with an outer
@@ -922,7 +914,12 @@ def integrated_gradient(model, X, layer='sequential.2', chans=None,
                                                     verbose=False):
     """
     Returns the integrated gradient for a particular stimulus at the
-    argued layer.
+    argued layer. This function always operates with the model in
+    eval mode due to the need for a deterministic model. If the model
+    is argued in train mode, it is set to eval mode for this function
+    and returned to train mode at the end of the function. As such,
+    this note is largely irrelavant, but will hopefully satisfy the
+    curious or anxious ;)
 
     Inputs:
         model: PyTorch Deep Retina models
@@ -951,6 +948,8 @@ def integrated_gradient(model, X, layer='sequential.2', chans=None,
     # Save current grad calculation state
     prev_grad_state = torch.is_grad_enabled()
     torch.set_grad_enabled(True) # Enable grad calculations
+    prev_train_state = model.training
+    model.eval()
 
     layer_idx = get_layer_idx(model, layer=layer)
     shape = model.get_shape(X.shape[-2:], layer)
@@ -967,6 +966,7 @@ def integrated_gradient(model, X, layer='sequential.2', chans=None,
     # coordinates for desired cell
     prev_coords = None
     if spat_idx is not None:
+        print("spat idx if is executing")
         if isinstance(spat_idx, int): spat_idx = (spat_idx, spat_idx)
         row, col = spat_idx
         mod_idx = get_module_idx(model, GrabUnits)
@@ -1005,8 +1005,8 @@ def integrated_gradient(model, X, layer='sequential.2', chans=None,
                     truth = y[idx][:,chans]
                     outs = lossfxn(outs,truth)
                 grad = torch.autograd.grad(outs.sum(), ins)[0]
-                grad = grad.data.detach().cpu().reshape(len(grad),
-                                             *intg_grad.shape[1:])
+                grad = grad.data.detach().cpu()
+                grad = grad.reshape(len(grad), *intg_grad.shape[1:])
                 l = layer
                 act = (response[l].data.cpu()-prev_response[l])
                 act = act.reshape(grad.shape)
@@ -1026,8 +1026,9 @@ def integrated_gradient(model, X, layer='sequential.2', chans=None,
         grabber.coords = prev_coords
     # Return to previous gradient calculation state
     requires_grad(model, True)
-    # return to previous grad calculation state
+    # return to previous grad calculation state and training state
     torch.set_grad_enabled(prev_grad_state)
+    if prev_train_state: model.train()
     if to_numpy:
         ndgrad = intg_grad.data.cpu().numpy()
         ndactivs = gc_activs.data.cpu().numpy()

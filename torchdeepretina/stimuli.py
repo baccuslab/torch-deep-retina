@@ -1363,7 +1363,7 @@ def grating(barsize=(5, 0), phase=(0., 0.), nx=50,
     elif waveform in ('sin', 'sinusoid'):
         wform = sinusoid
     else:
-        raise ValueError(f'Invalid waveform: {waveform}.')
+        raise ValueError('Invalid waveform: {}.'.format(waveform))
 
     # generate a square wave along each axis
     x = wform(barsize[0], nx * us_factor, phase[0], intensity[0])
