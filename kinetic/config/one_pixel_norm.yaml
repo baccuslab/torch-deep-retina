@@ -3,15 +3,15 @@ img_shape: (40,)
 epoch: 50
 Model:
     name: 'KineticsOnePixelChannel'
-    checkpoint: '/home/xhding/saved_model/one_pixel_channel/epoch_045_loss_1.44_pearson_0.5191.pth'
+    checkpoint: '/home/xhding/saved_model/one_pixel_channel/epoch_040_loss_0.87_pearson_0.7354.pth'
     noise: 0.
     linear_bias: False
     scale_kinet: True
     n_units: 1
 Data:
-    trunc_int: 50000
-    loss_bin: 10000
+    trunc_int: 5000
+    loss_bin: 1000
     val_size: 30000
     batch_size: 5
 Optimize:
-    lr: 0.05
+    lr: 0.005

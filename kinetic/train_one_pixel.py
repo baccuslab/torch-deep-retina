@@ -37,6 +37,7 @@ def train(cfg):
         checkpoint = torch.load(cfg.Model.checkpoint, map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
         start_epoch = checkpoint['epoch'] + 1
+        checkpoint['optimizer_state_dict']['param_groups'][0]['lr'] = cfg.Optimize.lr
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     
     if not os.path.exists(os.path.join(cfg.save_path, cfg.exp_id)):

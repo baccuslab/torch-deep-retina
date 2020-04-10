@@ -58,8 +58,8 @@ def train(cfg):
     for para in model.ganglion.parameters():
             para.requires_grad = False
     
-    model.kinetics.ksi.data = 0.2 * torch.ones(model.chans[0], 1).to(device)
-    model.kinetics.ksr.data = 0.02 * torch.ones(model.chans[0], 1).to(device)
+    model.kinetics.ksi.data = 0. * torch.ones(model.chans[0], 1).to(device)
+    model.kinetics.ksr.data = 0. * torch.ones(model.chans[0], 1).to(device)
     model.kinetics.ka.data = 23. * torch.ones(model.chans[0], 1).to(device)
     model.kinetics.kfi.data = 50. * torch.ones(model.chans[0], 1).to(device)
     model.kinetics.kfr.data = 87. * torch.ones(model.chans[0], 1).to(device)
@@ -73,7 +73,7 @@ def train(cfg):
     for epoch in range(start_epoch, start_epoch + cfg.epoch):
         epoch_loss = 0
         loss = 0
-        hs = get_hs_2(model, cfg.Data.batch_size, device)
+        hs = get_hs(model, cfg.Data.batch_size, device)
         for idx,(x,y) in enumerate(tqdm(train_data)):
             x = x.to(device)
             y = y.double().to(device)
@@ -94,7 +94,7 @@ def train(cfg):
                 
         epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size
         
-        pearson = pearsonr_eval_2(model, validation_data, cfg.Model.n_units, len(validation_data), device)
+        pearson = pearsonr_eval(model, validation_data, cfg.Model.n_units, len(validation_data), device)
         
         print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}'.format(epoch, epoch_loss, pearson))
         

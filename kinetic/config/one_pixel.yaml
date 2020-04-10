@@ -6,7 +6,7 @@ Model:
     checkpoint: ''
     noise: 0.
     linear_bias: False
-    scale_kinet: True
+    scale_kinet: False
     n_units: 1
 Data:
     trunc_int: 8
