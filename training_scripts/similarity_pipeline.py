@@ -54,14 +54,14 @@ if __name__=="__main__":
     window_lim = 5 # Half the size of the window centered on the comparison location
     verbose = True
     table_checkpts = True
-    grad_fit = False
+    grad_fit = False # Determines if you would like to compute the permuted similarity via grad descent
     batch_size = 1000
     sim_folder = "similarity_csvs" # Folder to save comparison csv to
     save_ext = "similarities.csv"
     store_act_mtx = False # limits memory consumption if false
     max_mtx_storage = None # Limits mem consumption if not None
-    same_chans_only = False # If true, models are only compared with models with the same channel counts. Does not work for pruned models.
-    
+    same_chans_only = True # If true, models are only compared with models with the same total channel counts. Does not work for pruned models.
+
     if same_chans_only:
         save_ext = "same_"+save_ext
     else:
@@ -305,7 +305,7 @@ if __name__=="__main__":
 
             if verbose:
                 print(stats_string)
-            # Integrated Gradient Max Correlation
+            # Integrated Gradient Chan Correlation
             torch.cuda.empty_cache()
             if verbose:
                 print("Beginning Channel IG Correlations")
@@ -358,6 +358,125 @@ if __name__=="__main__":
                             table['cor'].append(sims[chan1,chan2])
                     stats_string += "{}-{}: {}\n".format(l1, l2,
                                                          best_sim)
+
+            ################### Max Correlations
+            stats_string = "\nMax Sims\n"
+            torch.cuda.empty_cache()
+            model1_shapes = [act_resp1[l].shape for l in model1_layers]
+            model2_shapes = [act_resp2[l].shape for l in model2_layers]
+            # Activation Max Correlation
+            if verbose:
+                print("Beginning Max Activation Correlations")
+            stats_string += "\nActivation Correlations:\n"
+            for l1,s1 in zip(model1_layers,model1_shapes):
+                s1 = s1[-1]//2 if len(s1)>2 else None
+                resp1 = act_resp1[l1][:,:,s1,s1].squeeze()
+                for l2,s2 in zip(model2_layers,model2_shapes):
+                    s2 = s2[-1]//2 if len(s2)>2 else None
+                    torch.cuda.empty_cache()
+                    lim = window_lim
+                    resp2 = act_resp2[l2][:,:,s2,s2].squeeze()
+                    cutout1 = tdr.stimuli.get_cutout(act_resp1[l1],
+                                                    center=(s1,s1),
+                                                    span=2*lim+1,
+                                                    pad_to=0)
+                    flat_cutout1 = cutout1.reshape(len(cutout1),-1)
+                    cutout2 = tdr.stimuli.get_cutout(act_resp2[l2],
+                                                    center=(s2,s2),
+                                                    span=2*lim+1,
+                                                    pad_to=0)
+                    flat_cutout2 = cutout2.reshape(len(cutout2),-1)
+                    sim1 = mtx_cor(resp1,flat_cutout2,to_numpy=True)
+                    sim2 = mtx_cor(resp2,flat_cutout1,to_numpy=True)
+                    axis = 0 if sim1.shape[0] > sim1.shape[1] else 1
+                    max_sims1 = np.max(sim1,axis=axis)
+                    axis = 0 if sim2.shape[0] > sim2.shape[1] else 1
+                    max_sims2 = np.max(sim2,axis=axis)
+                    for chan in range(len(max_sims1)):
+                        table['model1'].append(model_paths[i])
+                        table['model2'].append(model_paths[j])
+                        table['cor_type'].append("max_act")
+                        table['m1_layer'].append(l1)
+                        table['m2_layer'].append(l2)
+                        table['xy_coord'].append((s1,s1))
+                        table['chan1'].append(chan)
+                        table['chan2'].append(None)
+                        table['cor'].append(max_sims1[chan])
+                    stats_string += "{}-{}: {}\n".format(l1, l2,
+                                                   np.mean(max_sims1))
+                    for chan in range(len(max_sims2)):
+                        table['model1'].append(model_paths[j])
+                        table['model2'].append(model_paths[i])
+                        table['cor_type'].append("max_act")
+                        table['m1_layer'].append(l2)
+                        table['m2_layer'].append(l1)
+                        table['xy_coord'].append((s2,s2))
+                        table['chan1'].append(chan)
+                        table['chan2'].append(None)
+                        table['cor'].append(max_sims2[chan])
+                    stats_string += "rev {}-{}: {}\n".format(l2, l1,
+                                                   np.mean(max_sims2))
+
+            if verbose:
+                print(stats_string)
+            # Integrated Gradient Max Correlation
+            torch.cuda.empty_cache()
+            if verbose:
+                print("Beginning Max IG Correlations")
+            stats_string = "IG Correlations:\n"
+            model1_shapes = [ig_resp1[l].shape for l in model1_layers]
+            model2_shapes = [ig_resp2[l].shape for l in model2_layers]
+            for l1,s1 in zip(model1_layers,model1_shapes):
+                if len(s1)<=2:
+                    continue
+                s1 = s1[-1]//2
+                for l2,s2 in zip(model2_layers,model2_shapes):
+                    if len(s2)<=2:
+                        continue
+                    s2 = s2[-1]//2
+                    lim = window_lim
+                    resp1 = ig_resp1[l1][:,:,s1,s1].squeeze()
+                    resp2 = ig_resp2[l2][:,:,s2,s2].squeeze()
+                    cutout1 = tdr.stimuli.get_cutout(ig_resp1[l1],
+                                                    center=(s1,s1),
+                                                    span=2*lim+1,
+                                                    pad_to=0)
+                    flat_cutout1 = cutout1.reshape(len(cutout1),-1)
+                    cutout2 = tdr.stimuli.get_cutout(ig_resp2[l2],
+                                                    center=(s2,s2),
+                                                    span=2*lim+1,
+                                                    pad_to=0)
+                    flat_cutout2 = cutout2.reshape(len(cutout2),-1)
+                    sim1 = mtx_cor(resp1,flat_cutout2,to_numpy=True)
+                    sim2 = mtx_cor(resp2,flat_cutout1,to_numpy=True)
+                    axis = 0 if sim1.shape[0] > sim1.shape[1] else 1
+                    max_sims1 = np.max(sim1,axis=axis)
+                    axis = 0 if sim2.shape[0] > sim2.shape[1] else 1
+                    max_sims2 = np.max(sim2,axis=axis)
+                    for chan in range(len(max_sims1)):
+                        table['model1'].append(model_paths[i])
+                        table['model2'].append(model_paths[j])
+                        table['cor_type'].append("max_ig")
+                        table['m1_layer'].append(l1)
+                        table['m2_layer'].append(l2)
+                        table['xy_coord'].append((s1,s1))
+                        table['chan1'].append(chan)
+                        table['chan2'].append(None)
+                        table['cor'].append(max_sims1[chan])
+                    stats_string += "{}-{}: {}\n".format(l1, l2,
+                                                   np.mean(max_sims1))
+                    for chan in range(len(max_sims2)):
+                        table['model1'].append(model_paths[j])
+                        table['model2'].append(model_paths[i])
+                        table['cor_type'].append("max_ig")
+                        table['m1_layer'].append(l2)
+                        table['m2_layer'].append(l1)
+                        table['xy_coord'].append((s2,s2))
+                        table['chan1'].append(chan)
+                        table['chan2'].append(None)
+                        table['cor'].append(max_sims2[chan])
+                    stats_string += "rev {}-{}: {}\n".format(l2, l1,
+                                                   np.mean(max_sims2))
             if verbose:
                 print(stats_string)
             ########### Permutation correlations
