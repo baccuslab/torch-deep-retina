@@ -53,7 +53,8 @@ def train(cfg):
         if 'ganglion' in key:
             model.state_dict()[key] = checkpoint_BNCNN['model_state_dict'][key]
             
-    for para in model.amacrine.parameters():
+    for name, para in model.amacrine.named_parameters():
+        if 'filter' not in name:
             para.requires_grad = False
     for para in model.ganglion.parameters():
             para.requires_grad = False
