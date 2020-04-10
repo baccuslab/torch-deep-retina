@@ -966,7 +966,6 @@ def integrated_gradient(model, X, layer='sequential.2', chans=None,
     # coordinates for desired cell
     prev_coords = None
     if spat_idx is not None:
-        print("spat idx if is executing")
         if isinstance(spat_idx, int): spat_idx = (spat_idx, spat_idx)
         row, col = spat_idx
         mod_idx = get_module_idx(model, GrabUnits)
@@ -1987,4 +1986,17 @@ def flatcat(dict_, axis=-1, sortfxn=lambda x: int(x.split(".")[-1])):
         catflat = torch.cat(arrs,dim=axis)
     return catflat
 
+def max_matrix(mtx):
+    """
+    Finds the row, column and value of the maximum in a maxtrix
+
+    mtx: ndarray
+        the matrix of interest
+    """
+    shape = mtx.shape
+    flat = mtx.ravel()
+    argmax = np.argmax(flat)
+    valmax = flat[argmax]
+    loc = np.unravel_index(argmax,shape)
+    return (*loc,valmax)
 

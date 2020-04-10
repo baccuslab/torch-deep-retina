@@ -278,33 +278,6 @@ class Trainer:
                         stats_string += s
                         del test_obs
 
-                # Save Model Snapshot
-                cur_lr = next(iter(optimizer.param_groups))['lr']
-                optimizer.zero_grad()
-                save_dict = {
-                    "model_type": hyps['model_type'],
-                    "model_state_dict":model.state_dict(),
-                    "optim_state_dict":optimizer.state_dict(),
-                    "hyps": hyps,
-                    "loss": avg_loss,
-                    "epoch":epoch,
-                    "val_loss":val_loss,
-                    "val_acc":val_acc,
-                    "test_pearson":avg_pearson,
-                    "norm_stats":train_data.stats,
-                    "zero_dict":zero_dict,
-                    "y_stats":{'mean':data_distr.y_mean,
-                                 'std':data_distr.y_std},
-                    "cur_lr":cur_lr, # Current LR
-                }
-                for k in hyps.keys():
-                    if k not in save_dict:
-                        save_dict[k] = hyps[k]
-                del_prev = 'save_every_epoch' in hyps and\
-                                            not hyps['save_every_epoch']
-                tdrio.save_checkpoint(save_dict, hyps['save_folder'],
-                                           'test', del_prev=del_prev)
-
                 # Integrated Gradient Pruning
                 prune = hyps_prune and epoch >= n_epochs-1
                 intvl = (epoch-n_epochs) % hyps['prune_intvl'] == 0
@@ -374,9 +347,37 @@ class Trainer:
                 with open(log,'a') as f:
                     f.write(str(stats_string)+'\n')
 
+                # Final Model Snapshot
+                cur_lr = next(iter(optimizer.param_groups))['lr']
+                optimizer.zero_grad()
+                save_dict = {
+                    "model_type": hyps['model_type'],
+                    "model_state_dict":model.state_dict(),
+                    "optim_state_dict":optimizer.state_dict(),
+                    "hyps": hyps,
+                    "loss": avg_loss,
+                    "epoch":epoch,
+                    "val_loss":val_loss,
+                    "val_acc":val_acc,
+                    "test_pearson":avg_pearson,
+                    "norm_stats":train_data.stats,
+                    "zero_dict":zero_dict,
+                    "y_stats":{'mean':data_distr.y_mean,
+                                 'std':data_distr.y_std},
+                    "cur_lr":cur_lr, # Current LR
+                }
+                for k in hyps.keys():
+                    if k not in save_dict:
+                        save_dict[k] = hyps[k]
+                del_prev = 'save_every_epoch' in hyps and\
+                                            not hyps['save_every_epoch']
+                tdrio.save_checkpoint(save_dict, hyps['save_folder'],
+                                           'test', del_prev=del_prev)
+
                 # If loss is nan, training is futile
                 if math.isnan(avg_loss) or math.isinf(avg_loss) or stop:
                     break
+
 
             # Final save
             results = {"save_folder":hyps['save_folder'],

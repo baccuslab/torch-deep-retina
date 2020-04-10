@@ -678,6 +678,7 @@ def get_analysis_figs(folder, model, metrics=None, ret_phenom=True,
 def analyze_model(folder, make_figs=True, make_model_rfs=False,
                                                  slide_steps=0,
                                                  intrnrn_stim='boxes',
+                                                 dsi_idxs=None,
                                                  verbose=True):
     """
     Calculates model performance on the testset and calculates
@@ -716,7 +717,8 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
     if hasattr(model, "zero_dict"):
         zero_dict = model.zero_dict
         pruning.zero_chans(model, zero_dict)
-        keys = sorted(list(zero_dict.keys()))
+        lam = lambda x: int(x.split(".")[-1])
+        keys = sorted(list(zero_dict.keys()),key=lam)
         pruned_chans = []
         n_dropped_chans = []
         s = ""

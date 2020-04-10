@@ -20,7 +20,7 @@ from tqdm import tqdm
 try:
     from jetpack import errorplot
 except:
-    print("Would be good to run:\n$ pip install -e git+git://github.com/nirum/jetpack.git@master#egg=jetpack")
+    print("f2_response is unavailable until you run:\n$ pip install -e git+git://github.com/nirum/jetpack.git@master#egg=jetpack")
             
 import deepdish as dd
 
@@ -29,6 +29,149 @@ if torch.cuda.is_available():
 else:
     DEVICE = torch.device("cpu")
 device = DEVICE
+
+def dirpref(rf, v, fr, n_steps=32):
+    """
+    This function computes the direction selectivity index and
+    orientation selectivity index for a spatiotemporal receptive field
+    It computes the dot product of an x-y-t receptive field with a set
+    of sinusoidal gratings for one velocity and spatial frequency
+
+    Stephen Baccus 12/2019
+    Inputs:
+        rf: ndarray or torch Tensor (T,H,W)
+            the receptive field
+        v: float
+            velocity
+        fr: float
+            spatial frequency
+        n_steps: int divisible by 4
+            the number of discrete steps in the period of 0<=x<2π
+    Outputs:
+        dsi: direction selectivity index
+        osi: orientation selectivity index
+        resp_ang: response amplitude for each angle of motion
+    """
+    if isinstance(rf,np.ndarray):
+        rf = torch.FloatTensor(rf)
+    rf = rf.permute((1,2,0))
+    rf = rf.to(DEVICE)
+    n_steps = int((n_steps//4)*4)
+    # Using torch.meshgrid gives different results (which is absolutely
+    # fucking stupid. Make me boil)
+    tup = np.meshgrid(np.arange(1,rf.shape[0]+1),
+                      np.arange(1,rf.shape[1]+1),
+                      np.arange(1,rf.shape[2]+1))
+    X,Y,T = (torch.FloatTensor(arr).to(DEVICE) for arr in tup)
+
+    period = 2*np.pi
+    pi_range = torch.linspace(0, period-period/n_steps, n_steps).to(DEVICE)
+    resp_ang = []
+    for i,ang in enumerate(pi_range):
+        resp = []
+        for j,phase in enumerate(pi_range):
+            # gst: grating stimulus
+            # fr : spatial frequency
+            # ang: motion angle
+            # phase: grating position
+            # X, Y, T: location in space-time rf   
+            gst = fr*torch.cos(ang)*X + fr*torch.sin(ang)*Y - T*v + phase
+            gst = torch.sin(gst)
+            prod = (gst*rf).sum()
+            resp.append(prod.item())
+
+        diff = np.max(resp)-np.min(resp)
+        resp_ang.append(diff)
+
+    # prefdir: Preferred direction (prefdir) of the rf,
+    #          direction that has the largest response amplitude
+    # nulldir: Null direction is opposite to preferred direction
+    # dsi: Direction selectivity index
+    half_steps = n_steps//2
+    prefdir = np.argmax(resp_ang)
+    nulldir = ((prefdir+half_steps) % n_steps)
+    dsi = (resp_ang[prefdir]-resp_ang[nulldir]) / resp_ang[prefdir]
+
+    # Compute orientation selectivity index
+    # orthdir1 & 2:Orthogonal directions from preferred-null direction 
+    # osi: Orientation selectivity index
+    # respprefor: Mean response for preferred orientation
+    # respnulllor: Mean response for orthogonal orientation
+    quart_steps = n_steps//4
+    orthdir1 = (prefdir+quart_steps)   % n_steps
+    orthdir2 = (prefdir+3*quart_steps) % n_steps
+    respprefor = (resp_ang[prefdir]+resp_ang[nulldir])/2
+    respnullor = (resp_ang[orthdir1]+resp_ang[orthdir2])/2
+    osi = (respprefor-respnullor)/respprefor
+    return dsi, osi, np.asarray(resp_ang)
+
+def dsiosi_idx(rf, velocities=torch.arange(0.1,0.5,0.1),
+                  frequencies=torch.arange(0.1,1.1,0.1),
+                  n_steps=32):
+    """
+    Computes direction selectivity index (DSI) and orientation
+    selectivity index (OSI) for a receptive field for a range of
+    velocities and spatial frequencies. It loops over the function
+    dirpref, which computes indices for one stimulus.
+
+    Stephen Baccus 12/2019
+    Inputs:
+        rf: ndarray or torch tensor (T,H,W)
+            receptive field
+        velocities: listlike of floats
+            range of velocities
+        frequencies: listlike of floats
+            range of spatial frequencies
+        n_steps: int divisible by 4
+            the number of discrete steps in the period of 0<=x<2π
+    
+    Outputs:
+        dsimax:
+            maximum direction selectivity index
+        osimax:
+            maximum orientation selectivity index
+        angmax:
+            maximum angle
+        respmax: ndarray
+            the response with the maximum response
+    """
+    n_steps = int((n_steps//4)*4)
+    period = 2*np.pi
+    # Compute DSI and OSI for the range of velocities and frequencies
+    # DSI will vary with velocity and spatial frequency
+    # if nV,nFR and nDir are the number of velocities and spatial
+    # frequencies and directions, then
+    # dsi: nV x nFR array of DSIs
+    # osi: nV x nFR array of oSIs
+    # resp_ang: nV x nFR x nDir array of response amplitudes
+    shape = (len(velocities), len(frequencies), n_steps)
+    dsis = np.zeros(shape[:2])
+    osis = np.zeros(shape[:2])
+    resp_angs = np.zeros(shape)
+
+    for i,v in enumerate(velocities):
+        for j,f in enumerate(frequencies):
+            dsi,osi,resp_ang = dirpref(rf,v,f,n_steps=n_steps)
+
+            dsis[i,j] = dsi
+            osis[i,j] = osi
+            resp_angs[i,j,:] = resp_ang
+
+    # Find the stimulus velocity and spatial frequency with the maximum 
+    # response, and choose DSIs and OSIs for that stimulus
+    maxresp = np.max(resp_angs,axis=2) # Max response across directions
+                              # for each velocity,v and frequency, fr
+    row,col,value = tdrutils.max_matrix(maxresp) # Max response across v and fr
+    
+    # DSI and OSI using grating stimulus of max response
+    dsimax = dsis[row,col]
+    osimax = osis[row,col]
+
+    # Preferred direction using grating stimulus of max response
+    respmax = resp_angs[row,col,:]
+    angmax = np.argmax(respmax) * (period/n_steps)
+
+    return dsimax,osimax,angmax,respmax
 
 def step_response(model, duration=100, delay=50, nsamples=200,
                                 intensity=-1., filt_depth=40):
