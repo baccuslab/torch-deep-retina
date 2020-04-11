@@ -305,7 +305,7 @@ def reversing_grating(model, size=5, phase=0., filt_depth=40):
                                                us_factor=1, blur=0)
     X = tdrstim.reverse(grating, halfperiod=50, nsamples=300)
     X = tdrstim.rolling_window(X,filt_depth)
-    X_torch = torch.from_numpy(X).to(DEVICE)
+    X_torch = torch.FloatTensor(X).to(DEVICE)
     with torch.no_grad():
         if model.recurrent:
             hs = [torch.zeros(1,*h).to(device) for h in\

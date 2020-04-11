@@ -152,6 +152,8 @@ class Trainer:
 
             hyps_prune = utils.try_key(hyps, 'prune', False)
             reset_sd = utils.try_key(hyps,'reset_sd',False)
+            min_prune_acc = utils.try_key(hyps,'min_prune_acc',0)
+            if min_prune_acc is None: min_prune_acc = 0
             reset_lr = utils.try_key(hyps,'reset_lr',False)
             reset_lr = reset_lr and not isinstance(scheduler,
                                                NullScheduler)
@@ -288,7 +290,8 @@ class Trainer:
                                        "prev_min_chan":-1,
                                        "intg_idx":0,
                                        "prev_acc":-1,
-                                       "prev_lr":cur_lr}
+                                       "prev_lr":cur_lr,
+                                       "min_acc":min_prune_acc}
                         if hyps['exp_name'] == "test":
                             val_acc = 0
 

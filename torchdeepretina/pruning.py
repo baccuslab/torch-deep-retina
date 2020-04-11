@@ -46,7 +46,7 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
                                                 prev_min_chan,
                                                 val_acc, prev_acc,
                                                 lr, prev_lr,
-                                                **kwargs):
+                                                min_acc, **kwargs):
     """
     Handles the channel pruning calculations. Should be called every
     n number of epochs just after validation during training.
@@ -93,6 +93,8 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
             the current learning rate
         prev_lr: float
             the learning rate from before the last pruning
+        min_acc: float
+            the minimum acc we will allow
 
     Returns:
         dict:
@@ -113,7 +115,8 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
     tolerance = hyps['prune_tolerance']
 
     # If true, means we want to revert and move on to next layer
-    if intg_idx<len(prune_layers) and val_acc<prev_acc-tolerance:
+    low_acc = (val_acc<prev_acc-tolerance) or (val_acc<min_acc)
+    if intg_idx<len(prune_layers) and low_acc:
         print("Validation decrease detected. "+\
                         "Returning to Previous Model")
         layer = prune_layers[intg_idx]
