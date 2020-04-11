@@ -67,11 +67,11 @@ if __name__=="__main__":
 
     sim_type_dict = dict()
     sim_type_dict['chan_act'] = False
-    sim_type_dict['chan_ig'] = False
-    sim_type_dict['max_act'] = True
-    sim_type_dict['max_ig'] = True
+    sim_type_dict['chan_ig']  = False
+    sim_type_dict['max_act']  = True
+    sim_type_dict['max_ig']   = True
     sim_type_dict['perm_act'] = False
-    sim_type_dict['perm_ig'] = False
+    sim_type_dict['perm_ig']  = False
 
     if same_chans_only:
         save_ext = "same_"+save_ext
