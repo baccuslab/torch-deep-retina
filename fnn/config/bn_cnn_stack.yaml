@@ -1,6 +1,5 @@
 exp_id: 'BN_CNN_Stack'
 img_shape: [40,50,50]
-gpu: 1
 Model:
     name: 'BN_CNN_Stack'
     ksizes: (15, 11)

@@ -399,7 +399,7 @@ class KineticsChannelModelFilterBipolarNoNorm(nn.Module):
         
         if scale_kinet:
             #self.kinet_scale = ScaleShift((self.seq_len, self.chans[0], shape[0]*shape[1]))
-            self.kinet_scale = ScaleShift((self.seq_len, self.chans[0], 1))
+            self.kinet_scale = ScaleShift((self.seq_len, self.chans[0], 1), scale=True, shift=False)
 
         modules = []
         modules.append(Reshape((-1,self.seq_len, self.chans[0], shape[0], shape[1])))

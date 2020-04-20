@@ -33,7 +33,7 @@ def train(cfg):
     with open(os.path.join(cfg.save_path, cfg.exp_id, 'cfg'), 'w') as f:
         f.write(str(cfg))
     
-    device = torch.device('cuda:'+str(cfg.gpu))
+    device = torch.device('cuda:'+str(opt.gpu))
     
     model = select_model(cfg, device)
     start_epoch = 0
@@ -49,20 +49,15 @@ def train(cfg):
     checkpoint_BNCNN = torch.load(checkpoint_path_BNCNN, map_location=device)
     for key in model.state_dict().keys():
         if ('amacrine' in key) and (key != 'amacrine.1.filter'):
-            model.state_dict()[key] = checkpoint_BNCNN['model_state_dict'][amacrine_minus_1(key)]
+            model.state_dict()[key].copy_(checkpoint_BNCNN['model_state_dict'][amacrine_minus_1(key)].data)
         if 'ganglion' in key:
-            model.state_dict()[key] = checkpoint_BNCNN['model_state_dict'][key]
-
-    model.amacrine.eval()
-    model.ganglion.eval()
-    '''
-    model.kinetics.ksi.requires_grad = False
-    model.kinetics.ksr.requires_grad = False
-            
-    model.kinetics.ka.requires_grad = False
-    model.kinetics.kfi.requires_grad = False
-    model.kinetics.kfr.requires_grad = False
-    '''
+            model.state_dict()[key].copy_(checkpoint_BNCNN['model_state_dict'][key].data)
+    
+    for name, para in model.amacrine.named_parameters():
+        if 'filter' not in name:
+            para.requires_grad = False
+    for para in model.ganglion.parameters():
+            para.requires_grad = False
     
     model.kinetics.ksi.data = 0. * torch.ones(model.chans[0], 1).to(device)
     model.kinetics.ksr.data = 0. * torch.ones(model.chans[0], 1).to(device)
@@ -80,6 +75,8 @@ def train(cfg):
         epoch_loss = 0
         loss = 0
         hs = get_hs(model, cfg.Data.batch_size, device)
+        model.amacrine.eval()
+        model.ganglion.eval()
         for idx,(x,y) in enumerate(tqdm(train_data)):
             x = x.to(device)
             y = y.double().to(device)

@@ -3,27 +3,20 @@ import argparse
 import torch
 import torch.nn as nn
 from torch.utils.data.dataloader import DataLoader
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.utils.data.sampler import SequentialSampler
 import numpy as np
 from tqdm import tqdm
 from collections import deque
 from kinetic.data import *
-from kinetic.evaluation import *
+from kinetic.evaluation import pearsonr_eval
 from kinetic.utils import *
 from kinetic.models import *
-from kinetic.config import get_custom_cfg
+from kinetic.config import get_default_cfg, get_custom_cfg
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=int, required=True)
 parser.add_argument('--hyper', type=str, required=True)
 opt = parser.parse_args()
-
-def amacrine_minus(key, value):
-    
-    assert 'amacrine' in key
-    num = int(key[9])
-    new_key = key[:9] + str(num-value) + key[10:]
-    return new_key
 
 def train(cfg):
     
@@ -45,21 +38,11 @@ def train(cfg):
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.Optimize.lr, 
                                  weight_decay=cfg.Optimize.l2)
     
-    scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.2, patience=5)
-    
-    checkpoint_path_BNCNN = '/home/xhding/saved_model/BN_CNN_Stack_NoNorm/epoch_045_loss_1.24_pearson_0.6025.pth'
-    checkpoint_BNCNN = torch.load(checkpoint_path_BNCNN, map_location=device)
-    for key in model.state_dict().keys():
-        if ('amacrine' in key) and (key != 'amacrine.1.filter'):
-            model.state_dict()[key].copy_(checkpoint_BNCNN['model_state_dict'][amacrine_minus(key, 2)])
-        if 'ganglion' in key:
-            model.state_dict()[key].copy_(checkpoint_BNCNN['model_state_dict'][key])
-            
-    for name, para in model.amacrine.named_parameters():
-        if 'filter' not in name:
-            para.requires_grad = False
-    for para in model.ganglion.parameters():
-            para.requires_grad = False
+    if cfg.Model.checkpoint != '':
+        checkpoint = torch.load(cfg.Model.checkpoint, map_location=device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        start_epoch = checkpoint['epoch'] + 1
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     
     model.kinetics.ksi.data = 0. * torch.ones(model.chans[0], 1).to(device)
     model.kinetics.ksr.data = 0. * torch.ones(model.chans[0], 1).to(device)
@@ -67,11 +50,8 @@ def train(cfg):
     model.kinetics.kfi.data = 50. * torch.ones(model.chans[0], 1).to(device)
     model.kinetics.kfr.data = 87. * torch.ones(model.chans[0], 1).to(device)
     
-    if cfg.Model.checkpoint != '':
-        checkpoint = torch.load(cfg.Model.checkpoint, map_location=device)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        start_epoch = checkpoint['epoch'] + 1
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    model.bipolar[0].convs[6].bias.data = -4. * torch.ones(model.chans[0]).to(device)
+    model.bipolar[0].convs[6].bias.requires_grad = False
     
     train_dataset = TrainDataset(cfg)
     batch_sampler = BatchRnnSampler(length=len(train_dataset), batch_size=cfg.Data.batch_size,
@@ -104,8 +84,6 @@ def train(cfg):
         epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size
         
         pearson = pearsonr_eval(model, validation_data, cfg.Model.n_units, len(validation_data), device)
-        
-        scheduler.step(epoch_loss)
         
         print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}'.format(epoch, epoch_loss, pearson))
         
