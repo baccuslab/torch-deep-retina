@@ -16,6 +16,7 @@ from itertools import repeat
 from numbers import Number
 
 import numpy as np
+import torch
 from skimage.filters import gaussian
 from skimage.transform import downscale_local_mean
 import skimage.draw

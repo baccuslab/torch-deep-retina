@@ -5,6 +5,8 @@ import torch.nn as nn
 from scipy import signal
 from collections import deque
 from kinetic.models import *
+from torchdeepretina.intracellular import load_interneuron_data, max_correlation
+import torchdeepretina.stimuli as tdrstim
 
 def get_hs(model, batch_size, device):
     hs = []
@@ -167,8 +169,47 @@ def temporal_frequency_normalized_loss(y_pred, y_targ, loss_fn, device, cut_off=
     
     return loss
     
+def interneuron_correlation_bipolar(model, root_path, files, stim_keys, length, device):
+    
+    stim_dict, mem_pot_dict, _ = load_interneuron_data(root_path, files, 40, stim_keys)
+    intr_cors = {
+                "cell_file":[], 
+                "stim_type":[],
+                "cell_type":[],
+                "cor":[]
+                }
+    for cell_file in stim_dict.keys():
+        for stim_type in stim_dict[cell_file].keys():
+            print(cell_file, stim_type)
+            stim = tdrstim.spatial_pad(stim_dict[cell_file][stim_type], model.img_shape[1])
+            stim = tdrstim.rolling_window(stim, model.img_shape[0])[:length].astype(np.float32)
+
+            with torch.no_grad():
+                stim_tensor = torch.from_numpy(stim).to(device)
+                resp = model.bipolar[0](stim_tensor)
+                resp = resp.detach().cpu().numpy()
+            pots = mem_pot_dict[cell_file][stim_type][:, :length]
+            rnge = range(len(pots))
+
+            for cell_idx in rnge:
+                r = max_correlation(pots[cell_idx], resp)
+                intr_cors['stim_type'].append(stim_type)
+                cell_type = cell_file.split("/")[-1].split("_")[0][:-1]
+                intr_cors['cell_type'].append(cell_type) # amacrine or bipolar
+                intr_cors['cor'].append(r)
+    return intr_cors
     
     
+def slow_parameters_solver(A_l, A_h, decay_rate, kfi, kfr, ka, u_l, u_h):
     
-    
+    I1_l = kfi / kfr * A_l
+    I1_h = kfi / kfr * A_h
+    delta_I2_l = 1 - I1_l * (kfi*u_l*ka + kfr*u_l*ka + kfr*kfi) / (kfi*u_l*ka)
+    delta_I2_h = 1 - I1_h * (kfi*u_h*ka + kfr*u_h*ka + kfr*kfi) / (kfi*u_h*ka)
+    #alpha = u_h * I1_l / u_l / I1_h
+    alpha = I1_l / I1_h
+    I20 = (delta_I2_l - alpha*delta_I2_h) / (alpha - 1)
+    ksi = decay_rate / ((kfi*u_h*ka)/(kfi*u_h*ka + kfr*u_h*ka + kfr*kfi)+I1_h/(I20 + delta_I2_h))
+    ksr = I1_h / (I20 + delta_I2_h) * ksi
+    return ksi, ksr, I20
     
