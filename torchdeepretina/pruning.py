@@ -41,12 +41,23 @@ def zero_chans(model, chan_dict, zero_bias=True):
                     model.sequential[idx].bias.data[chan] = 0
     return model
 
-def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
-                                                prev_state_dict,
-                                                prev_min_chan,
-                                                val_acc, prev_acc,
-                                                lr, prev_lr,
-                                                min_acc, **kwargs):
+def get_next_layer(keys,zero_dict):
+    if len(keys)==1: return keys[0]
+    elif len(keys)==0: return None
+    min_count = len(zero_dict[keys[0]])
+    min_idx = 0
+    for i,key in enumerate(keys[1:]):
+        if len(zero_dict[key]) < min_count:
+            min_idx = i+1
+            min_count = len(zero_dict[key])
+    return keys[min_idx]
+
+def prune_channels(model, hyps, data_sample, zero_dict,
+                                             prev_state_dict,
+                                             cur_chan, val_acc,
+                                             prev_acc, lr,
+                                             prev_lr, cur_layer,
+                                             min_acc, **kwargs):
     """
     Handles the channel pruning calculations. Should be called every
     n number of epochs just after validation during training.
@@ -55,7 +66,7 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
         model: torch Module
         hyps: dict
             keys: str
-                prune_layers: set of str
+                open_layers: set of str
                     the names of the model layers that should be
                     pruned. probably the convolutional layers.
                 intg_bsize: int
@@ -66,7 +77,7 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
                 prune_tolerance: float
                     the maximum drop in accuracy willing to be
                     tolerated for a channel removal
-        data_distr: DataDistributor
+        data_sample: DataDistributor
             the training data distributor
         zero_dict: dict of sets
             keys: str
@@ -75,14 +86,11 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
                 and the values should be the corresponding channel
                 indices that should be zeroed out. i.e.:
                 "layer_name": {chan_idx_0, chan_idx_1, ...}
-        intg_idx: int
-            the index of the layer that should be focused on for
-            pruning
         prev_state_dict: torch Module state dict
             the state_dict of the last model state. The model is
             reverted back to this state dict if the most recent
             pruning choice performs worse
-        prev_min_chan: int
+        cur_chan: int
             the last chan to be dropped
         val_acc: float
             the validation accuracy for the current model
@@ -109,82 +117,218 @@ def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
                 is set to the val_acc, otherwise stays as is
 
     """
-    new_drop_layer = False # Indicates we will move on to next layer
-    stop_pruning = False # Indicates we want to stop the pruning
-    prune_layers = hyps['prune_layers']
-    tolerance = hyps['prune_tolerance']
-
-    # If true, means we want to revert and move on to next layer
-    low_acc = (val_acc<prev_acc-tolerance) or (val_acc<min_acc)
-    if intg_idx<len(prune_layers) and low_acc:
-        print("Validation decrease detected. "+\
-                        "Returning to Previous Model")
-        layer = prune_layers[intg_idx]
-        zero_dict[layer].remove(prev_min_chan)
-        # Return weights to previous values
+    altn = hyps['altn_layers']
+    tol = hyps["prune_tolerance"]
+    open_layers = hyps['open_layers']
+    if val_acc<(prev_acc-tol): # revert and close layer
+        zero_dict[cur_layer].remove(cur_chan)
+        open_layers.remove(cur_layer)
         model.load_state_dict(prev_state_dict)
-        intg_idx += 1 # Indicates we want to focus on the next layer now
-        new_drop_layer = True
-    
-    # Only want to else if reached end of zeroable channels
-    if intg_idx<len(prune_layers):
-        print("Calculating Integrated Gradient | Layer:",
-                                  prune_layers[intg_idx])
-        # Calc intg grad
-        bsize = hyps['intg_bsize']
-        steps = hyps['alpha_steps']
-        gen = data_distr.train_sample(batch_size=bsize)
-        (data_sample, _) = next(gen)
-        del gen
-        layer = prune_layers[intg_idx]
-        tdr_ig = tdrutils.integrated_gradient
-        intg_grad, gc_resp = tdr_ig(model, data_sample, layer=layer,
-                                                    chans=None,
-                                                    spat_idx=None,
-                                                    alpha_steps=steps,
-                                                    batch_size=500,
-                                                    to_numpy=True,
-                                                    verbose=True)
-        shape = (*intg_grad.shape[:2],-1)
-        intg_grad = intg_grad.reshape(shape) #shape (T,C,N)
-        if hyps['abssum']:
-            print("Taking absolute value first,",
-                        "then summing over channels")
-            intg_grad = np.abs(intg_grad).sum(-1).mean(0) #shape (C,)
-        else:
-            print("Summing over channels first,",
-                        "then taking absolute value")
-            intg_grad = np.abs(intg_grad.sum(-1)).mean(0) #shape (C,)
-        min_chans = np.argsort(intg_grad)
-    
-        # Track changes
-        min_chan = min_chans[len(zero_dict[layer])]
-        layer_idx = int(layer.split(".")[-1])
-        prev_state_dict = model.state_dict()
-        zero_dict[layer].add(min_chan)
-        prev_min_chan = min_chan
-        s = "Dropping channel {} in layer {}"
-        print(s.format(min_chan, layer))
     else:
-        print("No more layers in prune_layers list. "+\
-                                    "Stopping Training")
-        stop_pruning = True
-
-    # new_drop_layer means we have discontinued a pruning and wish
-    # to move on to the next possible layer for pruning. Thus, we
-    # want to revert our lr and acc to the values they were before
-    # we attempted the pruning if new_drop_layer is true. Otherwise
-    # we want to update them to the current values.
-    if not new_drop_layer: 
         prev_acc = val_acc
         prev_lr = lr
+    keys = sorted(list(open_layers),key=lambda x: int(x.split(".")[-1]))
+    if altn:
+        for i,k in enumerate(keys):
+            idx = tdrutils.get_layer_idx(model,k)
+            if len(zero_dict[k]) == (model.chans[idx]-1):
+                if k in open_layers:
+                    open_layers.remove(k)
+        cur_layer = get_next_layer(keys,zero_dict)
+    elif cur_layer not in open_layers and len(keys)>0:
+        cur_layer = keys[0]
+    if len(open_layers) == 0:
+        return {"zero_dict":zero_dict,
+                "prev_state_dict":prev_state_dict,
+                "cur_chan":cur_chan,
+                "cur_layer":cur_layer,
+                "prev_acc":prev_acc,
+                "prev_lr":prev_lr,
+                "min_acc":min_acc}
+    print("Calculating Integrated Gradient | Layer:", cur_layer)
+    # Calc intg grad
+    steps = hyps['alpha_steps']
+    tdr_ig = tdrutils.integrated_gradient
+    intg_grad, gc_resp = tdr_ig(model, data_sample, layer=cur_layer,
+                                                chans=None,
+                                                spat_idx=None,
+                                                alpha_steps=steps,
+                                                batch_size=500,
+                                                to_numpy=True,
+                                                verbose=True)
+    shape = (*intg_grad.shape[:2],-1)
+    intg_grad = intg_grad.reshape(shape) #shape (T,C,N)
+    if hyps['abssum']:
+        print("Taking absolute value first,",
+                    "then summing over channels")
+        intg_grad = np.abs(intg_grad).sum(-1).mean(0) #shape (C,)
+    else:
+        print("Summing over channels first,",
+                    "then taking absolute value")
+        intg_grad = np.abs(intg_grad.sum(-1)).mean(0) #shape (C,)
+    min_chans = np.argsort(intg_grad)
+    
+    # Track changes
+    cur_chan = min_chans[len(zero_dict[cur_layer])]
+    prev_state_dict = model.state_dict()
+    zero_dict[cur_layer].add(cur_chan)
+    s = "Dropping channel {} in layer {}"
+    print(s.format(cur_chan, cur_layer))
 
-    return {"stop_pruning":stop_pruning, "zero_dict":zero_dict,
-                                "prev_state_dict":prev_state_dict,
-                                "prev_min_chan":prev_min_chan,
-                                "intg_idx":intg_idx,
-                                "prev_acc":prev_acc,
-                                "prev_lr":prev_lr}
+    return {"zero_dict":zero_dict,
+            "prev_state_dict":prev_state_dict,
+            "cur_chan":cur_chan,
+            "cur_layer":cur_layer,
+            "prev_acc":prev_acc,
+            "prev_lr":prev_lr,
+            "min_acc":min_acc }
+
+#def prune_channels(model, hyps, data_distr, zero_dict, intg_idx,
+#                                                prev_state_dict,
+#                                                prev_min_chan,
+#                                                val_acc, prev_acc,
+#                                                lr, prev_lr,
+#                                                min_acc, **kwargs):
+#    """
+#    Handles the channel pruning calculations. Should be called every
+#    n number of epochs just after validation during training.
+#
+#    Inputs:
+#        model: torch Module
+#        hyps: dict
+#            keys: str
+#                prune_layers: set of str
+#                    the names of the model layers that should be
+#                    pruned. probably the convolutional layers.
+#                intg_bsize: int
+#                    size of batch for integrated gradient
+#                alpha_steps: int
+#                    the number of integration steps performed when
+#                    calculating the integrated gradient
+#                prune_tolerance: float
+#                    the maximum drop in accuracy willing to be
+#                    tolerated for a channel removal
+#        data_distr: DataDistributor
+#            the training data distributor
+#        zero_dict: dict of sets
+#            keys: str
+#            vals: set of ints
+#                the keys should each be the string name of a layer
+#                and the values should be the corresponding channel
+#                indices that should be zeroed out. i.e.:
+#                "layer_name": {chan_idx_0, chan_idx_1, ...}
+#        intg_idx: int
+#            the index of the layer that should be focused on for
+#            pruning
+#        prev_state_dict: torch Module state dict
+#            the state_dict of the last model state. The model is
+#            reverted back to this state dict if the most recent
+#            pruning choice performs worse
+#        prev_min_chan: int
+#            the last chan to be dropped
+#        val_acc: float
+#            the validation accuracy for the current model
+#        prev_acc: float
+#            the validation accuracy associated with the
+#            prev_state_dict weights
+#        lr: float
+#            the current learning rate
+#        prev_lr: float
+#            the learning rate from before the last pruning
+#        min_acc: float
+#            the minimum acc we will allow
+#
+#    Returns:
+#        dict:
+#            stop_pruning: bool
+#                if no more pruning can be completed, this is set to
+#                true
+#            zero_dict: same as input zero_dict
+#            intg_idx: int
+#                the updated layer index
+#            prev_acc: float
+#                the updated prev_acc. if new channel is pruned, this
+#                is set to the val_acc, otherwise stays as is
+#
+#    """
+#
+#    new_drop_layer = False # Indicates we will move on to next layer
+#    stop_pruning = False # Indicates we want to stop the pruning
+#    prune_layers = hyps['prune_layers']
+#    tolerance = hyps['prune_tolerance']
+#
+#    # If true, means we want to revert and move on to next layer
+#    low_acc = (val_acc<prev_acc-tolerance) or (val_acc<min_acc)
+#    if intg_idx<len(prune_layers) and low_acc:
+#        print("Validation decrease detected. "+\
+#                        "Returning to Previous Model")
+#        layer = prune_layers[intg_idx]
+#        zero_dict[layer].remove(prev_min_chan)
+#        # Return weights to previous values
+#        model.load_state_dict(prev_state_dict)
+#        intg_idx += 1 # Indicates we want to focus on the next layer now
+#        new_drop_layer = True
+#    
+#    # Only want to else if reached end of zeroable channels
+#    if intg_idx<len(prune_layers):
+#        print("Calculating Integrated Gradient | Layer:",
+#                                  prune_layers[intg_idx])
+#        # Calc intg grad
+#        bsize = hyps['intg_bsize']
+#        steps = hyps['alpha_steps']
+#        gen = data_distr.train_sample(batch_size=bsize)
+#        (data_sample, _) = next(gen)
+#        del gen
+#        layer = prune_layers[intg_idx]
+#        tdr_ig = tdrutils.integrated_gradient
+#        intg_grad, gc_resp = tdr_ig(model, data_sample, layer=layer,
+#                                                    chans=None,
+#                                                    spat_idx=None,
+#                                                    alpha_steps=steps,
+#                                                    batch_size=500,
+#                                                    to_numpy=True,
+#                                                    verbose=True)
+#        shape = (*intg_grad.shape[:2],-1)
+#        intg_grad = intg_grad.reshape(shape) #shape (T,C,N)
+#        if hyps['abssum']:
+#            print("Taking absolute value first,",
+#                        "then summing over channels")
+#            intg_grad = np.abs(intg_grad).sum(-1).mean(0) #shape (C,)
+#        else:
+#            print("Summing over channels first,",
+#                        "then taking absolute value")
+#            intg_grad = np.abs(intg_grad.sum(-1)).mean(0) #shape (C,)
+#        min_chans = np.argsort(intg_grad)
+#    
+#        # Track changes
+#        min_chan = min_chans[len(zero_dict[layer])]
+#        layer_idx = int(layer.split(".")[-1])
+#        prev_state_dict = model.state_dict()
+#        zero_dict[layer].add(min_chan)
+#        prev_min_chan = min_chan
+#        s = "Dropping channel {} in layer {}"
+#        print(s.format(min_chan, layer))
+#    else:
+#        print("No more layers in prune_layers list. "+\
+#                                    "Stopping Training")
+#        stop_pruning = True
+#
+#    # new_drop_layer means we have discontinued a pruning and wish
+#    # to move on to the next possible layer for pruning. Thus, we
+#    # want to revert our lr and acc to the values they were before
+#    # we attempted the pruning if new_drop_layer is true. Otherwise
+#    # we want to update them to the current values.
+#    if not new_drop_layer: 
+#        prev_acc = val_acc
+#        prev_lr = lr
+#
+#    return {"stop_pruning":stop_pruning, "zero_dict":zero_dict,
+#                                "prev_state_dict":prev_state_dict,
+#                                "prev_min_chan":prev_min_chan,
+#                                "intg_idx":intg_idx,
+#                                "prev_acc":prev_acc,
+#                                "prev_lr":prev_lr,
+#                                "min_acc":min_acc}
 
 def reduce_model(model, zero_dict):
     """
