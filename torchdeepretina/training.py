@@ -149,6 +149,7 @@ class Trainer:
             if hyps['prune_layers'] == 'all' or hyps['prune_layers']==[]:
                 layers = utils.get_conv_layer_names(model)
                 hyps['prune_layers'] = layers[:-1]
+                hyps['open_layers'] = set(hyps['prune_layers'])
 
             hyps_prune = utils.try_key(hyps, 'prune', False)
             reset_sd = utils.try_key(hyps,'reset_sd',False)
@@ -287,8 +288,8 @@ class Trainer:
                     if epoch <= (n_epochs+hyps['prune_intvl']):
                         prune_dict = { "zero_dict":zero_dict,
                                        "prev_state_dict":None,
-                                       "prev_min_chan":-1,
-                                       "intg_idx":0,
+                                       "cur_chan":-1,
+                                       "cur_layer":None,
                                        "prev_acc":-1,
                                        "prev_lr":cur_lr,
                                        "min_acc":min_prune_acc}
@@ -297,12 +298,17 @@ class Trainer:
 
                     cur_lr = next(iter(optimizer.param_groups))['lr']
 
+
+                    bsize = hyps['intg_bsize']
+                    gen = data_distr.train_sample(batch_size=bsize)
+                    (data_sample, _) = next(gen)
+                    del gen
                     prune_dict = tdrprune.prune_channels(model, hyps,
-                                                       data_distr,
+                                                       data_sample,
                                                        val_acc=val_acc,
                                                        lr=cur_lr,
                                                        **prune_dict)
-                    stop_training = prune_dict['stop_pruning']
+                    stop_training = len(hyps['open_layers'])==0
                     if reset_sd:
                         model.load_state_dict(og_state_dict)
                         optimizer.load_state_dict(og_optim_dict)
@@ -925,6 +931,7 @@ def fill_hyper_q(hyps, hyp_ranges, keys, hyper_q, idx=0):
         # Ensure necessary hyps are present
         hyps['n_repeats'] = utils.try_key(hyps, 'n_repeats', 1)
         hyps['prune'] = utils.try_key(hyps, 'prune', False)
+        hyps['altn_layers'] = utils.try_key(hyps, 'altn_layers', False)
         hyps['abssum'] = utils.try_key(hyps, 'abssum', False)
         hyps['prune_layers'] = utils.try_key(hyps, 'prune_layers', [])
         hyps['prune_intvl'] = utils.try_key(hyps, 'prune_intvl', None)
