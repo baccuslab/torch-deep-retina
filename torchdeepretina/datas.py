@@ -34,6 +34,7 @@ CELLS = {
     '16-05-31': [2, 3, 4, 14, 16, 18, 20, 25, 27],
     'arbfilt': [0,1,2,3,4,5,6,7,8,9]
 }
+# Coordinates are in row,col format
 CENTERS = {
     "bipolars_late_2012":  [(19, 22), (18, 20), (20, 21), (18, 19)],
     "bipolars_early_2012": [(17, 23), (17, 23), (18, 23)],
@@ -45,6 +46,11 @@ CENTERS = {
                             (20, 19), (18, 18), (19, 17), (17, 17),
                             (18, 20), (20, 19), (17, 19), (19, 18),
                             (17, 17), (25, 15)
+                          ],
+    "unks_17-10-18":      [ (14, 15), (11, 14), (15, 15), (13, 15),
+                            (11, 14), (17, 16), (16, 16), (14, 15),
+                            (10, 16), (11, 17), (16, 16), (12, 16),
+                            (12, 16), (14, 17)
                           ],
     '15-10-07':  [[21,18], [24,20], [22,18], [27,18], [31,20]],
     '15-11-21a': [[37,3], [39,6], [20,15], [41,2]],
@@ -64,6 +70,8 @@ CENTERS_DICT = {
                           enumerate(CENTERS["amacrines_early_2012"])},
      "amacrines_late_2012":  {i:c for i,c in\
                           enumerate(CENTERS["amacrines_late_2012"])},
+     "unks_17-10-18":  {i:c for i,c in\
+                          enumerate(CENTERS["unks_17-10-18"])},
         '15-10-07':  {0:[21,18], 1:[24,20], 2:[22,18], 3:[27,18],
                       4:[31,20]},
         '15-11-21a': {6:[37,3], 10:[39,6], 12:[20,15], 13:[41,2]},
@@ -79,7 +87,8 @@ CENTERS_DICT = {
 
 INTR_FILES = {'bipolars_late_2012', 'bipolars_early_2012',
               'amacrines_early_2012','amacrines_late_2012',
-              'horizontals_early_2012', 'horizontals_late_2012'}
+              #'horizontals_early_2012', 'horizontals_late_2012',
+              "unks_17-10-18"}
 
 Exptdata = namedtuple('Exptdata', ['X','y','spkhist','stats',"cells",
                                                           "centers"])
@@ -510,7 +519,9 @@ def load_interneuron_data(root_path="~/interneuron_data/",
 
                 startx = 0
                 mstartx = 0
-                for i,k in enumerate(stim_keys):
+                for i,k in enumerate(sorted(list(f.keys()))):
+                    if k not in stim_keys:
+                        continue
                     prepped = np.asarray(f[k+'/stimuli'])
                     prepped = prepare_stim(prepped, k)
                     if trunc_join:
@@ -532,7 +543,7 @@ def load_interneuron_data(root_path="~/interneuron_data/",
                     mem_pot = np.asarray(f[k][s])
                     if trunc_join:
                         mem_pot = mem_pot[:,:trunc_len]
-                    if i == 0 or window:
+                    if startx == 0 or window:
                         mem_pot = mem_pot[:,filter_length:]
                     mendx = mstartx+mem_pot.shape[1]
                     mem_pots[file_name][:,mstartx:mendx] = mem_pot
