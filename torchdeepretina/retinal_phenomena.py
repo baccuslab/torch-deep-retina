@@ -54,15 +54,19 @@ def dirpref(rf, v, fr, n_steps=32):
     """
     if isinstance(rf,np.ndarray):
         rf = torch.FloatTensor(rf)
-    rf = rf.permute((1,2,0))
     rf = rf.to(DEVICE)
     n_steps = int((n_steps//4)*4)
     # Using torch.meshgrid gives different results (which is absolutely
     # fucking stupid. Make me boil)
-    tup = np.meshgrid(np.arange(1,rf.shape[0]+1),
-                      np.arange(1,rf.shape[1]+1),
+    ####rf = rf.permute((1,2,0))
+    ####tup = np.meshgrid(np.arange(1,rf.shape[0]+1),
+    ####                  np.arange(1,rf.shape[1]+1),
+    ####                  np.arange(1,rf.shape[2]+1))
+    ####X,Y,T = (torch.FloatTensor(arr).to(DEVICE) for arr in tup)
+    tup = np.meshgrid(np.arange(1,rf.shape[1]+1),
+                      np.arange(1,rf.shape[0]+1),
                       np.arange(1,rf.shape[2]+1))
-    X,Y,T = (torch.FloatTensor(arr).to(DEVICE) for arr in tup)
+    X,T,Y = (torch.FloatTensor(arr).to(DEVICE) for arr in tup)
 
     period = 2*np.pi
     pi_range = torch.linspace(0, period-period/n_steps, n_steps).to(DEVICE)
@@ -105,8 +109,8 @@ def dirpref(rf, v, fr, n_steps=32):
     osi = (respprefor-respnullor)/respprefor
     return dsi, osi, np.asarray(resp_ang)
 
-def dsiosi_idx(rf, velocities=torch.arange(0.1,0.5,0.1),
-                  frequencies=torch.arange(0.1,1.1,0.1),
+def dsiosi_idx(rf, velocities=torch.arange(0.1,.71,0.1),
+                  frequencies=torch.arange(0.1,1.11,0.1),
                   n_steps=32):
     """
     Computes direction selectivity index (DSI) and orientation
@@ -157,12 +161,12 @@ def dsiosi_idx(rf, velocities=torch.arange(0.1,0.5,0.1),
             osis[i,j] = osi
             resp_angs[i,j,:] = resp_ang
 
-    # Find the stimulus velocity and spatial frequency with the maximum 
+    # Find the stimulus velocity and spatial frequency with the maximum
     # response, and choose DSIs and OSIs for that stimulus
     maxresp = np.max(resp_angs,axis=2) # Max response across directions
                               # for each velocity,v and frequency, fr
     row,col,value = tdrutils.max_matrix(maxresp) # Max response across v and fr
-    
+
     # DSI and OSI using grating stimulus of max response
     dsimax = dsis[row,col]
     osimax = osis[row,col]
@@ -171,7 +175,7 @@ def dsiosi_idx(rf, velocities=torch.arange(0.1,0.5,0.1),
     respmax = resp_angs[row,col,:]
     angmax = np.argmax(respmax) * (period/n_steps)
 
-    return dsimax,osimax,angmax,respmax
+    return dsimax,osimax,angmax,respmax,resp_angs
 
 def step_response(model, duration=100, delay=50, nsamples=200,
                                 intensity=-1., filt_depth=40):
