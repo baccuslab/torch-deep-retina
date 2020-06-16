@@ -7,7 +7,8 @@ import json
 import os
 import torchdeepretina.stimuli as tdrstim
 from torchdeepretina.custom_modules import LinearStackedConv2d,\
-                                            GrabUnits
+                                            GrabUnits, AbsBatchNorm1d,\
+                                            update_shape
 from tqdm import tqdm
 import pyret.filtertools as ft
 import time
@@ -114,7 +115,7 @@ class PermutationSimilarity:
     between two matrices.
     """
 
-    def fit(self, X, Y):
+    def fit(self, X, Y,vary_space=False):
         """
         Fits the permutation matrix between X and Y. Assumes time is
         in first dimension and number of neurons is in second. Uses
@@ -122,33 +123,56 @@ class PermutationSimilarity:
 
         X: torch FloatTensor or ndarray (T,N) or (T,C,H,W)
         Y: torch FloatTensor or ndarray (T,N) or (T,C,H,W)
+        vary_space: bool
+            if true, the correlations will be calculated for all X 
+            units and all Y units preserving space for the Y
+            units. The best spatial correlations are then taken for
+            each channel in Y to be used in the permutation
+            correlation matrix. This allows for the best spatial
+            location to be used when calculating the permutation
+            correlation.
         """
         if len(X.shape) > 2:
             X = X.reshape(len(X),-1)
         if len(Y.shape) > 2:
+            self.og_shape = Y.shape
             Y = Y.reshape(len(Y),-1)
         if isinstance(X,torch.Tensor):
             X = X.data.cpu().numpy()
         if isinstance(Y,torch.Tensor):
             Y = Y.data.cpu().numpy()
+        self.swap_XY = False
         self.swap_XY = X.shape[-1] > Y.shape[-1]
         if self.swap_XY:
             X,Y = Y,X
+        self.spatial_args = None
         self.xmean = X.mean(0)
         self.ymean = Y.mean(0)
         X_c = X-self.xmean
         Y_c = Y-self.ymean
 
         xty = X_c.T@Y_c
-        C = -xty - np.min(xty)
-        C[np.isnan(C)] = 0
 
-        rows,cols = linear_sum_assignment(C)
-        self.rows = rows
-        self.cols = cols
+        if vary_space:
+            min_xty = np.min(xty)
+            if self.swap_XY:
+                xty = xty.T
+            xty = xty.reshape(len(xty),self.og_shape[1],-1)
+            self.spatial_args = np.argmax(xty,axis=-1)
+            args = self.spatial_args[...,None]
+            xty=np.take_along_axis(xty,args,axis=-1)
+            if self.swap_XY:
+                xty = xty.T
+            xty = xty[...,0]
+            C = -xty - min_xty
+        else:
+            C = -xty - np.min(xty)
+        C[np.isnan(C)] = 0
+        self.rows,self.cols = linear_sum_assignment(C)
 
     def grad_fit(self, X, Y, lr=0.001, tol=0.0001, patience=10,
                                                     alpha=0.5,
+                                                    vary_space=False,
                                                     verbose=False):
         """
         Fits the permutation matrix between X and Y. Assumes time is
@@ -169,18 +193,29 @@ class PermutationSimilarity:
         alpha: float between 0 and 1
             the portion of the loss dedicated to the permutation mtx
             manipulations
+        vary_space: bool
+            if true, the correlations will be calculated for all X 
+            units and all Y units preserving space for the Y
+            units. The best spatial correlations are then taken for
+            each channel in Y to be used in the permutation
+            correlation matrix. This allows for the best spatial
+            location to be used when calculating the permutation
+            correlation.
         """
         if len(X.shape) > 2:
             X = X.reshape(len(X),-1)
+        assert not vary_space | len(Y.shape) > 2
         if len(Y.shape) > 2:
+            self.og_shape = Y.shape
             Y = Y.reshape(len(Y),-1)
         if isinstance(X,np.ndarray):
             X = torch.FloatTensor(X)
         if isinstance(Y,np.ndarray):
             Y = torch.FloatTensor(Y)
-        self.swap_XY = X.shape[-1] > Y.shape[-1]
+        self.swap_XY = X.shape[-1] > Y.shape[1]
         if self.swap_XY:
             X,Y = Y,X
+        self.spatial_args = None
         self.xmean = X.mean(0)
         self.ymean = Y.mean(0)
         X_c = (X-self.xmean)
@@ -194,12 +229,21 @@ class PermutationSimilarity:
         xty = torch.mm(X_c.T, Y_c)
         C = -xty - xty.min()
 
-        rows,cols = self.train_perm_mtx(C,lr=lr,tol=tol,
+        if vary_space:
+            if self.swap_XY:
+                C = C.T
+            C = C.reshape(len(C),self.og_shape[1],-1)
+            self.spatial_args = torch.argmax(-C,dim=-1)
+            C = C.gather(-1,self.spatial_args[...,None])
+            self.spatial_args = self.spatial_args.cpu().numpy()
+            if self.swap_XY:
+                C = C.T
+            C = C.squeeze()
+
+        self.rows,self.cols = self.train_perm_mtx(C,lr=lr,tol=tol,
                                                 patience=patience,
                                                 alpha=alpha,
                                                 verbose=verbose)
-        self.rows = rows
-        self.cols = cols
 
     def train_perm_mtx(self, C, lr=0.001, tol=0.0001, patience=10,
                                                       alpha=0.5,
@@ -296,9 +340,26 @@ class PermutationSimilarity:
         if self.swap_XY:
             X,Y = Y,X
         X_c = (X - self.xmean)
-        tX = X_c[:,self.rows]
         Y_c = (Y - self.ymean)
-        tY = Y_c[:,self.cols]
+
+        # Handle varying spatial location
+        if self.spatial_args is not None:
+            if self.swap_XY:
+                X_c,Y_c = Y_c,X_c
+                rows,cols = self.cols,self.rows
+            else: rows,cols = self.rows,self.cols
+            Y_c = Y_c.reshape(len(Y_c),self.og_shape[1],-1)
+            datas = []
+            for i in range(len(rows)):
+                max_idxs = self.spatial_args[rows[i]]
+                datas.append(Y_c[:, cols[i], max_idxs[cols[i]]])
+            tY = np.stack(datas,axis=-1)
+            tX = X_c[:,rows]
+            if self.swap_XY:
+                tX,tY = tY,tX
+        else:
+            tX = X_c[:,self.rows]
+            tY = Y_c[:,self.cols]
         return tX, tY
 
     def similarity(self, X, Y):
@@ -318,6 +379,7 @@ def perm_similarity(X,Y,test_X=None,test_Y=None, grad_fit=True,
                                                  tol=0.0001,
                                                  patience=10,
                                                  alpha=0.5,
+                                                 vary_space=False,
                                                  verbose=True):
     """
     Finds the best permutation matrix to map X onto Y and calculates
@@ -352,7 +414,16 @@ def perm_similarity(X,Y,test_X=None,test_Y=None, grad_fit=True,
         patience: int
             the number of finishing loops to do after the loss has
             converged
-        algorithm
+        alpha: float between 0 and 1
+            the portion of the gradient loss dedicated to the 
+            permutation mtx manipulations
+    vary_space: bool
+        if true, the correlations will be calculated for all resp1 
+        units and all resp2 units preserving space for the resp2 units.
+        The best spatial correlations are then taken for each channel
+        in resp2 to be used in the permutation correlation matrix. This
+        allows for the best spatial location to be used when calculating
+        the permutation correlation.
 
     Returns:
         ccor: float
@@ -368,11 +439,15 @@ def perm_similarity(X,Y,test_X=None,test_Y=None, grad_fit=True,
 
     if len(X.shape) > 2:
         X = X.reshape(len(X),-1)
-    if len(Y.shape) > 2:
+    if len(Y.shape) > 2 and not vary_space:
         Y = Y.reshape(len(Y),-1)
+    elif len(Y.shape) <= 2 and vary_space:
+        vary_space = False
+        s = "To use vary_space, Y must have more than {} dimensions"
+        print(s.format(len(Y.shape)))
     if test_X is not None and len(test_X.shape) > 2:
         test_X = test_X.reshape(len(test_X),-1)
-    if test_Y is not None and len(test_Y.shape) > 2:
+    if test_Y is not None and len(test_Y.shape) > 2 and not vary_space:
         test_Y = test_Y.reshape(len(test_Y),-1)
 
     if isinstance(X,torch.Tensor):
@@ -402,9 +477,10 @@ def perm_similarity(X,Y,test_X=None,test_Y=None, grad_fit=True,
     if grad_fit:
         perm_obj.grad_fit(X,Y,lr=lr,tol=tol,patience=patience,
                                                   alpha=alpha,
+                                                  vary_space=vary_space,
                                                   verbose=verbose)
     else:
-        perm_obj.fit(X, Y)
+        perm_obj.fit(X, Y,vary_space=vary_space)
     if verbose:
         print("Calculating correlation")
     ccor = perm_obj.similarity(test_X, test_Y)
@@ -533,6 +609,10 @@ def load_json(file_name):
         j = json.loads(s)
     return j
 
+def save_json(dict_, file_name):
+    with open(os.path.expanduser(file_name),'w') as f:
+        json.dump(dict_, f)
+
 def get_layer_names(model, layer_types):
     """
     Finds the layer names of the argued types in the model. Does not
@@ -617,6 +697,23 @@ def get_module_idx(model, modu_type):
             return i
     return -1
 
+def get_module_idxs(model, modu_type):
+    """
+    Finds and returns the indices of all instances of the module
+    type in the nn.Sequential list. Assumes model has sequential
+    member variable
+
+    model: torch Module
+        must contain sequential attribute
+    modu_type: torch Module class
+        the type of module being searched for
+    """
+    idxs = []
+    for i,modu in enumerate(model.sequential):
+        if isinstance(modu,modu_type):
+            idxs.append(i)
+    return idxs
+
 def get_module_by_name(model, layer_name):
     """
     Finds and returns the type of module with the name layer_name.
@@ -635,10 +732,10 @@ def get_module_by_name(model, layer_name):
 def get_layer_idx(model, layer, delimeters=[nn.ReLU, nn.Tanh,
                                                nn.Softplus]):
     """
-    Finds the index of the layer with respect to the number of layers
-    in the model. Layers are denoted by the delimeters. Layers are by
-    default denoted by nonlinearities. Function returns -1 if the
-    arged layer does not exist in the argued model.
+    Finds the index of the layer with respect to the number of hidden
+    layers in the model. Layers are denoted by the delimeters. Layers
+    are by default denoted by nonlinearities. Function returns -1 if
+    the arged layer does not exist in the argued model.
 
     model: torch nn Module object
     layer: str
@@ -757,7 +854,8 @@ def inspect(model, X, insp_keys={}, batch_size=500, to_numpy=True,
                                                  to_cpu=to_cpu)
             handle = mod.register_forward_hook(hook)
             handles.append(handle)
-    X = torch.FloatTensor(X)
+    if not isinstance(X,torch.Tensor):
+        X = torch.FloatTensor(X)
 
     # prev_grad_state is used to ensure we do not mess with an outer
     # "with torch.no_grad():" statement
@@ -823,6 +921,7 @@ def inspect(model, X, insp_keys={}, batch_size=500, to_numpy=True,
 def get_stim_grad(model, X, layer, cell_idx, batch_size=500,
                                            layer_shape=None,
                                            to_numpy=True,
+                                           ret_resps=False,
                                            verbose=True):
     """
     Gets the gradient of the model output at the specified layer and
@@ -840,6 +939,8 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500,
         changes the shape of the argued layer to this shape if tuple
     to_numpy: bool
         returns the gradient vector as a numpy array if true
+    ret_resps: bool
+        if true, also returns the model responses
     """
     if verbose:
         print("layer:", layer)
@@ -870,6 +971,7 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500,
     if type(X) == type(np.array([])):
         X = torch.FloatTensor(X)
     X.requires_grad = True
+    resps = []
     n_loops = X.shape[0]//batch_size
     rng = range(n_loops)
     if verbose:
@@ -878,10 +980,10 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500,
         idx = i*batch_size
         x = X[idx:idx+batch_size].to(device)
         if model.recurrent:
-            _, hs = model(x, hs)
+            resp, hs = model(x, hs)
             hs = [h.data for h in hs]
         else:
-            _ = model(x)
+            resp = model(x)
         if layer_shape is not None:
             hook_outs[layer] = hook_outs[layer].reshape(-1,
                                               *layer_shape)
@@ -896,13 +998,18 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500,
                                                   cell_idx[2]]
         fx = fx.sum()
         fx.backward()
+        resps.append(resp.data.cpu())
     hook_handle.remove()
     requires_grad(model, True)
     torch.set_grad_enabled(prev_grad_state) 
+    grad = X.grad.data.cpu()
+    resps = torch.cat(resps,dim=0)
     if to_numpy:
-        return X.grad.data.cpu().numpy()
-    else:
-        return X.grad.data.cpu()
+        grad = grad.numpy()
+        resps = resps.numpy()
+    if ret_resps:
+        return grad, resps
+    return grad
 
 def integrated_gradient(model, X, layer='sequential.2', chans=None,
                                                     spat_idx=None,
@@ -945,6 +1052,7 @@ def integrated_gradient(model, X, layer='sequential.2', chans=None,
     # Handle Gradient Settings
     # Model gradient unnecessary for integrated gradient
     requires_grad(model, False)
+
     # Save current grad calculation state
     prev_grad_state = torch.is_grad_enabled()
     torch.set_grad_enabled(True) # Enable grad calculations
@@ -977,7 +1085,8 @@ def integrated_gradient(model, X, layer='sequential.2', chans=None,
             grabber.coords[chan,1] = col
     if batch_size is None:
         batch_size = len(X)
-    X = torch.FloatTensor(X)
+    if not isinstance(X, torch.Tensor):
+        X = torch.FloatTensor(X)
     X.requires_grad = True
     idxs = torch.arange(len(X)).long()
     for batch in range(0, len(X), batch_size):
@@ -2000,3 +2109,24 @@ def max_matrix(mtx):
     loc = np.unravel_index(argmax,shape)
     return (*loc,valmax)
 
+#def convert_1dbn(model):
+#    """
+#    Converts a fully convolutional model that uses 1d batch norm
+#    layers to a special convolutional layer that is equivalent but
+#    allows for all image sizes to be used as input.
+#
+#    model: torch Module
+#        must have attribute "sequential" and must have a GrabUnits
+#        layer.
+#    """
+#    bn_idxs = get_module_idxs(model, AbsBatchNorm1d)[:-1] # Remove final
+#    bn_idxs = bn_idxs + get_module_idxs(model, BatchNorm1d)
+#    assert len(bn_idxs) > 0
+#    grab_idx = get_module_idx(model, GrabUnits)
+#    grabber = model.sequential[grab_idx]
+#    centers = grabber.centers
+#    img_shape = model.img_shape
+#    for i in range(len(model.ksizes)):
+#        centers = grabber.centers2coords(centers,model.ksizes[i:i+1],
+#                                                 img_shape)
+#        shape = update_shape(img_shape[1:],kernel=ksizes[i])
