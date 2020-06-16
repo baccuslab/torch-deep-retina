@@ -107,6 +107,8 @@ The hyperparams.json should have a list of all the desired user setting for the 
     * if true, will take absolute value of integrated gradient prior to summing over channel. If false, will sum over channel first and then take absolute value. Either case will take mean over time.
 * `reset_sd`: bool
     * If true, the model will be reset to the original state dict after each channel is pruned.
+* `altn_layers`: bool
+    * If true, the pruning will alternate layers for each channel pruned. If false, will exhaustively prune earliest layer first, then move on to subsequent layers in order.
 
 * `retinotopic`: bool
     * determines if retinotopic training. Overwritten by `prune`

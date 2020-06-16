@@ -176,6 +176,8 @@ if __name__=="__main__":
                                                  ig_spat_loc=loc,
                                                  to_numpy=True,
                                                  verbose=verbose)
+                act_resp2 = act if calc_act else act_resp2
+                ig_resp2 = ig if calc_ig else ig_resp2
             if max_mtx_storage is None or len(ig_vecs)<=max_mtx_storage:
                 if store_act_mtx:
                     act_vecs[model_paths[j]] = act_resp2

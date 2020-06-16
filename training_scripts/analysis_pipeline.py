@@ -3,33 +3,13 @@ This script is made to automate the analysis of the model performance
 for a batch of models.  You must give a command line argument of the
 model search folder to be analyzed.
 
-$ python3 search_analysis.py bncnn
+$ python3 analysis_pipeline.py bncnn
 
 """
 import numpy as np
 import torch
-import torch.nn as nn
-import h5py as h5
-import os
 import sys
-import pickle
-from torchdeepretina.models import *
-import matplotlib.pyplot as plt
-from torchdeepretina.datas import loadexpt
-import torchdeepretina.intracellular as intracellular
-import torchdeepretina.retinal_phenomena as rp
-import torchdeepretina.stimuli as stimuli
 import torchdeepretina.analysis as analysis
-import pyret.filtertools as ft
-import scipy
-import re
-import pickle
-from tqdm import tqdm
-import gc
-import resource
-import time
-import math
-import pandas as pd
 
 if __name__ == "__main__":
     start_idx = None
@@ -48,6 +28,6 @@ if __name__ == "__main__":
                                       slide_steps=0,
                                       intrnrn_stim='boxes',
                                       save_dfs=True,
-                                      rec_intrs=False, #If false, cors are still calculated, details just aren't recorded
+                                      rec_intrs=True, #If false, cors are still calculated, details just aren't recorded
                                       verbose=True)
 

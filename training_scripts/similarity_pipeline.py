@@ -66,11 +66,9 @@ if __name__=="__main__":
     total_chans = False # Only active if same_chans_only is true. If False, only compares models with exact same channel counts
 
     sim_type_dict = dict()
-    sim_type_dict['chan_act'] = False
-    sim_type_dict['chan_ig']  = False
     sim_type_dict['max_act']  = True
-    sim_type_dict['max_ig']   = True
-    sim_type_dict['perm_act'] = False
+    sim_type_dict['max_ig']   = False
+    sim_type_dict['perm_act'] = True
     sim_type_dict['perm_ig']  = False
 
     if same_chans_only:
@@ -169,7 +167,8 @@ if __name__=="__main__":
             ig_resp1 = ig_vecs[model_paths[i]]
 
         calc_act = act_resp1 is None
-        calc_ig = ig_resp1 is None
+        calc_ig = sim_type_dict['perm_ig'] or sim_type_dict['max_ig']
+        calc_ig = ig_resp1 is None and calc_ig
         model1.to(DEVICE)
         with torch.no_grad():
             loc = (model1.shapes[-1][0]//2, model1.shapes[-1][1]//2)
@@ -227,6 +226,7 @@ if __name__=="__main__":
             if model_paths[j] in ig_vecs:
                 ig_resp2 = ig_vecs[model_paths[j]]
             calc_act = act_resp2 is None
+            calc_ig = sim_type_dict['perm_ig'] or sim_type_dict['max_ig']
             calc_ig = ig_resp2 is None
             model2.to(DEVICE)
             with torch.no_grad():
@@ -250,131 +250,6 @@ if __name__=="__main__":
             model2 = model2.cpu()
             model1_shapes = [act_resp1[l].shape for l in model1_layers]
             model2_shapes = [act_resp2[l].shape for l in model2_layers]
-
-            ################### Channel Correlations
-            if sim_type_dict['chan_act']:
-                stats_string = "\nChannel Sims\n"
-                torch.cuda.empty_cache()
-                # Activation Max Correlation
-                if verbose:
-                    print("Beginning Channel Activation Correlations")
-                stats_string += "\nActivation Correlations:\n"
-                for l1,s1 in zip(model1_layers,model1_shapes):
-                    s1 = s1[-1]//2 if len(s1)>2 else None
-                    resp1 = act_resp1[l1][:,:,s1,s1].squeeze()
-                    for l2,s2 in zip(model2_layers,model2_shapes):
-                        s2 = s2[-1]//2 if len(s2)>2 else None
-                        torch.cuda.empty_cache()
-                        best_sim = None
-                        if s2 is not None:
-                            lim = window_lim
-                            for x in range(s2-lim,s2+lim+1):
-                                for y in range(s2-lim,s2+lim+1):
-                                    resp2 = act_resp2[l2][:,:,x,y].squeeze()
-                                    sims = mtx_cor(resp1,resp2,to_numpy=True)
-                                    if i == j and l1==l2: # Zero the obvious
-                                        rang = range(len(sims))
-                                        sims[rang,rang] = -1
-                                    sims[np.isnan(sims)] = 0
-                                    if sims.shape[0] < sims.shape[1]:
-                                        temp = sims.max(1)
-                                    elif sims.shape[0] > sims.shape[1]:
-                                        temp = sims.max(0)
-                                    else:
-                                        temp = [sims.max(0),sims.max(1)]
-                                        temp = np.concatenate(temp)
-                                    sim = np.mean(temp)
-                                    if best_sim is None or sim > best_sim\
-                                                    or np.isnan(best_sim):
-                                        best_sim = sim
-                                        best_sims = sims
-                                        best_xy = (x,y)
-                        else:
-                            resp2 = act_resp2[l2].squeeze()
-                            sims = mtx_cor(resp1,resp2)
-                            if i == j and l1==l2: # Zero the obvious
-                                rang = range(len(sims))
-                                sims[rang,rang] = -1
-                            sims[np.isnan(sims)] = 0
-                            if sims.shape[0] < sims.shape[1]:
-                                temp = sims.max(1)
-                            elif sims.shape[0] > sims.shape[1]:
-                                temp = sims.max(0)
-                            else:
-                                temp = [sims.max(0),sims.max(1)]
-                                temp = np.concatenate(temp)
-                            best_sim = np.mean(temp)
-                            best_xy = (0,0)
-                        for chan1 in range(len(sims)):
-                            for chan2 in range(len(sims[chan1])):
-                                table['model1'].append(model_paths[i])
-                                table['model2'].append(model_paths[j])
-                                table['cor_type'].append("chan_act")
-                                table['m1_layer'].append(l1)
-                                table['m2_layer'].append(l2)
-                                table['xy_coord'].append(best_xy)
-                                table['chan1'].append(chan1)
-                                table['chan2'].append(chan2)
-                                table['cor'].append(sims[chan1,chan2])
-                        stats_string += "{}-{}: {}\n".format(l1, l2,
-                                                             best_sim)
-
-                if verbose:
-                    print(stats_string)
-            # Integrated Gradient Chan Correlation
-            torch.cuda.empty_cache()
-            if sim_type_dict['chan_ig']:
-                if verbose:
-                    print("Beginning Channel IG Correlations")
-                stats_string = "IG Correlations:\n"
-                model1_shapes = [ig_resp1[l].shape for l in model1_layers]
-                model2_shapes = [ig_resp2[l].shape for l in model2_layers]
-                for l1,s1 in zip(model1_layers,model1_shapes):
-                    if len(s1)<=2:
-                        continue
-                    s1 = s1[-1]//2
-                    resp1 = ig_resp1[l1][:,:,s1,s1].squeeze()
-                    for l2,s2 in zip(model2_layers,model2_shapes):
-                        if len(s2)<=2:
-                            continue
-                        s2 = s2[-1]//2
-                        torch.cuda.empty_cache()
-                        best_sim = None
-                        lim = window_lim
-                        for x in range(s2-lim,s2+lim+1):
-                            for y in range(s2-lim,s2+lim+1):
-                                resp2 = ig_resp2[l2][:,:,x,y]
-                                sims = mtx_cor(resp1,resp2)
-                                if i == j and l1==l2: # Zero the obvious
-                                    rang = range(len(sims))
-                                    sims[rang,rang] = -1
-                                sims[np.isnan(sims)] = 0
-                                if sims.shape[0] < sims.shape[1]:
-                                    temp = sims.max(1)
-                                elif sims.shape[0] > sims.shape[1]:
-                                    temp = sims.max(0)
-                                else:
-                                    temp = [sims.max(0),sims.max(1)]
-                                    temp = np.concatenate(temp)
-                                sim = np.mean(temp)
-                                if best_sim is None or sim > best_sim\
-                                                    or np.isnan(best_sim):
-                                    best_sim = sim
-                                    best_sims = sims
-                                    best_xy = (x,y)
-                        for chan1 in range(len(sims)):
-                            for chan2 in range(len(sims[chan1])):
-                                table['model1'].append(model_paths[i])
-                                table['model2'].append(model_paths[j])
-                                table['cor_type'].append("chan_ig")
-                                table['m1_layer'].append(l1)
-                                table['m2_layer'].append(l2)
-                                table['xy_coord'].append(best_xy)
-                                table['chan1'].append(chan1)
-                                table['chan2'].append(chan2)
-                                table['cor'].append(sims[chan1,chan2])
-                        stats_string += "{}-{}: {}\n".format(l1, l2,
-                                                             best_sim)
 
             ################### Max Correlations
             if sim_type_dict['max_act']:
@@ -426,18 +301,20 @@ if __name__=="__main__":
                             table['cor'].append(max_sims1[chan])
                         stats_string += "{}-{}: {}\n".format(l1, l2,
                                                        np.mean(max_sims1))
-                        for chan in range(len(max_sims2)):
-                            table['model1'].append(model_paths[j])
-                            table['model2'].append(model_paths[i])
-                            table['cor_type'].append("max_act")
-                            table['m1_layer'].append(l2)
-                            table['m2_layer'].append(l1)
-                            table['xy_coord'].append((s2,s2))
-                            table['chan1'].append(chan)
-                            table['chan2'].append(None)
-                            table['cor'].append(max_sims2[chan])
-                        stats_string += "rev {}-{}: {}\n".format(l2, l1,
-                                                       np.mean(max_sims2))
+                        if model_paths[i]!=model_paths[j]:
+                            for chan in range(len(max_sims2)):
+                                table['model1'].append(model_paths[j])
+                                table['model2'].append(model_paths[i])
+                                table['cor_type'].append("max_act")
+                                table['m1_layer'].append(l2)
+                                table['m2_layer'].append(l1)
+                                table['xy_coord'].append((s2,s2))
+                                table['chan1'].append(chan)
+                                table['chan2'].append(None)
+                                table['cor'].append(max_sims2[chan])
+                            s = "rev {}-{}: {}\n".format(l2, l1,
+                                                   np.mean(max_sims2))
+                            stats_string += s
 
                 if verbose:
                     print(stats_string)
@@ -492,18 +369,20 @@ if __name__=="__main__":
                             table['cor'].append(max_sims1[chan])
                         stats_string += "{}-{}: {}\n".format(l1, l2,
                                                        np.mean(max_sims1))
-                        for chan in range(len(max_sims2)):
-                            table['model1'].append(model_paths[j])
-                            table['model2'].append(model_paths[i])
-                            table['cor_type'].append("max_ig")
-                            table['m1_layer'].append(l2)
-                            table['m2_layer'].append(l1)
-                            table['xy_coord'].append((s2,s2))
-                            table['chan1'].append(chan)
-                            table['chan2'].append(None)
-                            table['cor'].append(max_sims2[chan])
-                        stats_string += "rev {}-{}: {}\n".format(l2, l1,
-                                                       np.mean(max_sims2))
+                        if model_paths[i]!=model_paths[j]:
+                            for chan in range(len(max_sims2)):
+                                table['model1'].append(model_paths[j])
+                                table['model2'].append(model_paths[i])
+                                table['cor_type'].append("max_ig")
+                                table['m1_layer'].append(l2)
+                                table['m2_layer'].append(l1)
+                                table['xy_coord'].append((s2,s2))
+                                table['chan1'].append(chan)
+                                table['chan2'].append(None)
+                                table['cor'].append(max_sims2[chan])
+                            s = "rev {}-{}: {}\n".format(l2, l1,
+                                                   np.mean(max_sims2))
+                            stats_string += s
                 if verbose:
                     print(stats_string)
             ########### Permutation correlations
@@ -523,6 +402,16 @@ if __name__=="__main__":
                         best_sim = None
                         if s2 is not None:
                             lim = window_lim
+                            start = s2-lim
+                            end = s2+lim+1
+                            resp2 = act_resp2[l2][:,:,start:end,start:end]
+                            sim = perm_similarity(resp1,resp2,
+                                                  grad_fit=grad_fit,
+                                                  vary_space=True,
+                                                  verbose=False)
+
+
+
                             for x in range(s2-lim,s2+lim+1):
                                 for y in range(s2-lim,s2+lim+1):
                                     resp2 = act_resp2[l2][:,:,x,y]
