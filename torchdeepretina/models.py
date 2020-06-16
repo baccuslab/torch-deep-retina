@@ -34,6 +34,7 @@ class TDRModel(nn.Module):
                                                 finalstack=False,
                                                 n_layers=3,
                                                 stackconvs=True,
+                                                bnaftrelu=False,
                                                 **kwargs):
         """
         n_units: int
@@ -88,6 +89,9 @@ class TDRModel(nn.Module):
         stackconvs: bool
             if true, the convolutions are all linearstacked
             convolutions
+        bnaftrelu: bool
+            if true, the batchnorm is placed after the relu. Usually
+            it is placed before.
         """
         super().__init__()
         self.n_units = n_units
@@ -111,6 +115,7 @@ class TDRModel(nn.Module):
         self.finalstack = finalstack
         self.n_layers = n_layers
         self.stackconvs = stackconvs
+        self.bnaftrelu = bnaftrelu
 
     def forward(self, x):
         return x
@@ -160,7 +165,7 @@ class TDRModel(nn.Module):
             if isinstance(modu,GrabUnits):
                 modu.grab = not state
 
-    def get_shape(self,img_shape,layer_name):
+    def get_shape(self, img_shape, layer_name):
         """
         Returns the shape (height,width) of the activation matrix at
         the argued layer_name.
@@ -186,7 +191,8 @@ class TDRModel(nn.Module):
             return None
 
         shape = img_shape[-2:]
-        for i in range(n_convs+1):
+        if n_convs == 0: n_convs = 1
+        for i in range(n_convs):
             ksize = self.ksizes[i]
             shape = update_shape(shape,ksize)
         return shape
@@ -213,6 +219,9 @@ class BNCNN(TDRModel):
                                       bias=self.bias))
         shape = update_shape(shape, self.ksizes[0])
         self.shapes.append(tuple(shape))
+        if self.bnaftrelu:
+            modules.append(GaussianNoise(std=self.noise))
+            modules.append(getattr(nn,self.activ_fxn)())
         if self.bnorm_d == 1:
             modules.append(Flatten())
             size = self.chans[0]*shape[0]*shape[1]
@@ -222,13 +231,17 @@ class BNCNN(TDRModel):
         else:
             modules.append(nn.BatchNorm2d(self.chans[0], eps=1e-3,
                                          momentum=self.bn_moment))
-        modules.append(GaussianNoise(std=self.noise))
-        modules.append(getattr(nn,self.activ_fxn)())
+        if not self.bnaftrelu:
+            modules.append(GaussianNoise(std=self.noise))
+            modules.append(getattr(nn,self.activ_fxn)())
         modules.append(nn.Conv2d(self.chans[0],self.chans[1],
                                   kernel_size=self.ksizes[1],
                                   bias=self.bias))
         shape = update_shape(shape, self.ksizes[1])
         self.shapes.append(tuple(shape))
+        if self.bnaftrelu:
+            modules.append(GaussianNoise(std=self.noise))
+            modules.append(getattr(nn,self.activ_fxn)())
         if self.bnorm_d == 1:
             modules.append(Flatten())
             size = self.chans[1]*shape[0]*shape[1]
@@ -239,8 +252,9 @@ class BNCNN(TDRModel):
         else:
             modules.append(nn.BatchNorm2d(self.chans[1], eps=1e-3,
                                          momentum=self.bn_moment))
-        modules.append(GaussianNoise(std=self.noise))
-        modules.append(getattr(nn,self.activ_fxn)())
+        if not self.bnaftrelu:
+            modules.append(GaussianNoise(std=self.noise))
+            modules.append(getattr(nn,self.activ_fxn)())
         if self.convgc:
             modules.append(nn.Conv2d(self.chans[1], self.n_units,
                                       kernel_size=self.ksizes[2],
@@ -359,6 +373,9 @@ class LinearStackedBNCNN(TDRModel):
         shape = update_shape(shape, self.ksizes[0],
                             padding=self.paddings[0])
         self.shapes.append(tuple(shape))
+        if self.bnaftrelu:
+            modules.append(GaussianNoise(std=self.noise))
+            modules.append(getattr(nn,self.activ_fxn)())
         # BatchNorm
         if self.bnorm_d == 1:
             modules.append(Flatten())
@@ -371,8 +388,9 @@ class LinearStackedBNCNN(TDRModel):
             modules.append(AbsBatchNorm2d(self.chans[0], eps=1e-3,
                                         momentum=self.bn_moment))
         # Noise and Activation
-        modules.append(GaussianNoise(std=self.noise))
-        modules.append(getattr(nn,self.activ_fxn)())
+        if not self.bnaftrelu:
+            modules.append(GaussianNoise(std=self.noise))
+            modules.append(getattr(nn,self.activ_fxn)())
 
         ##### Second Layer
         # Convolution
@@ -395,6 +413,9 @@ class LinearStackedBNCNN(TDRModel):
         shape = update_shape(shape, self.ksizes[1],
                             padding=self.paddings[1])
         self.shapes.append(tuple(shape))
+        if self.bnaftrelu:
+            modules.append(GaussianNoise(std=self.noise))
+            modules.append(getattr(nn,self.activ_fxn)())
         # BatchNorm
         if self.bnorm_d == 1:
             modules.append(Flatten())
@@ -407,8 +428,9 @@ class LinearStackedBNCNN(TDRModel):
             modules.append(AbsBatchNorm2d(self.chans[1], eps=1e-3,
                                          momentum=self.bn_moment))
         # Noise and Activation
-        modules.append(GaussianNoise(std=self.noise))
-        modules.append(getattr(nn,self.activ_fxn)())
+        if not self.bnaftrelu:
+            modules.append(GaussianNoise(std=self.noise))
+            modules.append(getattr(nn,self.activ_fxn)())
 
         ##### Final Layer
         if self.convgc:
@@ -588,8 +610,8 @@ class VaryModel(TDRModel):
     Built as a modular model that can assume the form of most other
     models in this package.
     """
-    def __init__(self, drop_p=0, one2one=False, stack_ksizes=[3,3],
-                                        stack_chans=[None,None],
+    def __init__(self, drop_p=0, one2one=False, stack_ksizes=3,
+                                        stack_chans=None,
                                         paddings=None, **kwargs):
         super().__init__(**kwargs)
         """
@@ -659,6 +681,9 @@ class VaryModel(TDRModel):
                                         padding=self.paddings[i])
             self.shapes.append(tuple(shape))
                     
+            if self.bnaftrelu:
+                modules.append(GaussianNoise(std=self.noise))
+                modules.append(getattr(nn,self.activ_fxn)())
             ## BatchNorm
             if self.bnorm_d == 1:
                 modules.append(Flatten())
@@ -671,8 +696,9 @@ class VaryModel(TDRModel):
                                         momentum=self.bn_moment)
                 modules.append(bnorm)
             # Noise and Activation
-            modules.append(GaussianNoise(std=self.noise))
-            modules.append(getattr(nn,self.activ_fxn)())
+            if not self.bnaftrelu:
+                modules.append(GaussianNoise(std=self.noise))
+                modules.append(getattr(nn,self.activ_fxn)())
 
         ##### Final Layer
         if self.convgc:
@@ -823,6 +849,9 @@ class RetinotopicModel(TDRModel):
             self.shapes.append(tuple(shape))
 
             ## BatchNorm
+            if self.bnaftrelu:
+                modules.append(GaussianNoise(std=self.noise))
+                modules.append(getattr(nn,self.activ_fxn)())
             if self.bnorm_d == 1:
                 modules.append(Flatten())
                 size = temp_chans[i+1]*shape[0]*shape[1]
@@ -834,8 +863,9 @@ class RetinotopicModel(TDRModel):
                                         momentum=self.bn_moment)
                 modules.append(bnorm)
             # Noise and Activation
-            modules.append(GaussianNoise(std=self.noise))
-            modules.append(getattr(nn,self.activ_fxn)())
+            if not self.bnaftrelu:
+                modules.append(GaussianNoise(std=self.noise))
+                modules.append(getattr(nn,self.activ_fxn)())
 
         ##### Final Layer
         if self.finalstack:
