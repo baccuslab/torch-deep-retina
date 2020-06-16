@@ -152,7 +152,6 @@ def load_checkpoint(path):
     path = os.path.expanduser(path)
     if os.path.isdir(path):
         checkpts = get_checkpoints(path)
-        hyps = get_hyps(path)
         path = checkpts[-1]
     data = torch.load(path, map_location=torch.device("cpu"))
     return data
@@ -195,7 +194,7 @@ def load_model(path,verbose=True):
                 print("Error loading state_dict, attempting fix..")
             sd = data['model_state_dict']
             sd_keys = list(sd.keys())
-            m_keys = [name for name,_ in model.named_parameters()]
+            m_keys = list(model.state_dict().keys())
             for sk,mk in zip(sd_keys,m_keys):
                 if sk != mk:
                     if verbose:
