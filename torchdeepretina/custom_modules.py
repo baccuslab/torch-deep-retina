@@ -13,7 +13,7 @@ def update_shape(shape, kernel=3, padding=0, stride=1, op="conv"):
     Calculates the new shape of the tensor following a convolution or
     deconvolution
 
-    shape: list-like or int
+    shape: list-like (H,W) or int
         the height/width of the activations
     kernel: int or list-like
         size of the kernel
@@ -88,6 +88,7 @@ class GrabUnits(nn.Module):
         super().__init__()
         self.ksizes = ksizes
         self.img_shape = img_shape
+        self.centers = centers
         self.coords = self.centers2coords(centers,ksizes,img_shape)
         self.chans = torch.arange(len(centers)).long()
         self.grab = True
