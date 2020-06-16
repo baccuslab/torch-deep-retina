@@ -273,7 +273,8 @@ def sample_model_rfs(model, layers=[], use_grad=True, verbose=False):
     # Loop to create data frame containing each desired unit
     for layer in layers:
         chan_idx = tdrutils.get_layer_idx(model, layer=layer)
-        if chan_idx>=len(model.shapes) or chan_idx>=len(model.chans):
+        if chan_idx>=len(model.shapes) or chan_idx>=len(model.chans)\
+                or layer == "outputs" or layer=="output":
             row = None
             col = None
             n_chans = model.n_units
@@ -619,7 +620,6 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'],
                                   filt_len=model.img_shape[0],
                                   verbose=verbose)
 
-    verbose = slide_steps!=0 and verbose
     df = tdrintr.get_intr_cors(model, stim_dict, mem_pot_dict,
                                            layers=set(layers),
                                            batch_size=500,
@@ -631,6 +631,11 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'],
         temp_df = df.sort_values(by='cor', ascending=False)
         temp_df = temp_df.drop_duplicates(dups)
         model_rfs = get_model_rfs(model, temp_df, verbose=verbose)
+    if verbose:
+        temp = df.sort_values(by='cor',ascending=False)
+        dups = ['cell_file', 'cell_idx']
+        temp = temp.drop_duplicates(dups)
+        print(temp.groupby('cell_file')['cor'].mean())
     if ret_real_rfs and ret_model_rfs:
         return df, real_rfs, model_rfs
     elif ret_real_rfs:
@@ -748,7 +753,6 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
     if verbose:
         print("Test Cor:", gc_cor,"  Loss:", gc_loss)
 
-    layers = []
     layers = tdrutils.get_conv_layer_names(model)
     layers = sorted(layers, key=lambda x: int(x.split(".")[-1]))
     if intrnrn_stim is not None and intrnrn_stim.lower() != "none":
@@ -765,21 +769,30 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
         # Drop duplicates and average over celll type
         bests = intr_df.sort_values(by='cor',ascending=False)
         bests = bests.drop_duplicates(['cell_file', 'cell_idx'])
+
         loc = bests['cell_type']=="bipolar"
         bip_intr_cor = bests.loc[loc,'cor'].mean()
         df['bipolar_intr_cor'] = bip_intr_cor
+
         loc = bests['cell_type']=="amacrine"
         amc_intr_cor = bests.loc[loc,'cor'].mean()
         df['amacrine_intr_cor'] = amc_intr_cor
+
         loc = bests['cell_type']=="horizontal"
         hor_intr_cor = bests.loc[loc,'cor'].mean()
         df['horizontal_intr_cor'] = hor_intr_cor
+
+        loc = bests['cell_type']=="unk"
+        unk_intr_cor = bests.loc[loc,'cor'].mean()
+        df['unk_intr_cor'] = unk_intr_cor
+
         df['intr_cor'] = bests['cor'].mean()
     else:
         intr_df = pd.DataFrame()
         df['bipolar_intr_cor'] = None
         df['amacrine_intr_cor'] = None
         df['horizontal_intr_cor'] = None
+        df['unk_intr_cor'] = None
         df['intr_cor'] = None
     intr_df['intr_stim'] = intrnrn_stim 
     intr_df['save_folder'] = folder
@@ -793,9 +806,50 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
         print("Interneuron Correlations:")
         print("Bipolar Avg:", bip_intr_cor)
         print("Amacrine Avg:", amc_intr_cor)
+        print("Unknown Avg:", unk_intr_cor)
         print("Horizontal Avg:", hor_intr_cor)
 
     return df, intr_df
+
+def analyze_interneurons(folder, slide_steps=0, intrnrn_stim='boxes',
+                                                verbose=True):
+    """
+    Calculates model performance on the testset and calculates
+    interneuron correlations.
+
+    folder: str
+        complete path to the model folder full of checkpoints
+    slide_steps - int
+        slides the interneuron stimulus so that misaligned rfs of the
+        ganglion cells and interneurons can be accounted for. This is
+        the number of slides to try. Note that it operates in both
+        the x and y dimension so the total number of attempts is
+        equal to slide_steps squared.
+    intrnrn_stim - str {'boxes', 'lines', 'all', 'none', or None}
+        determines the stimulus that should be used for the interneuron
+        correlations, if the correlations should be calculated at all
+    """
+    hyps = tdrio.get_hyps(folder)
+
+    model = tdrio.load_model(folder)
+    metrics = get_metrics(folder)
+    model.eval()
+    model.to(DEVICE)
+    layers = tdrutils.get_conv_layer_names(model)
+    # Pruning
+    if hasattr(model, "zero_dict"):
+        zero_dict = model.zero_dict
+        pruning.zero_chans(model, zero_dict)
+    if intrnrn_stim.lower() == "all": stim_keys = {"boxes", "lines"}
+    else: stim_keys = {intrnrn_stim}
+    intr_df = get_intr_cors(model, layers=layers,
+                                   stim_keys=stim_keys,
+                                   slide_steps=slide_steps,
+                                   verbose=verbose)
+    # Drop duplicates and average over celll type
+    intr_df['intr_stim'] = intrnrn_stim 
+    intr_df['save_folder'] = folder
+    return intr_df
 
 def evaluate_ln(ln, hyps):
     """
@@ -816,6 +870,72 @@ def evaluate_ln(ln, hyps):
     if verbose:
         print("Test Cor:", gc_cor,"  Loss:", gc_loss)
     return df
+
+def interneuron_pipeline(main_folder, slide_steps=0,
+                                      intrnrn_stim='boxes',
+                                      verbose=True):
+    """
+    Calculates interneuron correlations and saves data as a csv.
+
+    main_folder: str
+        the folder full of model folders that contain checkpoints
+    slide_steps - int
+        slides the interneuron stimulus so that misaligned rfs of the
+        ganglion cells and interneurons can be accounted for. This is
+        the number of slides to try. Note that it operates in both
+        the x and y dimension so the total number of attempts is
+        equal to slide_steps squared.
+    intrnrn_stim - str {'boxes', 'lines', 'all', 'none', or None}
+        determines the stimulus that should be used for the interneuron
+        correlations, if the correlations should be calculated at all
+    """
+    model_folders = tdrio.get_model_folders(main_folder)
+    # Model data must be first here
+    csv = 'intr_data.csv'
+    dfs = dict()
+    save_folders = dict()
+    csv_path = os.path.join(main_folder,csv)
+    if os.path.exists(csv_path):
+        dfs[csv] = pd.read_csv(csv_path, sep="!")
+        save_folders[csv] = set(dfs[csv]['save_folder'])
+    else:
+        dfs[csv] = {"empty":True}
+        save_folders[csv] = set()
+
+    columns = None
+    for folder in model_folders:
+        save_folder = os.path.join(main_folder, folder)
+        if save_folder in save_folders[csv]:
+            if verbose:
+                print("Skipping",folder," due to previous record")
+            continue
+        if verbose:
+            print("\n\nAnalyzing", folder)
+        
+        intr_df = analyze_interneurons(save_folder,
+                                       slide_steps=slide_steps,
+                                       intrnrn_stim=intrnrn_stim,
+                                       verbose=verbose)
+        if 'empty' in dfs[csv]:
+            dfs[csv] = intr_df
+        else:
+            dfs[csv] = dfs[csv].append(intr_df,sort=True)
+
+        path = os.path.join(main_folder,csv)
+        if not os.path.exists(path):
+            dfs[csv].to_csv(path, sep="!", index=False,
+                                         header=True,
+                                         mode='w')
+        else:
+            if columns is None:
+                temp = pd.read_csv(path,sep="!",nrows=10)
+                columns = temp.columns
+            dfs[csv][columns].to_csv(path, sep="!",
+                                        index=False,
+                                        header=False,
+                                        mode='a')
+            dfs[csv] = dfs[csv].iloc[:0]
+    return dfs
 
 def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
                                                   save_dfs=True,
