@@ -28,7 +28,12 @@ centers = {
                               (20, 19), (18, 18), (19, 17), (17, 17),
                               (18, 20), (20, 19), (17, 19), (19, 18),
                               (17, 17), (25, 15)
-                            ]
+                            ],
+    "unks_17-10-18":      [   (14, 15), (11, 14), (15, 15), (13, 15),
+                              (11, 14), (17, 16), (16, 16), (14, 15),
+                              (10, 16), (11, 17), (16, 16), (12, 16),
+                              (12, 16), (14, 17)
+                          ],
 }
 
 if torch.cuda.is_available():
@@ -572,11 +577,14 @@ def get_intr_cors(model, stim_dict, mem_pot_dict,
                 D,H,W = model.img_shape
                 stim = stim_dict[cell_file][stim_type]
                 if not (xshift == 0 and yshift == 0):
-                    zeros = np.zeros((len(stim),H,W))
+                    zeros = np.zeros((*stim.shape[:-2],H,W))
                     stim = tdrstim.shifted_overlay(zeros, stim,
                                               row_shift=xshift,
                                               col_shift=yshift)
-                stim = tdrstim.spatial_pad(stim, W=H, H=W)
+                center = (stim.shape[-2]//2,stim.shape[-1]//2)
+                stim = tdrstim.get_cutout(stim, center=center,
+                                                span=H,
+                                                pad_to=H)
                 if window:
                     stim = tdrstim.rolling_window(stim, D)
 
