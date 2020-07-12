@@ -363,6 +363,7 @@ class KineticsChannelModelFilterBipolarNoNorm(nn.Module):
                  inference_exp=False, img_shape=(40,50,50), ksizes=(15,11), centers=None):
         super(KineticsChannelModelFilterBipolarNoNorm, self).__init__()
         
+        self.kinetic = True
         self.n_units = n_units
         self.chans = chans 
         self.softplus = softplus 

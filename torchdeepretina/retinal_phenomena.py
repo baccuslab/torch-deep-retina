@@ -9,19 +9,25 @@ from tqdm import tqdm
 from itertools import repeat
 import torchdeepretina.stimuli as stim
 import torchdeepretina.visualizations as viz
-from torchdeepretina.utils import compute_sta, batch_compute_model_response
+from torchdeepretina.utils import compute_sta, batch_compute_model_response, get_hs, inspect_rnn
 from tqdm import tqdm, trange
 import torch
 
 DEVICE = torch.device("cuda:0")
-device = DEVICE
 
-def step_response(model, duration=100, delay=50, nsamples=200, intensity=-1., filt_depth=40):
+def step_response(device, I20=None, model=None, duration=100, delay=50, nsamples=200, intensity=-1., filt_depth=40):
     """Step response"""
     X = stim.concat(stim.flash(duration, delay, nsamples, intensity=intensity), nh=filt_depth)
-    X_torch = torch.from_numpy(X).to(DEVICE)
+    X_torch = torch.from_numpy(X).to(device)
     with torch.no_grad():
-        if model.recurrent:
+        if model.kinetic:
+            hs = get_hs(model, 1, device, I20)
+            resps = []
+            for i in range(X_torch.shape[0]):
+                resp, hs = model(X_torch[i:i+1], hs)
+                resps.append(resp)
+            resp = torch.cat(resps, dim=0)        
+        elif model.recurrent:
             hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
             resps = []
             for i in range(X_torch.shape[0]):
@@ -103,13 +109,20 @@ def paired_flash(model, ifis=(2, 20), duration=1, intensity=-2.0, total=100, del
     return map(np.stack, (s1, r1, s2, r2, stimuli, responses))
 
 
-def reversing_grating(model, size=5, phase=0., filt_depth=40):
+def reversing_grating(device, I20=None, model=None, size=5, phase=0., filt_depth=40):
     """A reversing grating stimulus"""
     grating = stim.grating(barsize=(size, 0), phase=(phase, 0.0), intensity=(1.0, 1.0), us_factor=1, blur=0)
     X = stim.concat(stim.reverse(grating, halfperiod=50, nsamples=300), nh=filt_depth)
-    X_torch = torch.from_numpy(X).to(DEVICE)
+    X_torch = torch.from_numpy(X).to(device)
     with torch.no_grad():
-        if model.recurrent:
+        if model.kinetic:
+            hs = get_hs(model, 1, device, I20)
+            resps = []
+            for i in range(X_torch.shape[0]):
+                resp, hs = model(X_torch[i:i+1], hs)
+                resps.append(resp)
+            resp = torch.cat(resps, dim=0)
+        elif model.recurrent:
             hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
             resps = []
             for i in range(X_torch.shape[0]):
@@ -152,7 +165,7 @@ def contrast_adaptation(model, c0, c1, duration=50, delay=50, nsamples=140, nrep
 
     return (fig, (ax0,ax1)), envelope, responses
 
-def oms_random_differential(model, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=8, background_velocity=.3, foreground_velocity=.5, seed=None, bar_size=2, inner_bar_size=None, filt_depth=40):
+def oms_random_differential(device, I20=None, model=None, duration=5, sample_rate=30, pre_frames=40, post_frames=40, img_shape=(50,50), center=(25,25), radius=8, background_velocity=.3, foreground_velocity=.5, seed=None, bar_size=2, inner_bar_size=None, filt_depth=40):
     """
     Plays a video of differential motion by keeping a circular window fixed in space on a 2d background grating.
     A grating exists behind the circular window that moves counter to the background grating. Each grating is jittered
@@ -211,9 +224,16 @@ def oms_random_differential(model, duration=5, sample_rate=30, pre_frames=40, po
         diff_response = None
         global_response = None
     else:
-        x = torch.FloatTensor(stim.concat(diff_vid, nh=filt_depth)).to(DEVICE)
+        x = torch.FloatTensor(stim.concat(diff_vid, nh=filt_depth)).to(device)
         with torch.no_grad():
-            if model.recurrent:
+            if model.kinetic:
+                hs = get_hs(model, 1, device, I20)
+                resps = []
+                for i in range(x.shape[0]):
+                    resp, hs = model(x[i:i+1], hs)
+                    resps.append(resp)
+                resp = torch.cat(resps, dim=0)
+            elif model.recurrent:
                 hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
                 resps = []
                 for i in range(x.shape[0]):
@@ -224,9 +244,16 @@ def oms_random_differential(model, duration=5, sample_rate=30, pre_frames=40, po
                 resp = model(x)
         diff_response = resp.cpu().detach().numpy()
 
-        x = torch.FloatTensor(stim.concat(global_vid, nh=filt_depth)).to(DEVICE)
+        x = torch.FloatTensor(stim.concat(global_vid, nh=filt_depth)).to(device)
         with torch.no_grad():
-            if model.recurrent:
+            if model.kinetic:
+                hs = get_hs(model, 1, device, I20)
+                resps = []
+                for i in range(x.shape[0]):
+                    resp, hs = model(x[i:i+1], hs)
+                    resps.append(resp)
+                resp = torch.cat(resps, dim=0)
+            elif model.recurrent:
                 hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
                 resps = []
                 for i in range(x.shape[0]):
@@ -550,7 +577,7 @@ def oms(duration=5, sample_rate=0.01, transition_duration=0.07, silent_duration=
     return movie
 
 
-def osr(model=None, duration=2, interval=10, nflashes=5, intensity=-2.0, filt_depth=40):
+def osr(device, I20=None, model=None, duration=2, interval=10, nflashes=5, intensity=-2.0, filt_depth=40):
     """Omitted stimulus response
     Parameters
     ----------
@@ -572,9 +599,16 @@ def osr(model=None, duration=2, interval=10, nflashes=5, intensity=-2.0, filt_de
     X = stim.concat(zero_pad, *flash_group, omitted_flash, *flash_group, nx=50, nh=filt_depth)
     X[X!=0] = 1
     if model is not None:
-        X_torch = torch.from_numpy(X).to(DEVICE)
+        X_torch = torch.from_numpy(X).to(device)
         with torch.no_grad():
-            if model.recurrent:
+            if model.kinetic:
+                hs = get_hs(model, 1, device, I20)
+                resps = []
+                for i in range(X_torch.shape[0]):
+                    resp, hs = model(X_torch[i:i+1], hs)
+                    resps.append(resp)
+                resp = torch.cat(resps, dim=0)
+            elif model.recurrent:
                 hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
                 resps = []
                 for i in range(X_torch.shape[0]):
@@ -605,7 +639,7 @@ def osr(model=None, duration=2, interval=10, nflashes=5, intensity=-2.0, filt_de
 
     return (fig, (ax0,ax1)), X, resp, resp_ratio
 
-def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_duration=2, filt_depth=40, make_fig=True):
+def motion_anticipation(device, I20=None, model=None, scale_factor=55, velocity=0.08, width=2, flash_duration=2, filt_depth=40, make_fig=True):
     """Generates the Berry motion anticipation stimulus
     Stimulus from the paper:
     Anticipation of moving stimuli by the retina,
@@ -625,9 +659,16 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
     # moving bar stimulus and responses
     # c_right and c_left are the center positions of the bar
     c_right, speed_right, stim_right = stim.driftingbar(velocity, width, x=(-30, 30))
-    x = torch.from_numpy(stim_right).to(DEVICE)
+    x = torch.from_numpy(stim_right).to(device)
     with torch.no_grad():
-        if model.recurrent:
+        if model.kinetic:
+            hs = get_hs(model, 1, device, I20)
+            resps = []
+            for i in range(x.shape[0]):
+                resp, hs = model(x[i:i+1], hs)
+                resps.append(resp)
+            resp = torch.cat(resps, dim=0)
+        elif model.recurrent:        
             hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
             resps = []
             for i in range(x.shape[0]):
@@ -639,9 +680,16 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
     resp_right = resp.cpu().detach().numpy()
 
     c_left, speed_left, stim_left = stim.driftingbar(-velocity, width, x=(30, -30))
-    x = torch.from_numpy(stim_left).to(DEVICE)
+    x = torch.from_numpy(stim_left).to(device)
     with torch.no_grad():
-        if model.recurrent:
+        if model.kinetic:
+            hs = get_hs(model, 1, device, I20)
+            resps = []
+            for i in range(x.shape[0]):
+                resp, hs = model(x[i:i+1], hs)
+                resps.append(resp)
+            resp = torch.cat(resps, dim=0)        
+        elif model.recurrent:
             hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
             resps = []
             for i in range(x.shape[0]):
@@ -661,8 +709,15 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
     flash_responses = []
     with torch.no_grad():
         for f in tqdm(flashes):
-            x = torch.from_numpy(stim.concat(f, nh=filt_depth)).to(DEVICE)
-            if model.recurrent:
+            x = torch.from_numpy(stim.concat(f, nh=filt_depth)).to(device)
+            if model.kinetic:
+                hs = get_hs(model, 1, device, I20)
+                resps = []
+                for i in range(x.shape[0]):
+                    resp, hs = model(x[i:i+1], hs)
+                    resps.append(resp)
+                resp = torch.cat(resps, dim=0)            
+            elif model.recurrent:
                 hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
                 resps = []
                 for i in range(x.shape[0]):
@@ -704,7 +759,7 @@ def motion_anticipation(model, scale_factor=55, velocity=0.08, width=2, flash_du
         return (fig, ax), (speed_left, speed_right), (c_right, stim_right, resp_right),(c_left, stim_left, resp_left), (flash_centers, flash_responses)#, (symmetry, continuity, peak_height, right_anticipation, left_anticipation)
     return (speed_left, speed_right), (c_right, stim_right, resp_right),(c_left, stim_left, resp_left), (flash_centers, flash_responses)#, (symmetry, continuity, peak_height, right_anticipation, left_anticipation)
 
-def motion_reversal(model, scale_factor=55, velocity=0.08, width=2, filt_depth=40):
+def motion_reversal(device, I20=None, model=None, scale_factor=55, velocity=0.08, width=2, filt_depth=40):
     """
     Moves a bar to the right and reverses it in the center, then does the same to the left. 
     The responses are averaged.
@@ -747,9 +802,16 @@ def motion_reversal(model, scale_factor=55, velocity=0.08, width=2, filt_depth=4
         rtl = rtl[cutoff:-cutoff]
  
     rtl_blocks = stim.concat(rtl, nh=filt_depth)
-    rtl_blocks = torch.from_numpy(rtl_blocks).to(DEVICE)
+    rtl_blocks = torch.from_numpy(rtl_blocks).to(device)
     with torch.no_grad():
-        if model.recurrent:
+        if model.kinetic:
+            hs = get_hs(model, 1, device, I20)
+            resps = []
+            for i in range(rtl_blocks.shape[0]):
+                resp, hs = model(rtl_blocks[i:i+1], hs)
+                resps.append(resp)
+            resp = torch.cat(resps, dim=0)
+        elif model.recurrent:
             hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
             resps = []
             for i in range(rtl_blocks.shape[0]):
@@ -761,9 +823,16 @@ def motion_reversal(model, scale_factor=55, velocity=0.08, width=2, filt_depth=4
     resp_rtl = resp.cpu().detach().numpy()
 
     ltr_blocks = stim.concat(ltr, nh=filt_depth)
-    ltr_blocks = torch.from_numpy(ltr_blocks).to(DEVICE)
+    ltr_blocks = torch.from_numpy(ltr_blocks).to(device)
     with torch.no_grad():
-        if model.recurrent:
+        if model.kinetic:
+            hs = get_hs(model, 1, device, I20)
+            resps = []
+            for i in range(ltr_blocks.shape[0]):
+                resp, hs = model(ltr_blocks[i:i+1], hs)
+                resps.append(resp)
+            resp = torch.cat(resps, dim=0)        
+        elif model.recurrent:
             hs = [torch.zeros(1,*h).to(device) for h in model.h_shapes]
             resps = []
             for i in range(ltr_blocks.shape[0]):
@@ -823,9 +892,9 @@ def normalize_filter(sta, stimulus, target_sd):
     theta = abs(res.x)
     return (theta * sta, theta, res.fun)
 
-def filter_and_nonlinearity(model, contrast, layer_name='sequential.0',
+def filter_and_nonlinearity(model, contrast, device, layer_name='sequential.0',
                                   unit_index=(0,15,15), nonlinearity_type='bin', 
-                                  filt_depth=40, sta=None, verbose=False):
+                                  filt_depth=40, sta=None, verbose=False, I20=None):
     # Computing STA
     if sta is None:
         sta = compute_sta(model, contrast, layer_name, unit_index,verbose=verbose)
@@ -840,8 +909,12 @@ def filter_and_nonlinearity(model, contrast, layer_name='sequential.0',
     # Inspecting model response
     if verbose:
         print("Collecting full model response")
-    stim_tensor = torch.FloatTensor(stim.concat(stimulus, nh=filt_depth))
-    model_response = batch_compute_model_response(stim_tensor, model, 500, insp_keys={layer_name},verbose=verbose)
+    stim_tensor = torch.FloatTensor(stim.concat(stimulus, nh=filt_depth)).to(device)
+    if model.kinetic:
+        hs = get_hs(model, 1, device, I20)
+        model_response = inspect_rnn(model, stim_tensor, hs, insp_keys=[layer_name])
+    else:
+        model_response = batch_compute_model_response(stim_tensor, model, 500, insp_keys={layer_name},verbose=verbose)
     if type(unit_index) == type(int()):
         response = model_response[layer_name][:,unit_index]
     elif len(unit_index) == 1:
@@ -867,7 +940,7 @@ def filter_and_nonlinearity(model, contrast, layer_name='sequential.0',
 
     return time, temporal, x, nonlinear_prediction
 
-def contrast_fig(model, contrasts, layer_name=None, unit_index=(0,15,15), verbose=False, 
+def contrast_fig(model, device, I20, contrasts, layer_name=None, unit_index=(0,15,15), verbose=False, 
                                                                 nonlinearity_type='bin'):
     """
     Creates figure 3A from "Deeplearning Models Reveal..." paper. Much of this code has 
@@ -887,13 +960,13 @@ def contrast_fig(model, contrasts, layer_name=None, unit_index=(0,15,15), verbos
         print("Making Fast Contrast Adaptation Fig")
     if layer_name is None:
         layer_name = "sequential." + str(len(model.sequential)-1)
-    tup = filter_and_nonlinearity(model, contrasts[0], layer_name=layer_name,
+    tup = filter_and_nonlinearity(model, contrasts[0], device, layer_name=layer_name,
                                       unit_index=unit_index, verbose=verbose,
-                                         nonlinearity_type=nonlinearity_type)
+                                         nonlinearity_type=nonlinearity_type, I20=I20)
     low_time, low_temporal, low_x, low_nl = tup
-    tup = filter_and_nonlinearity(model, contrasts[1], layer_name=layer_name,
+    tup = filter_and_nonlinearity(model, contrasts[1], device, layer_name=layer_name,
                                       unit_index=unit_index, verbose=verbose,
-                                         nonlinearity_type=nonlinearity_type)
+                                         nonlinearity_type=nonlinearity_type, I20=I20)
     high_time, high_temporal, high_x, high_nl = tup
 
     # Assure correct sign of decomp
@@ -925,6 +998,8 @@ def contrast_fig(model, contrasts, layer_name=None, unit_index=(0,15,15), verbos
     plt.plot(high_x, len(high_x) * [0], 'k--', alpha=0.4)
     plt.plot(high_x, high_nl, linewidth=3, color='b')
     plt.plot(low_x, low_nl, linewidth=3, color='g')
+    print(low_x, low_nl)
+    print(high_x, high_nl)
     plt.xlabel('Filtered Input', fontsize=14)
     plt.ylabel('Output (Hz)', fontsize=14)
     ax1 = plt.gca()

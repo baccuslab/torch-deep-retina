@@ -1,6 +1,7 @@
 import numpy as np
 import scipy
 import copy
+from collections import deque
 import torch
 import torch.nn as nn
 import subprocess
@@ -303,6 +304,35 @@ def inspect(model, X, insp_keys={}, batch_size=None, to_numpy=True, device=torch
     del handles
     return layer_outs
 
+def inspect_rnn(model, X, hs, insp_keys=[]):
+
+    layer_outs = dict()
+    handles = []
+    for key, mod in model.named_modules():
+        if key in insp_keys:
+            hook = get_hook(layer_outs, key, to_numpy=True)
+            handle = mod.register_forward_hook(hook)
+            handles.append(handle)
+
+    resps = []
+    layer_outs_list = {key:[] for key in insp_keys}
+    with torch.no_grad():
+        for i in range(X.shape[0]):
+            resp, hs = model(X[i:i+1], hs)
+            resps.append(resp)
+            for k in layer_outs.keys():
+                layer_outs_list[k].append(layer_outs[k])
+    
+    layer_outs = {k:np.concatenate(v,axis=0) for k,v in layer_outs_list.items()}
+    resp = torch.cat(resps, dim=0)
+    layer_outs['outputs'] = resp.detach().cpu().numpy()
+    
+    for i in range(len(handles)):
+        handles[i].remove()
+    del handles
+    
+    return layer_outs
+
 def batch_compute_model_response(stimulus, model, batch_size=500, recurrent=False, 
                                 insp_keys={'all'}, cust_h_init=False, verbose=False):
     '''
@@ -359,7 +389,7 @@ def batch_compute_model_response(stimulus, model, batch_size=500, recurrent=Fals
     del phys
     return model_response
 
-def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, verbose=True):
+def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, verbose=True, I20=None):
     """
     Gets the gradient of the model output at the specified layer and cell idx with respect
     to the inputs (X). Returns a gradient array with the same shape as X.
@@ -369,7 +399,9 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, v
     requires_grad(model, False)
     device = next(model.parameters()).get_device()
 
-    if model.recurrent:
+    if model.kinetic:
+        hs = get_hs(model, batch_size, device, I20)
+    elif model.recurrent:
         batch_size = 1
         hs = [torch.zeros(batch_size, *h_shape).to(device) for h_shape in model.h_shapes]
 
@@ -394,7 +426,11 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, v
         idx = i*batch_size
         x = X[idx:idx+batch_size]
         x = x.to(device)
-        if model.recurrent:
+        if model.kinetic:
+            _, hs = model(x, hs)
+            hs[0] = hs[0].detach()
+            hs[1] = deque([h.detach() for h in hs[1]], maxlen=model.seq_len)
+        elif model.recurrent:
             _, hs = model(x, hs)
             hs = [h.data for h in hs]
         else:
@@ -412,7 +448,7 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, v
     requires_grad(model, True)
     return X.grad.data.cpu().numpy()
 
-def compute_sta(model, contrast, layer, cell_index, layer_shape=None, verbose=True):
+def compute_sta(model, contrast, layer, cell_index, layer_shape=None, verbose=True, I20=None):
     """
     Computes the STA using the average of instantaneous receptive 
     fields (gradient of output with respect to input)
@@ -424,7 +460,7 @@ def compute_sta(model, contrast, layer, cell_index, layer_shape=None, verbose=Tr
     X.requires_grad = True
 
     # compute the gradient of the model with respect to the stimulus
-    drdx = get_stim_grad(model, X, layer, cell_index, layer_shape=layer_shape, verbose=verbose)
+    drdx = get_stim_grad(model, X, layer, cell_index, layer_shape=layer_shape, verbose=verbose, I20=I20)
     sta = drdx.mean(0)
 
     del X
@@ -449,6 +485,39 @@ def revcor_sta(model, layers=['sequential.0','sequential.6'], chans=[8,8], verbo
     X = tdrstim.concat(noise, nh=filter_size)
     noise = noise[filter_size:]
     response = inspect(model, X, insp_keys=set(layers), batch_size=500, to_numpy=True, device=device)
+    stas = {layer:[] for layer in layers}
+    for layer,chan in zip(layers,chans):
+        resp = response[layer]
+        if len(resp.shape) == 2:
+            if layer == "sequential.2":
+                resp = resp.reshape(len(resp), len(chan), *model.shapes[0])
+            else:
+                resp = resp.reshape(len(resp), len(chan), *model.shapes[1])
+        centers = np.array(resp.shape[2:])//2
+        for c in range(chan):
+            if len(centers) == 2:
+                sta,_ = ft.revcorr(noise, scipy.stats.zscore(resp[:, c, centers[0], centers[1]]),
+                                                             0, filter_size)
+            if len(centers) == 3:
+                sta,_ = ft.revcorr(noise, scipy.stats.zscore(resp[:, c, centers[0], centers[1], centers[2]]),
+                                                             0, filter_size)
+            stas[layer].append(sta)
+    return stas
+
+def revcor_sta_rnn(model, layers, device, I20=None):
+    
+    chans = model.chans
+    noise = np.random.randn(10000,50,50)
+    try:
+        filter_size = model.img_shape[0]
+    except:
+        filter_size = model.image_shape[0]
+    X = tdrstim.concat(noise, nh=filter_size)
+    X = torch.FloatTensor(X).to(device)
+    noise = noise[filter_size:]
+    hs = get_hs(model, 1, device, I20)
+    
+    response = inspect_rnn(model, X, hs, insp_keys=list(layers))
     stas = {layer:[] for layer in layers}
     for layer,chan in zip(layers,chans):
         resp = response[layer]
@@ -740,3 +809,13 @@ class GaussRegularizer:
             loss += (weight*gauss).mean()
         return loss
 
+def get_hs(model, batch_size, device, I20=None):
+    hs = []
+    hs.append(torch.zeros(batch_size, *model.h_shapes[0]).to(device))
+    hs[0][:,0] = 1
+    if isinstance(I20, np.ndarray):
+        hs[0][:,3] = torch.from_numpy(I20)[:,None].to(device)
+    hs.append(deque([],maxlen=model.seq_len))
+    for i in range(model.seq_len):
+        hs[1].append(torch.zeros(batch_size, *model.h_shapes[1]).to(device))
+    return hs

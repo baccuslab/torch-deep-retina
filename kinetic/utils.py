@@ -8,10 +8,12 @@ from kinetic.models import *
 from torchdeepretina.intracellular import load_interneuron_data, max_correlation
 import torchdeepretina.stimuli as tdrstim
 
-def get_hs(model, batch_size, device):
+def get_hs(model, batch_size, device, I20=None):
     hs = []
     hs.append(torch.zeros(batch_size, *model.h_shapes[0]).to(device))
     hs[0][:,0] = 1
+    if isinstance(I20, np.ndarray):
+        hs[0][:,3] = torch.from_numpy(I20)[:,None].to(device)
     hs.append(deque([],maxlen=model.seq_len))
     for i in range(model.seq_len):
         hs[1].append(torch.zeros(batch_size, *model.h_shapes[1]).to(device))

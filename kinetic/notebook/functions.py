@@ -209,7 +209,7 @@ def contrast_adaptation_kinetic_occupancy_natural(model, device, c0, c1, duratio
 
     return Rs, As, I1s, I2s, responses, targets
 
-def inspect_rnn(model, curr_hs, data, device=torch.device('cuda:1')):
+def inspect_rnn_2(model, curr_hs, data, device=torch.device('cuda:1')):
     hs = []
     hs.append(curr_hs[0].detach())
     hs.append(deque([h.detach() for h in curr_hs[1]], maxlen=model.seq_len))
