@@ -903,6 +903,7 @@ def filter_and_nonlinearity(model, contrast, device, layer_name='sequential.0',
     if verbose:
         print("Normalizing filter and collecting linear response")
     stimulus = white(4040, contrast=contrast)
+    stimulus = (stimulus - stimulus.mean())/stimulus.std()
     normed_sta, theta, error = normalize_filter(sta, stimulus, 0.35 * contrast)
     filtered_stim = ft.linear_response(normed_sta, stimulus)
 
@@ -998,8 +999,8 @@ def contrast_fig(model, device, I20, contrasts, layer_name=None, unit_index=(0,1
     plt.plot(high_x, len(high_x) * [0], 'k--', alpha=0.4)
     plt.plot(high_x, high_nl, linewidth=3, color='b')
     plt.plot(low_x, low_nl, linewidth=3, color='g')
-    print(low_x, low_nl)
-    print(high_x, high_nl)
+    #print(low_x, low_nl)
+    #print(high_x, high_nl)
     plt.xlabel('Filtered Input', fontsize=14)
     plt.ylabel('Output (Hz)', fontsize=14)
     ax1 = plt.gca()
