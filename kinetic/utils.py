@@ -200,6 +200,46 @@ def interneuron_correlation_bipolar(model, root_path, files, stim_keys, length, 
                 intr_cors['cell_type'].append(cell_type) # amacrine or bipolar
                 intr_cors['cor'].append(r)
     return intr_cors
+
+def interneuron_correlation_occupancy(model, root_path, files, stim_keys, length, device, I20=None):
+    
+    stim_dict, mem_pot_dict, _ = load_interneuron_data(root_path, files, 40, stim_keys)
+    intr_cors = {
+                "cell_file":[], 
+                "stim_type":[],
+                "cell_type":[],
+                "cor":[]
+                }
+    for cell_file in stim_dict.keys():
+        for stim_type in stim_dict[cell_file].keys():
+            print(cell_file, stim_type)
+            stim = tdrstim.spatial_pad(stim_dict[cell_file][stim_type], model.img_shape[1])
+            stim = tdrstim.rolling_window(stim, model.img_shape[0])[:length].astype(np.float32)
+
+            with torch.no_grad():
+                stim_tensor = torch.from_numpy(stim).to(device)
+                hs = get_hs(model, 1, device, I20)
+                resp = []
+                for i in range(stim_tensor.shape[0]):
+                    inpt = stim_tensor[i:i+1]
+                    fx = model.bipolar(inpt)
+                    fx, h0 = model.kinetics(fx, hs[0]) 
+                    hs[1].append(fx)
+                    h1 = hs[1]
+                    hs = [h0, h1]
+                    resp.append(fx.view(-1, model.chans[0], *model.shapes[0]))
+                resp = torch.cat(resp, dim=0)
+                resp = resp.detach().cpu().numpy()
+            pots = mem_pot_dict[cell_file][stim_type][:, :length]
+            rnge = range(len(pots))
+
+            for cell_idx in rnge:
+                r = max_correlation(pots[cell_idx], resp)
+                intr_cors['stim_type'].append(stim_type)
+                cell_type = cell_file.split("/")[-1].split("_")[0][:-1]
+                intr_cors['cell_type'].append(cell_type) # amacrine or bipolar
+                intr_cors['cor'].append(r)
+    return intr_cors
     
     
 def slow_parameters_solver(A_l, A_h, decay_rate, kfi, kfr, ka, u_l, u_h):

@@ -429,7 +429,7 @@ class KineticsChannelModelFilterBipolarNoNorm(nn.Module):
             Second element should be deque of activated population values over past D time steps
         """
         fx = self.bipolar(x)
-        fx, h0 = self.kinetics(fx, hs[0]) 
+        fx, h0 = self.kinetics(fx, hs[0])
         hs[1].append(fx)
         h1 = hs[1]
         fx = torch.stack(list(h1), dim=1) #(B,D*N)
