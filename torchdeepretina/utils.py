@@ -818,7 +818,7 @@ def linear_response(filt, stim, batch_size=1000, to_numpy=True):
         resp = resp.detach().numpy()
     return resp
 
-def inspect(model, X, insp_keys={}, batch_size=500, to_numpy=True,
+def inspect(model, X, insp_keys=set(), batch_size=500, to_numpy=True,
                                                       to_cpu=True,
                                                       no_grad=False,
                                                       verbose=False):
@@ -848,12 +848,17 @@ def inspect(model, X, insp_keys={}, batch_size=500, to_numpy=True,
     """
     layer_outs = dict()
     handles = []
+    insp_keys_copy = set()
     for key, mod in model.named_modules():
         if key in insp_keys:
+            insp_keys_copy.add(key)
             hook = get_hook(layer_outs, key, to_numpy=to_numpy,
                                                  to_cpu=to_cpu)
             handle = mod.register_forward_hook(hook)
             handles.append(handle)
+    if len(set(insp_keys)-insp_keys_copy) > 0:
+        print("Insp keys:", insp_keys-insp_keys_copy, "not found")
+    insp_keys = insp_keys_copy
     if not isinstance(X,torch.Tensor):
         X = torch.FloatTensor(X)
 
@@ -935,7 +940,7 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500,
         idx of cell of interest
     batch_size: int
         size of batching for calculations
-    layer_shape: tuple
+    layer_shape: tuple of ints (chan, row, col)
         changes the shape of the argued layer to this shape if tuple
     to_numpy: bool
         returns the gradient vector as a numpy array if true
@@ -985,8 +990,9 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500,
         else:
             resp = model(x)
         if layer_shape is not None:
-            hook_outs[layer] = hook_outs[layer].reshape(-1,
-                                              *layer_shape)
+            n_samps = len(hook_outs[layer])
+            hook_outs[layer] = hook_outs[layer].reshape(n_samps,
+                                                        *layer_shape)
         # Outs are the activations at the argued layer and cell idx
         # for the batch
         if type(cell_idx) == type(int()):
@@ -1427,6 +1433,8 @@ def compute_sta(model, layer, cell_index, layer_shape=None,
     layer: str
     cell_index: int or tuple (chan, row, col)
         idx of cell of interest
+    layer_shape: tuple of ints (chan, row, col)
+        changes the shape of the argued layer to this shape if tuple
     batch_size: int
         size of batching for calculations
     contrast: int
@@ -1732,15 +1740,15 @@ def revcor_sta(model, layer, cell_index, layer_shape=None,
                                            contrast=contrast,
                                            n_repeats=3,
                                            rand_spat=True)
-    X = tdrstim.rolling_window(noise)
+    X = tdrstim.rolling_window(noise, model.img_shape[0])
     with torch.no_grad():
         response = inspect(model, X, insp_keys=set([layer]),
                                       batch_size=batch_size,
                                       to_numpy=False)
     resp = response[layer]
     if layer_shape is not None:
-        resp = resp.reshape(-1,*layer_shape)
-    if type(cell_index) == type(int()):
+        resp = resp.reshape(len(resp),*layer_shape)
+    if isinstance(cell_index, int):
         resp = resp[:,cell_index]
     elif len(cell_index) == 2:
         resp = resp[:,cell_index[0]]
@@ -2109,24 +2117,86 @@ def max_matrix(mtx):
     loc = np.unravel_index(argmax,shape)
     return (*loc,valmax)
 
-#def convert_1dbn(model):
-#    """
-#    Converts a fully convolutional model that uses 1d batch norm
-#    layers to a special convolutional layer that is equivalent but
-#    allows for all image sizes to be used as input.
-#
-#    model: torch Module
-#        must have attribute "sequential" and must have a GrabUnits
-#        layer.
-#    """
-#    bn_idxs = get_module_idxs(model, AbsBatchNorm1d)[:-1] # Remove final
-#    bn_idxs = bn_idxs + get_module_idxs(model, BatchNorm1d)
-#    assert len(bn_idxs) > 0
-#    grab_idx = get_module_idx(model, GrabUnits)
-#    grabber = model.sequential[grab_idx]
-#    centers = grabber.centers
-#    img_shape = model.img_shape
-#    for i in range(len(model.ksizes)):
-#        centers = grabber.centers2coords(centers,model.ksizes[i:i+1],
-#                                                 img_shape)
-#        shape = update_shape(img_shape[1:],kernel=ksizes[i])
+def rf_display(rf) :
+    #Creates a display for a spatiotemporal receptive field (RF)
+    #
+    #space_ave,time_cen,time_sur = RFDisplay(RF)
+    #
+    #RF: Spatiotemporal receptive field (Time, X , Y)
+    #space_ave: Spatial average of RF
+    #time_cen: Time course of pixels in RF center
+    #time_sur: Time course of pixels in RF surround
+    #Center pixels are found by first taking the pixel with the largest
+    #absolute value (peakval), then taking nearby pixels that
+    #are some fraction of that max value
+    #Surround pixels are found as pixels with the opposite sign
+    #from the center, that are some fraction of the max surround pixel
+
+    #Parameters: Threshold fractions of peakval to accept center and surround pixels
+    cen_factor=0.5
+    sur_factor=0.8
+    cen_dist_factor=2
+    sur_dist_factor=8
+
+    #Preprocessing
+    rftrunc=rf[2:40,:,:] # First two points sometimes have an outlier 
+
+    ###Spatial average###
+    space_ave=np.mean(rftrunc,axis=0)
+
+    ###Center timecourse###
+
+    #Find index [ctime,cx,cy] of peak value 
+    rfabs=np.abs(rftrunc);
+    [ctime,cx,cy]= np.unravel_index(np.argmax(rfabs, axis=None), rfabs.shape)
+    spacepeak=rftrunc[ctime,:,:] #spatial slice at peak time
+    peakval=rftrunc[ctime,cx,cy]
+
+    #Identify center pixels as those greater than half of peakval
+    #within twice the mean distance of those pixels from tne center
+    large_idxs=np.argwhere(np.abs(peakval-spacepeak)<np.abs(peakval*cen_factor))
+    dist=np.sqrt((large_idxs[:,0]-cx)**2+(large_idxs[:,1]-cy)**2)
+    cen_x_indx=large_idxs[np.argwhere(dist<=cen_dist_factor*np.mean(dist)),0]
+    cen_y_indx=large_idxs[np.argwhere(dist<=cen_dist_factor*np.mean(dist)),1]
+    cen_idxs=np.concatenate((cen_x_indx,cen_y_indx),axis=1)
+    #Add up the time courses from the center pixels
+    time_cen=0
+    rfnocenter=copy.deepcopy(rftrunc)
+    for i in range (cen_idxs.shape[0]):
+        time_cen=time_cen+rftrunc[:,cen_idxs[i,0],cen_idxs[i,1]];
+        #remove the center pixels for later surround calculation
+        rfnocenter[:,cen_idxs[i,0],cen_idxs[i,1]]=0 
+
+    ###Surround timecourse###
+
+    #Find surround pixels that have opposite sign from center
+    if peakval>0 :
+        [stime,sx,sy]= np.unravel_index(np.argmin(rfnocenter, axis=None),
+                                                        rfnocenter.shape)
+    else :
+        [stime,sx,sy]= np.unravel_index(np.argmax(rfnocenter, axis=None),
+                                                        rfnocenter.shape)
+    negpeakval=rfnocenter[stime,sx,sy] #largest amplitude surround pixel
+
+    #Identify surround pixels as those greater than half of peakval
+    #within a factor of the mean distance of those pixels from tne center
+    large_idxs=np.argwhere(np.abs(negpeakval-spacepeak)<np.abs(negpeakval*sur_factor))
+    dist=np.sqrt((large_idxs[:,0]-cx)**2+(large_idxs[:,1]-cy)**2)
+    sur_x_indx=large_idxs[np.argwhere(dist<=sur_dist_factor*np.mean(dist)),0]
+    sur_y_indx=large_idxs[np.argwhere(dist<=sur_dist_factor*np.mean(dist)),1]
+    sur_idxs=np.concatenate((sur_x_indx,sur_y_indx),axis=1)
+     #Add up the time courses from the surround pixels
+    time_sur=0
+    for i in range (sur_idxs.shape[0]):
+        time_sur=time_sur+rftrunc[:,sur_idxs[i,0],sur_idxs[i,1]]
+
+    #Scale center and surround timecourses to a max amplitude of one
+    time_cen=time_cen/np.max(abs(time_cen))
+    time_sur=time_sur/np.max(abs(time_sur))
+    space_ave=space_ave[16:35,16:35]
+
+    return spacepeak, time_cen, time_sur
+
+
+
+
