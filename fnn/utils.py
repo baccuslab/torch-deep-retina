@@ -56,12 +56,12 @@ def update_eval_history(cfg, epoch, pearson, epoch_loss):
             json.dump(eval_history, f)
             
 def get_data(cfg):
-    train_data = DataContainer(loadexpt('15-10-07','all', 'naturalscene','train', cfg.img_shape[0], 0, data_path=cfg.Data.data_path))
+    train_data = DataContainer(loadexpt(cfg.Data.date, 'all', cfg.Data.stim, 'train', cfg.img_shape[0], 0, data_path=cfg.Data.data_path))
     norm_stats = {}
     norm_stats['mean'] = train_data.stats['mean']
     norm_stats['std']= train_data.stats['std'] 
     
-    test_data = DataContainer(loadexpt('15-10-07','all', 'naturalscene', 'test', cfg.img_shape[0], 0, 
+    test_data = DataContainer(loadexpt(cfg.Data.date, 'all', cfg.Data.stim, 'test', cfg.img_shape[0], 0, 
                                         norm_stats=norm_stats, data_path=cfg.Data.data_path))
     return train_data, test_data
 
