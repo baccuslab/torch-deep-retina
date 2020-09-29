@@ -1,0 +1,21 @@
+exp_id: 'one_pixel_channel'
+img_shape: (40, 50, 50)
+epoch: 50
+Model:
+    name: 'KineticsOnePixelChannel'
+    checkpoint: '/home/xhding/saved_model/channel_filter_LNK_NoNorm_NoScale/epoch_015_loss_-68.15_pearson_0.4973.pth'
+    noise: 0.
+    linear_bias: False
+    scale_kinet: False
+    n_units: 3
+Data:
+    trunc_int: 2000
+    loss_bin: 1000
+    val_size: 30000
+    batch_size: 5
+    data_path: '/home/xhding/tem_stim'
+    date: '20-09-15'
+    stim: 'fullfield_whitenoise'
+    
+Optimize:
+    lr: 0.05

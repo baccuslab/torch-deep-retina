@@ -28,6 +28,13 @@ def get_hs_2(model, batch_size, device):
         hs[1].append(torch.zeros(batch_size, *model.h_shapes[1]).to(device))
     return hs
 
+def get_hs_LNK(model, batch_size, device, I20=None):
+    hs = torch.zeros(batch_size, *model.h_shapes).to(device)
+    hs[:,0] = 1
+    if isinstance(I20, np.ndarray):
+        hs[:,3] = torch.from_numpy(I20)[:,None].to(device)
+    return hs
+
 def select_model(cfg, device):
     
     if cfg.Model.name == 'KineticsChannelModel':
@@ -75,6 +82,8 @@ def select_model(cfg, device):
                                         scale_kinet=cfg.Model.scale_kinet, bias=cfg.Model.bias, 
                                         linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
                                         softplus=cfg.Model.softplus, img_shape=cfg.img_shape).to(device)
+    if cfg.Model.name == 'LNK':
+        model = LNK(dt=0.01, filter_len=cfg.img_shape[0]).to(device)
         
     return model
 

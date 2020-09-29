@@ -576,3 +576,28 @@ class KineticsOnePixelChannel(nn.Module):
         fx = F.relu(fx)
         fx = self.ganglion(fx)
         return fx, [h0, h1]
+    
+class LNK(nn.Module):
+    def __init__(self, dt=0.01, filter_len=100):
+        super(LNK, self).__init__()
+        
+        self.dt = dt
+        self.filter_len = filter_len
+        
+        self.ln_filter = Temperal_Filter(self.filter_len, 0)
+        self.bias = nn.Parameter(torch.rand(1))
+        self.nonlinear = nn.Sigmoid()
+        self.kinetics = Kinetics(dt=self.dt)
+        self.scale_shift = nn.Linear(1, 1)
+        self.spiking = nn.Softplus()
+        n_states = 4
+        self.h_shapes = (n_states, 1)
+    
+    def forward(self, x, hs):
+        out = self.ln_filter(x) + self.bias
+        out = self.nonlinear(out)[:, None]
+        out, hs = self.kinetics(out, hs)
+        out = self.scale_shift(out)
+        out = self.spiking(out)
+        return out, hs
+    

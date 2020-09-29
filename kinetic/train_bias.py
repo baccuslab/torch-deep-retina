@@ -51,7 +51,7 @@ def train(cfg):
     model.kinetics.kfr.data = 87. * torch.ones(model.chans[0], 1).to(device)
     
     model.bipolar[0].convs[6].bias.data = -4. * torch.ones(model.chans[0]).to(device)
-    model.bipolar[0].convs[6].bias.requires_grad = False
+    #model.bipolar[0].convs[6].bias.requires_grad = False
     
     train_dataset = TrainDataset(cfg)
     batch_sampler = BatchRnnSampler(length=len(train_dataset), batch_size=cfg.Data.batch_size,
@@ -83,7 +83,7 @@ def train(cfg):
                 
         epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size
         
-        pearson = pearsonr_eval(model, validation_data, cfg.Model.n_units, len(validation_data), device)
+        pearson = pearsonr_eval(model, validation_data, cfg.Model.n_units, device)
         
         print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}'.format(epoch, epoch_loss, pearson))
         

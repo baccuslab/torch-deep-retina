@@ -26,6 +26,8 @@ _C.Model.ksizes = (15,11)
 
 _C.Data = CfgNode()
 _C.Data.data_path = '/home/TRAIN_DATA'
+_C.Data.date = '15-10-07'
+_C.Data.stim = 'naturalscene'
 _C.Data.batch_size = 512
 _C.Data.val_size = 30000
 _C.Data.trunc_int = 8

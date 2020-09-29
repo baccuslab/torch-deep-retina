@@ -41,7 +41,7 @@ def LNK(x, data, dt):
         filters = signal.resample(filters, 100)
     after_filter = np.convolve(x, filters, 'valid') * dt
     u = (a[15]**(erf(after_filter+a[16])+1))+a[17]
-    v = a[18]*((a[15]**(erf(u+a[16])+1))+a[17])+a[19]
+    v = a[18]*((a[15]**(erf(after_filter+a[16])+1))+a[17])+a[19]
     rate = {'fi':a[21], 'fr':a[23], 'si':a[25]}
     x_0 = np.array([0., 0., 0., 100.])
     out = kinetic(rate, x_0, u, v, dt)

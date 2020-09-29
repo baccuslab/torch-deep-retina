@@ -1,8 +1,10 @@
 import torch
 import os
+import scipy
 import numpy as np
 import matplotlib.pyplot as plt
 from torch.utils.data.dataloader import DataLoader
+import pyret
 from kinetic.evaluation import *
 from kinetic.utils import select_model
 from kinetic.config import get_custom_cfg
@@ -10,6 +12,8 @@ from kinetic.data import *
 from torchdeepretina.utils import *
 import torchdeepretina.stimuli as stim
 import torchdeepretina.visualizations as viz
+from torchdeepretina.retinal_phenomena import normalize_filter
+from pyret.nonlinearities import Binterp, Sigmoid
 
 def contrast_adaptation_kinetic(model, device, c0, c1, duration=50, delay=50, nsamples=140, nrepeats=10, filt_depth=40):
     """Step change in contrast"""
@@ -595,3 +599,88 @@ def contrast_adaptation_kinetic_inspect(model, device, c0, c1, duration=50, dela
     (fig, (ax0,ax1)) = figs
 
     return Rs, As, I1s, I2s, us, after_kinetics
+
+def rev_sta(stim, resp, filter_len = 40):
+
+    sta, tax = pyret.filtertools.revcorr(stim, resp, 0, filter_len)
+    sta = sta / resp.sum() * 100
+    sta = np.flip(sta, axis=0)
+    tax = tax / 100
+    sta -= sta.mean()
+    normed_sta, _, _ = normalize_filter(sta, stim, stim.std())
+    
+    return normed_sta, tax
+
+def fourier_sta(x, y, M):
+    
+    N = x.shape[0]
+    contrast = x.std() / x.mean()
+    x = scipy.stats.zscore(x) * contrast
+    #x = x - np.mean(x)
+    y = y - np.mean(y)
+
+    offset = 100
+    num_pers = np.int(np.floor((N-M)/offset))
+
+    f = np.zeros(M)
+    fft_f = np.zeros(M)
+    cross_xy = fft_f
+    denom = cross_xy
+
+    for i in range(num_pers):
+        x_per = x[i*offset:i*offset + M]
+        y_per = y[i*offset:i*offset + M]
+
+        auto_x = np.abs(np.fft.fft(x_per))**2
+        auto_y = np.abs(np.fft.fft(y_per))**2
+
+        cross_xy = cross_xy + np.conjugate(np.fft.fft(x_per)) * np.fft.fft(y_per)
+        denom = denom + auto_x + np.mean(auto_y)*10
+
+    fft_f = cross_xy / denom
+    f = np.real(np.fft.ifft(fft_f))
+
+    return f
+
+def LN_model_1d(stim, resp, filter_len = 40, nonlinearity_type = 'bin'):
+    
+    contrast = stim.std() / stim.mean()
+    stim = scipy.stats.zscore(stim) * contrast
+    
+    normed_sta, tax = rev_sta(stim, resp, filter_len)
+
+    filtered_stim = pyret.filtertools.linear_response(normed_sta, stim)
+    if nonlinearity_type == 'bin':
+        nonlinearity = Binterp(80)
+    else:
+        nonlinearity = Sigmoid()
+    nonlinearity.fit(filtered_stim[filter_len:], resp[filter_len:])
+
+    x = np.linspace(np.min(filtered_stim), np.max(filtered_stim), 40)
+    nonlinear_prediction = nonlinearity.predict(x)
+    
+    return tax, normed_sta, x, nonlinear_prediction
+
+def contrast_adaption_nonlinear(stimulus, resp, h_start, l_start, 
+                                e_duration=500, l_duration=1000, nonlinearity_type = 'bin', filter_len = 40):
+    
+    stim_he = stimulus[h_start:h_start+e_duration]
+    resp_he = resp[h_start:h_start+e_duration]
+    stim_hl = stimulus[h_start+2000-l_duration:h_start+2000]
+    resp_hl = resp[h_start+2000-l_duration:h_start+2000]
+    stim_le = stimulus[l_start:l_start+e_duration]
+    resp_le = resp[l_start:l_start+e_duration]
+    stim_ll = stimulus[l_start+2000-l_duration:l_start+2000]
+    resp_ll = resp[l_start+2000-l_duration:l_start+2000]
+    _, _, x_he, nonlinear_he = LN_model_1d(stim_he, resp_he)
+    _, _, x_hl, nonlinear_hl = LN_model_1d(stim_hl, resp_hl)
+    _, _, x_le, nonlinear_le = LN_model_1d(stim_le, resp_le)
+    _, _, x_ll, nonlinear_ll = LN_model_1d(stim_ll, resp_ll)
+    
+    plt.plot(x_he, nonlinear_he, 'r', label='high early')
+    plt.plot(x_hl, nonlinear_hl, 'b', label='high late')
+    plt.plot(x_le, nonlinear_le, 'k', label='low early')
+    plt.plot(x_ll, nonlinear_ll, 'g', label='low late')
+    plt.legend()
+
+    return (x_he, nonlinear_he), (x_hl, nonlinear_hl), (x_le, nonlinear_le), (x_ll, nonlinear_ll)

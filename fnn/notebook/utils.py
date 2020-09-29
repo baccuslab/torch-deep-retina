@@ -73,7 +73,8 @@ def Fano(single_trial):
     fano = np.nanmean(np.var(0.01*single_trial, axis=0)/np.mean(0.01*single_trial, axis=0))
     return fano
     
-def poisson_error(model, data, single_corr, device, n_repeats=5, k1=None, k2=None, k3=None):
+def Noises(model, data, single_corr, device, n_repeats=5, n_cells=5, poisson=[None, None, None], gaussian=[0, 0, 0, 0]):
+    model = model.to(device)
     with torch.no_grad():
         pred_corr = []
         pred_single_trial = []
@@ -82,73 +83,77 @@ def poisson_error(model, data, single_corr, device, n_repeats=5, k1=None, k2=Non
             val_targ = []
             for x,y in data:
                 x = x.to(device)
-                if k1 != None:
-                    out = torch.poisson(k1*model.bipolar(x))/k1
-                else:
-                    out = model.bipolar(x)
-                if k2 != None:
-                    out = torch.poisson(k2*model.amacrine(out))/k2
-                else:
-                    out = model.amacrine(out)
-                if k3 != None:
-                    out = torch.poisson(k3*model.ganglion(out))/k3
-                else:
-                    out = model.ganglion(out)
+                out = noise_model(x, model, device, poisson, gaussian)
                 val_pred.append(out.detach().cpu().numpy())
                 val_targ.append(y.detach().numpy())
             val_pred = np.concatenate(val_pred, axis=0)
             val_targ = np.concatenate(val_targ, axis=0)
-            pred_corr.append(corr_matrix(5, val_pred))
+            pred_corr.append(corr_matrix(n_cells, val_pred))
             pred_single_trial.append(val_pred)
         pred_corr = np.stack(pred_corr).mean(axis=0)
         pred_single_trial = np.stack(pred_single_trial)
     error = np.abs(single_corr-pred_corr).sum()/single_corr.sum()
     pearsons = []
     pred_mean = pred_single_trial.mean(axis=0)
-    for cell in range(5):
+    for cell in range(n_cells):
         pearsons.append(pearsonr(pred_mean[:,cell],val_targ[:,cell])[0])
     accuracy = np.array(pearsons).mean()
     fano = Fano(pred_single_trial)
-    stim_corr = stimuli_corr_matrix(5, n_repeats, pred_single_trial)
+    stim_corr = stimuli_corr_matrix(n_cells, n_repeats, pred_single_trial)
     noise_corr = pred_corr - stim_corr
-    diagonal_idxs = [0, 6, 12, 18, 24]
+    diagonal_idxs = list(range(0, n_cells*n_cells, n_cells+1))
     mean_stim_corr = np.delete(stim_corr.flatten(), diagonal_idxs).mean()
     mean_noise_corr = np.delete(noise_corr.flatten(), diagonal_idxs).mean()
     return error, accuracy, fano, mean_stim_corr, mean_noise_corr
 
-def gaussian_error(model, data, single_corr, device, n_repeats=5, std1=0, std2=0):
+def noise_model(x, model, device, poisson=[None, None, None], gaussian=[0, 0, 0, 0]):
     with torch.no_grad():
-        pred_corr = []
-        pred_single_trial = []
-        for n in range(n_repeats):
-            val_pred = []
-            val_targ = []
-            for x,y in data:
-                x = x.to(device)
-                model.bipolar[3].sigma.data = torch.tensor(std1).to(device)
-                model.bipolar[3].training = True
-                model.amacrine[4].sigma.data = torch.tensor(std2).to(device)
-                model.amacrine[4].training = True
-                out = model(x)
-                val_pred.append(out.detach().cpu().numpy())
-                val_targ.append(y.detach().numpy())
-            val_pred = np.concatenate(val_pred, axis=0)
-            val_targ = np.concatenate(val_targ, axis=0)
-            pred_corr.append(corr_matrix(5, val_pred))
-            pred_single_trial.append(val_pred)
-        pred_corr = np.stack(pred_corr).mean(axis=0)
-        pred_single_trial = np.stack(pred_single_trial)
-    error = np.abs(single_corr-pred_corr).sum()/single_corr.sum()
-    pearsons = []
-    pred_mean = pred_single_trial.mean(axis=0)
-    for cell in range(5):
-        pearsons.append(pearsonr(pred_mean[:,cell],val_targ[:,cell])[0])
-    accuracy = np.array(pearsons).mean()
-    fano = Fano(pred_single_trial)
-    stim_corr = stimuli_corr_matrix(5, n_repeats, pred_single_trial)
-    noise_corr = pred_corr - stim_corr
-    diagonal_idxs = [0, 6, 12, 18, 24]
-    mean_stim_corr = np.delete(stim_corr.flatten(), diagonal_idxs).mean()
-    mean_noise_corr = np.delete(noise_corr.flatten(), diagonal_idxs).mean()
-    return error, accuracy, fano, mean_stim_corr, mean_noise_corr
+        noise = gaussian[0] * torch.randn(x.size()).to(device)
+        out = x + noise
+        out = model.bipolar[:3](out)
+        noise = gaussian[1] * torch.randn(out.size()).to(device)
+        out = out + noise
+        if poisson[0] != None:
+            out = torch.poisson(poisson[0]*model.bipolar[3:](out))/poisson[0]
+        else:
+            out = model.bipolar[3:](out)
+        out = model.amacrine[:4](out)
+        noise = gaussian[2] * torch.randn(out.size()).to(device)
+        out = out + noise
+        if poisson[1] != None:
+            out = torch.poisson(poisson[1]*model.amacrine[4:](out))/poisson[1]
+        else:
+            out = model.amacrine[4:](out)
+        out = model.ganglion[:2](out)
+        noise = gaussian[3] * torch.randn(out.size()).to(device)
+        out = out + noise
+        if poisson[2] != None:
+            out = torch.poisson(poisson[2]*model.ganglion[2:](out))/poisson[2]
+        else:
+            out = model.ganglion[2:](out)
+    return out 
     
+def single_noise_plot(para_name, noise_list, error_list, accuracy_list, fano_list, mean_stim_corr_list, mean_noise_corr_list,
+               recorded_fano=0.091, recorded_mean_stim_corr=0.1638, recorded_mean_noise_corr=0.0127):
+    plt.plot(noise_list, error_list, 'bo-')
+    plt.xlabel(para_name)
+    plt.ylabel('error')
+    plt.show()
+    plt.plot(noise_list, accuracy_list, 'bo-')
+    plt.xlabel(para_name)
+    plt.ylabel('pearson correlation')
+    plt.show()
+    plt.plot(noise_list, fano_list, 'bo-', label='model')
+    plt.xlabel(para_name)
+    plt.ylabel('Fano factor')
+    plt.axhline(y=recorded_fano, color='r', label='data')
+    plt.legend()
+    plt.show()
+    plt.plot(noise_list, mean_stim_corr_list, 'bo-', label='model: stimuli correlation')
+    plt.plot(noise_list, mean_noise_corr_list, 'ro-', label='model: noise correlation')
+    plt.axhline(y=recorded_mean_stim_corr, color='b', label='data: stimuli correlation')
+    plt.axhline(y=recorded_mean_noise_corr, color='r', label='data: noise correlation')
+    plt.xlabel(para_name)
+    plt.ylabel('correlation')
+    plt.legend()
+    plt.show()

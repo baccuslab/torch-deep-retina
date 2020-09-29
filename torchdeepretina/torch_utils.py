@@ -1107,7 +1107,8 @@ class Kinetics(nn.Module):
         kfi = self.kfi.abs()*pop[:,1]
         kfr = self.kfr.abs()*pop[:,2]
         ksi = self.ksi.abs()*pop[:,2]
-        ksr = self.ksr.abs()*rate*pop[:,3]
+        ksr = self.ksr.abs()*pop[:,3]
+        #ksr = self.ksr.abs()*rate*pop[:,3]
         new_pop = torch.zeros_like(pop)
         new_pop[:,0] = pop[:,0] + dt*(-ka + kfr)
         new_pop[:,1] = pop[:,1] + dt*(-kfi + ka)
