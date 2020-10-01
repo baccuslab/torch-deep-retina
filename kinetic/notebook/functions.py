@@ -72,7 +72,7 @@ def contrast_adaptation_kinetic_reset(model, device, c0, c1, duration=50, delay=
             responses.append(resp.cpu().detach().numpy())
 
     responses = np.asarray(responses)
-    figs = viz.response1D(envelope[40:, 0, 0], responses.mean(axis=0))
+    figs = viz.response1D(envelope[filt_depth:, 0, 0], responses.mean(axis=0))
     (fig, (ax0,ax1)) = figs
 
     return (fig, (ax0,ax1)), envelope, responses
@@ -121,7 +121,7 @@ def contrast_adaptation_kinetic_occupancy(model, device, c0, c1, duration=50, de
     As = np.asarray(As).mean(axis=0)
     I1s = np.asarray(I1s).mean(axis=0)
     I2s = np.asarray(I2s).mean(axis=0)
-    figs = viz.response1D(envelope[40:, 0, 0], responses.mean(axis=0))
+    figs = viz.response1D(envelope[filt_depth:, 0, 0], responses.mean(axis=0))
     (fig, (ax0,ax1)) = figs
 
     return Rs, As, I1s, I2s
@@ -171,7 +171,7 @@ def contrast_adaptation_kinetic_center_occupancy(model, device, c0, c1, duration
     As = np.asarray(As).mean(axis=0)
     I1s = np.asarray(I1s).mean(axis=0)
     I2s = np.asarray(I2s).mean(axis=0)
-    figs = viz.response1D(envelope[40:, 0, 0], responses.mean(axis=0))
+    figs = viz.response1D(envelope[filt_depth:, 0, 0], responses.mean(axis=0))
     (fig, (ax0,ax1)) = figs
 
     return Rs, As, I1s, I2s
@@ -310,7 +310,7 @@ def contrast_adaptation_kinetic_where_occupancy(model, device, c0, c1, where, du
     As = np.asarray(As).mean(axis=0)
     I1s = np.asarray(I1s).mean(axis=0)
     I2s = np.asarray(I2s).mean(axis=0)
-    figs = viz.response1D(envelope[40:, 0, 0], responses.mean(axis=0))
+    figs = viz.response1D(envelope[filt_depth:, 0, 0], responses.mean(axis=0))
     (fig, (ax0,ax1)) = figs
 
     return Rs, As, I1s, I2s
@@ -346,7 +346,7 @@ def contrast_adaptation_kinetic_average(model, device, c0, c1, duration=50, dela
 
     responses = np.asarray(responses)
     averages = np.asarray(averages)
-    figs = viz.response1D(envelope[40:, 0, 0], responses.mean(axis=0))
+    figs = viz.response1D(envelope[filt_depth:, 0, 0], responses.mean(axis=0))
     (fig, (ax0,ax1)) = figs
 
     return averages.mean(axis=0)
@@ -395,7 +395,7 @@ def contrast_adaptation_kinetic_occupancy_onepixel(model, device, c0, c1, durati
     As = np.asarray(As).mean(axis=0)
     I1s = np.asarray(I1s).mean(axis=0)
     I2s = np.asarray(I2s).mean(axis=0)
-    figs = viz.response1D(envelope[40:], responses.mean(axis=0))
+    figs = viz.response1D(envelope[filt_depth:], responses.mean(axis=0))
     (fig, (ax0,ax1)) = figs
 
     return Rs, As, I1s, I2s
@@ -444,7 +444,7 @@ def contrast_adaptation_kinetic_occupancy_2(model, device, c0, c1, duration=50, 
     As = np.asarray(As).mean(axis=0)
     I1s = np.asarray(I1s).mean(axis=0)
     I2s = np.asarray(I2s).mean(axis=0)
-    figs = viz.response1D(envelope[40:, 0, 0], responses.mean(axis=0))
+    figs = viz.response1D(envelope[filt_depth:, 0, 0], responses.mean(axis=0))
     (fig, (ax0,ax1)) = figs
 
     return Rs, As, I1s, I2s
@@ -523,7 +523,7 @@ def contrast_adaptation_onepixel_inspect(model, device, c0, c1, duration=50, del
         after_filters = np.stack(after_filters).mean(0)
         after_amacrines = np.stack(after_amacrines).mean(0)
         
-    figs = viz.response1D(envelope[40:], responses)
+    figs = viz.response1D(envelope[filt_depth:], responses)
     (fig, (ax0,ax1)) = figs
 
     return Rs, As, I1s, I2s, us, after_filters, after_amacrines
@@ -595,10 +595,71 @@ def contrast_adaptation_kinetic_inspect(model, device, c0, c1, duration=50, dela
         us = np.stack(us).mean(0)
         after_kinetics = np.stack(after_kinetics).mean(0)
         
-    figs = viz.response1D(envelope[40:, 0, 0], responses)
+    figs = viz.response1D(envelope[filt_depth:, 0, 0], responses)
     (fig, (ax0,ax1)) = figs
 
     return Rs, As, I1s, I2s, us, after_kinetics
+
+def contrast_adaptation_LNK_inspect(model, device, c0, c1, duration=50, delay=50, nsamples=140, filt_depth=40, I20=0, n_repeats=1):
+    """Step change in contrast"""
+
+    # the contrast envelope
+    envelope = stim.flash(duration, delay, nsamples, intensity=(c1 - c0)).squeeze()
+    envelope += c0
+    responses = []
+    Rs = []
+    As = []
+    I1s = []
+    I2s = []
+    us = []
+    # generate a bunch of responses to random noise with the given contrast envelope
+    with torch.no_grad():
+        for _ in range(n_repeats):
+            x = np.random.randn(*envelope.shape) * envelope + 1
+            x = (x - x.mean())/x.std()
+            x = torch.from_numpy(stim.rolling_window(x, filt_depth, time_axis=0)).to(device)
+            hs = get_hs_LNK(model, 1, device, I20)
+            resps = []
+            R = []
+            A = []
+            I1 = []
+            I2 = []
+            u = []
+
+            for i in range(x.shape[0]):
+                inpt = x[i:i+1]
+                fx = model.ln_filter(inpt) + model.bias
+                fx = model.nonlinear(fx)[:, None]
+                u.append(fx.cpu().detach().numpy().squeeze())
+                fx, hs = model.kinetics(fx, hs)
+                fx = model.scale_shift(fx)
+                fx = model.spiking(fx)
+                resps.append(fx)
+                R.append(hs[0,0].cpu().detach().numpy())
+                A.append(hs[0,1].cpu().detach().numpy())
+                I1.append(hs[0,2].cpu().detach().numpy())
+                I2.append(hs[0,3].cpu().detach().numpy())
+                
+            resp = torch.cat(resps, dim=0)
+
+            responses.append(resp.cpu().detach().numpy())
+            Rs.append(np.asarray(R).mean(-1))
+            As.append(np.asarray(A).mean(-1))
+            I1s.append(np.asarray(I1).mean(-1))
+            I2s.append(np.asarray(I2).mean(-1))
+            us.append(np.asarray(u))
+        
+        responses = np.stack(responses).mean(0)
+        Rs = np.stack(Rs).mean(0)
+        As = np.stack(As).mean(0)
+        I1s = np.stack(I1s).mean(0)
+        I2s = np.stack(I2s).mean(0)
+        us = np.stack(us).mean(0)
+        
+    figs = viz.response1D(envelope[filt_depth:], responses)
+    (fig, (ax0,ax1)) = figs
+
+    return Rs, As, I1s, I2s, us
 
 def rev_sta(stim, resp, filter_len = 40):
 

@@ -148,7 +148,7 @@ def OnePixelModel(cfg, state_dict, dt, device):
     
     return model
 
-def temporal_frequency_normalized_loss(y_pred, y_targ, loss_fn, device, cut_off=4, num_units=1, filter_len=11, dt=0.01):
+def temporal_frequency_normalized_loss(y_pred, y_targ, loss_fn, device, cut_off=8, num_units=1, filter_len=25, dt=0.01):
     
     numtaps = filter_len
     f = cut_off

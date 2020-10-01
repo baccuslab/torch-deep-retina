@@ -3,7 +3,7 @@ img_shape: (100, 50, 50)
 epoch: 50
 Model:
     name: 'LNK'
-    checkpoint: '/home/xhding/saved_model/LNK/epoch_045_loss_1.44_pearson_0.5086.pth'
+    checkpoint: ''
     n_units: 1
 Data:
     trunc_int: 2000

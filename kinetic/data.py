@@ -42,6 +42,28 @@ class BatchRnnOneTimeSampler(Sampler):
     def __len__(self):
         return self.length // self.batch_size
     
+def index_both_mask(len_natural, len_noise, n_split=5, val_size=30000):
+    
+    each_len_natural =  len_natural // n_split
+    each_len_noise = len_noise // n_split
+    mask = np.concatenate((np.ones(each_len_natural), np.zeros(each_len_noise)))
+    mask = np.tile(mask, n_split-1)
+    mask = np.concatenate((mask, np.ones(len_natural-val_size-(n_split-1)*each_len_natural)))
+    mask = np.concatenate((mask, np.zeros(len_noise-val_size-(n_split-1)*each_len_noise)))
+    return mask
+    
+def index_both_idx(index, mask):
+
+    stim_type = mask[index]
+    
+    if mask[index] == 0.:
+        stimulus = 'noise'
+    if mask[index] == 1.:
+        stimulus = 'natural'
+    idx = (mask[:index] == stim_type).sum()
+    
+    return stimulus, idx
+    
 class TrainDataset(Dataset):
     
     def __init__(self, cfg):
@@ -160,3 +182,40 @@ class TestDatasetOnePixel(Dataset):
         trgt = torch.from_numpy(self.y[index])
         return (inpt, trgt)
     
+class TrainDatasetBoth(Dataset):
+    
+    def __init__(self, cfg):
+        super().__init__()
+        assert cfg.Data.stim == 'both'
+        data_natural = loadexpt(cfg.Data.date, 'all', 'naturalscene', 'train',
+                        cfg.img_shape[0], 0, data_path=cfg.Data.data_path)
+        data_noise = loadexpt(cfg.Data.date, 'all', 'fullfield_whitenoise', 'train',
+                        cfg.img_shape[0], 0, data_path=cfg.Data.data_path)
+        
+        self.val_size = cfg.Data.val_size
+        self.len_natural = data_natural.y.shape[0]
+        self.len_noise = data_noise.y.shape[0]
+        self.n_split = 5
+        
+        self.X_natural = data_natural.X[:-self.val_size]
+        self.y_natural = data_natural.y[:-self.val_size]
+        self.X_noise = data_noise.X[:-self.val_size]
+        self.y_noise = data_noise.y[:-self.val_size]
+        
+        self.stats_natural = data_natural.stats
+        self.stats_noise = data_noise.stats
+        self.index_mask = index_both_mask(self.len_natural, self.len_noise, self.n_split, self.val_size)
+        
+    def __len__(self):
+        return self.y_natural.shape[0] + self.y_noise.shape[0]
+    
+    def __getitem__(self, index):
+        stimulus, idx = index_both_idx(index, self.index_mask)
+        if stimulus == 'natural':
+            inpt = torch.from_numpy(self.X_natural[idx])
+            trgt = torch.from_numpy(self.y_natural[idx])
+        if stimulus == 'noise':
+            inpt = torch.from_numpy(self.X_noise[idx])
+            trgt = torch.from_numpy(self.y_noise[idx])
+                
+        return (inpt, trgt)
