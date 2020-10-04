@@ -8,7 +8,7 @@ import numpy as np
 from tqdm import tqdm
 from collections import deque
 from kinetic.data import *
-from kinetic.evaluation import pearsonr_eval
+from kinetic.evaluation import pearsonr_eval_LNK
 from kinetic.utils import *
 from kinetic.models import *
 from kinetic.config import get_default_cfg, get_custom_cfg
@@ -53,42 +53,40 @@ def train(cfg):
     model.bipolar[0].convs[6].bias.data = -4. * torch.ones(model.chans[0]).to(device)
     #model.bipolar[0].convs[6].bias.requires_grad = False
     
-    train_dataset = TrainDataset(cfg)
+    
+    train_dataset = TrainDatasetBoth(cfg)
     batch_sampler = BatchRnnSampler(length=len(train_dataset), batch_size=cfg.Data.batch_size,
                                     seq_len=cfg.Data.trunc_int)
     train_data = DataLoader(dataset=train_dataset, batch_sampler=batch_sampler)
     cfg.Data.stim = 'naturalscene'
-    validation_data_natural =  DataLoader(dataset=ValidationDataset(cfg, TrainDataset(cfg).stats))
+    validation_data_natural =  DataLoader(dataset=ValidationDataset(cfg, train_dataset.stats_natural))
     cfg.Data.stim = 'fullfield_whitenoise'
-    validation_data_noise =  DataLoader(dataset=ValidationDataset(cfg, TrainDataset(cfg).stats))
-    cfg.Data.stim = 'full'
+    validation_data_noise =  DataLoader(dataset=ValidationDataset(cfg, train_dataset.stats_noise))
+    cfg.Data.stim = 'both'
     
     for epoch in range(start_epoch, start_epoch + cfg.epoch):
         epoch_loss = 0
         loss = 0
-        hs = get_hs(model, cfg.Data.batch_size, device)
+        hs = get_hs_LNK(model, cfg.Data.batch_size, device)
         for idx,(x,y) in enumerate(tqdm(train_data)):
             x = x.to(device)
             y = y.double().to(device)
             out, hs = model(x, hs)
             loss += loss_fn(out.double(), y)
             if idx % cfg.Data.trunc_int == 0:
-                h_0 = []
-                h_0.append(hs[0].detach())
-                h_0.append(deque([h.detach() for h in hs[1]], maxlen=model.seq_len))
+                h_0 = hs.detach()
             if idx % cfg.Data.trunc_int == (cfg.Data.trunc_int - 1):
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 epoch_loss += loss.detach().cpu().numpy()
                 loss = 0
-                hs[0] = h_0[0].detach()
-                hs[1] = deque([h.detach() for h in h_0[1]], maxlen=model.seq_len)
+                hs = h_0.detach()
                 
         epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size
         
-        pearson_natural = pearsonr_eval(model, validation_data_natural, cfg.Model.n_units, device)
-        pearson_noise = pearsonr_eval(model, validation_data_noise, cfg.Model.n_units, device, start_idx=4000)
+        pearson_natural = pearsonr_eval_LNK(model, validation_data_natural, device, cfg.Model.n_units)
+        pearson_noise = pearsonr_eval_LNK(model, validation_data_noise, device, cfg.Model.n_units, start_idx=4000)
         
         print('epoch: {:03d}, loss: {:.2f}, pearson_natural: {:.4f}, pearson_noise: {:.4f}'.format(epoch, epoch_loss, pearson_natural, pearson_noise))
         

@@ -600,7 +600,7 @@ def contrast_adaptation_kinetic_inspect(model, device, c0, c1, duration=50, dela
 
     return Rs, As, I1s, I2s, us, after_kinetics
 
-def contrast_adaptation_LNK_inspect(model, device, c0, c1, duration=50, delay=50, nsamples=140, filt_depth=40, I20=0, n_repeats=1):
+def contrast_adaptation_LNK_inspect(model, device, c0, c1, duration=50, delay=50, nsamples=140, filt_depth=40, I20=None, n_repeats=1):
     """Step change in contrast"""
 
     # the contrast envelope
@@ -631,7 +631,10 @@ def contrast_adaptation_LNK_inspect(model, device, c0, c1, duration=50, delay=50
                 fx = model.ln_filter(inpt) + model.bias
                 fx = model.nonlinear(fx)[:, None]
                 u.append(fx.cpu().detach().numpy().squeeze())
-                fx, hs = model.kinetics(fx, hs)
+                fx, hs_new = model.kinetics(fx, hs)
+                deriv = (hs_new[:, 1] - hs[:, 1]) / model.dt
+                hs = hs_new
+                fx = torch.cat((fx, deriv), dim=1)
                 fx = model.scale_shift(fx)
                 fx = model.spiking(fx)
                 resps.append(fx)

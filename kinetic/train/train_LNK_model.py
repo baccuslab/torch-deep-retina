@@ -55,8 +55,8 @@ def train(cfg):
         
     model.train()
     
-    #loss_fn = nn.MSELoss().to(device)
-    loss_fn = nn.PoissonNLLLoss(log_input=False).to(device)
+    loss_fn = nn.MSELoss().to(device)
+    #loss_fn = nn.PoissonNLLLoss(log_input=False).to(device)
     
     scheduler = ReduceLROnPlateau(optimizer, 'max', factor=0.2, patience=5)
     
@@ -67,7 +67,7 @@ def train(cfg):
     
     for epoch in range(start_epoch, start_epoch + cfg.epoch):
         epoch_loss = 0
-        hs = get_hs_LNK(model, cfg.Data.batch_size, device, np.array([100.]))
+        hs = get_hs_LNK(model, cfg.Data.batch_size, device, np.array([0.]))
         y_preds = []
         y_targs = []
         for idx,(x,y) in enumerate(tqdm(train_data)):
@@ -92,7 +92,7 @@ def train(cfg):
                 
         epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size * cfg.Data.loss_bin
         
-        pearson = pearsonr_eval_LNK(model, validation_data, device, np.array([100.]), 4000)
+        pearson = pearsonr_eval_LNK(model, validation_data, device, np.array([0.]), 4000)
         scheduler.step(pearson)
         
         print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}'.format(epoch, epoch_loss, pearson))

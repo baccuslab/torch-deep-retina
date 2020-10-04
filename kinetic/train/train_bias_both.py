@@ -53,6 +53,7 @@ def train(cfg):
     model.bipolar[0].convs[6].bias.data = -4. * torch.ones(model.chans[0]).to(device)
     #model.bipolar[0].convs[6].bias.requires_grad = False
     
+    
     train_dataset = TrainDatasetBoth(cfg)
     batch_sampler = BatchRnnSampler(length=len(train_dataset), batch_size=cfg.Data.batch_size,
                                     seq_len=cfg.Data.trunc_int)
@@ -92,7 +93,7 @@ def train(cfg):
         
         print('epoch: {:03d}, loss: {:.2f}, pearson_natural: {:.4f}, pearson_noise: {:.4f}'.format(epoch, epoch_loss, pearson_natural, pearson_noise))
         
-        update_eval_history(cfg, epoch, (pearson_natural, pearson_nosie), epoch_loss)
+        update_eval_history(cfg, epoch, (pearson_natural, pearson_noise), epoch_loss)
         
         if epoch%cfg.save_intvl == 0:
 

@@ -1,9 +1,11 @@
 exp_id: 'one_pixel_channel'
 img_shape: (40, 50, 50)
 epoch: 50
+save_intvl: 1
 Model:
     name: 'KineticsOnePixelChannel'
-    checkpoint: '/home/xhding/saved_model/channel_filter_LNK_NoNorm_NoScale/epoch_010_loss_-63.69_pearson_0.4839.pth'
+    #checkpoint: '/home/xhding/saved_model/channel_filter_both/epoch_010_loss_-63.31_pearson_natural_0.4721_pearson_noise_0.6993.pth'
+    checkpoint: '/home/xhding/saved_model/channel_filter_both/epoch_020_loss_-65.15_pearson_natural_0.4804_pearson_noise_0.6849.pth'
     noise: 0.
     linear_bias: False
     scale_kinet: False
@@ -18,4 +20,4 @@ Data:
     stim: 'fullfield_whitenoise'
     
 Optimize:
-    lr: 0.05
+    lr: 0.2

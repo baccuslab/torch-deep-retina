@@ -39,8 +39,8 @@ def train(cfg):
     #model.kinetics.kfi.requires_grad = True
     #model.kinetics.kfr.requires_grad = True
     
-    model.kinetics.ksi.data = torch.rand(cfg.Model.chans[0], 1).abs().to(device)/10
-    model.kinetics.ksr.data = torch.rand(cfg.Model.chans[0], 1).abs().to(device)/10
+    #model.kinetics.ksi.data = torch.rand(cfg.Model.chans[0], 1).abs().to(device)/10
+    #model.kinetics.ksr.data = torch.rand(cfg.Model.chans[0], 1).abs().to(device)/10
     print("Initial slow parameters: ", model.kinetics.ksi.data, model.kinetics.ksr.data)
     
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.Optimize.lr, 
@@ -60,7 +60,7 @@ def train(cfg):
     loss_fn = nn.MSELoss().to(device)
     #loss_fn = nn.PoissonNLLLoss(log_input=False).to(device)
     
-    scheduler = ReduceLROnPlateau(optimizer, 'max', factor=0.2, patience=5)
+    scheduler = ReduceLROnPlateau(optimizer, 'max', factor=0.2, patience=2)
     
     train_dataset = TrainDatasetOnePixel(cfg)
     batch_sampler = BatchRnnOneTimeSampler(length=len(train_dataset), batch_size=cfg.Data.batch_size)

@@ -92,7 +92,7 @@ def train(cfg):
         
         print('epoch: {:03d}, loss: {:.2f}, pearson_natural: {:.4f}, pearson_noise: {:.4f}'.format(epoch, epoch_loss, pearson_natural, pearson_noise))
         
-        update_eval_history(cfg, epoch, (pearson_natural, pearson_nosie), epoch_loss)
+        update_eval_history(cfg, epoch, (pearson_natural, pearson_noise), epoch_loss)
         
         if epoch%cfg.save_intvl == 0:
 
