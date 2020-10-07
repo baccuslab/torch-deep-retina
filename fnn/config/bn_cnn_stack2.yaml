@@ -1,7 +1,7 @@
-exp_id: 'BN_CNN_Stack'
+exp_id: 'BN_CNN_Stack_NoNorm'
 img_shape: [40,50,50]
 Model:
-    name: 'BN_CNN_Stack'
+    name: 'BN_CNN_Stack_NoNorm'
     ksizes: (15, 11)
     checkpoint: ''
     n_units: 3

@@ -1080,41 +1080,6 @@ class DalesSkipConnection(nn.Module):
         fx = self.sequential(x)
         return torch.cat([x,fx], dim=1)
 
-class Kinetics(nn.Module):
-    def __init__(self, dt=0.01):
-        super().__init__()
-        self.ka = nn.Parameter(torch.rand(1).abs()/10)
-        self.kfi = nn.Parameter(torch.rand(1).abs()/10)
-        self.kfr = nn.Parameter(torch.rand(1).abs()/10)
-        self.ksi = nn.Parameter(torch.rand(1).abs()/10)
-        self.ksr = nn.Parameter(torch.rand(1).abs()/10)
-        self.dt = dt
-
-    def forward(self, rate, pop):
-        """
-        rate - FloatTensor (B, N)
-            firing rates
-        pop - FloatTensor (B, S, N)
-            populations should have 4 states for each neuron.
-            States should be:
-                0: R
-                1: A
-                2: I1
-                3: I2
-        """
-        dt = self.dt
-        ka  = self.ka.abs()*rate*pop[:,0]
-        kfi = self.kfi.abs()*pop[:,1]
-        kfr = self.kfr.abs()*pop[:,2]
-        ksi = self.ksi.abs()*pop[:,2]
-        ksr = self.ksr.abs()*pop[:,3]
-        #ksr = self.ksr.abs()*rate*pop[:,3]
-        new_pop = torch.zeros_like(pop)
-        new_pop[:,0] = pop[:,0] + dt*(-ka + kfr)
-        new_pop[:,1] = pop[:,1] + dt*(-kfi + ka)
-        new_pop[:,2] = pop[:,2] + dt*(-kfr - ksi + kfi + ksr)
-        new_pop[:,3] = pop[:,3] + dt*(-ksr + ksi)
-        return new_pop[:,1], new_pop
 
 class RunningNorm1d(nn.Module):
     pass
@@ -1134,14 +1099,20 @@ class RunningNorm1d(nn.Module):
     #def extra_repr(self):
     #    return 'n_units={}, momentum={}'.format(self.n_units, self.momentum)
 
-class Kinetics_channel(nn.Module):
-    def __init__(self, chan=8, dt=0.01):
+class Kinetics(nn.Module):
+    def __init__(self, dt=0.01, chan=8, ka_offset=False, ksr_gain=False):
         super().__init__()
+        self.ka_offset = ka_offset
+        self.ksr_gain = ksr_gain
         self.ka = nn.Parameter(torch.rand(chan, 1).abs()/10)
+        if self.ka_offset:
+            self.ka_2 = nn.Parameter(torch.rand(chan, 1).abs()/10)
         self.kfi = nn.Parameter(torch.rand(chan, 1).abs()/10)
         self.kfr = nn.Parameter(torch.rand(chan, 1).abs()/10)
         self.ksi = nn.Parameter(torch.rand(chan, 1).abs()/10)
         self.ksr = nn.Parameter(torch.rand(chan, 1).abs()/10)
+        if self.ksr_gain:
+            self.ksr_2 = nn.Parameter(torch.rand(chan, 1).abs()/10)
         self.dt = dt
 
     def forward(self, rate, pop):
@@ -1158,11 +1129,14 @@ class Kinetics_channel(nn.Module):
         """
         dt = self.dt
         ka  = self.ka.abs() * rate * pop[:, 0]
+        if self.ka_offset:
+            ka += self.ka_2.abs() * pop[:, 0]
         kfi = self.kfi.abs() * pop[:,1]
         kfr = self.kfr.abs() * pop[:,2]
         ksi = self.ksi.abs() * pop[:,2]
-        #ksr = self.ksr.abs() * rate*pop[:, 3]
         ksr = self.ksr.abs() * pop[:, 3]
+        if self.ksr_gain:
+            ksr += self.ksr_2.abs() * rate * pop[:, 3]
         new_pop = torch.zeros_like(pop)
         new_pop[:, 0] = pop[:, 0] + dt * (- ka + kfr)
         new_pop[:, 1] = pop[:, 1] + dt * (- kfi + ka)

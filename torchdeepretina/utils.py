@@ -107,10 +107,16 @@ def get_cuda_info():
 def get_hook(layer_dict, key, to_numpy=True, to_cpu=False):
     if to_numpy:
         def hook(module, inp, out):
-            layer_dict[key] = out.detach().cpu().numpy()
+            if torch.is_tensor(out):
+                layer_dict[key] = out.detach().cpu().numpy()
+            else:
+                layer_dict[key] = out
     elif to_cpu:
         def hook(module, inp, out):
-            layer_dict[key] = out.cpu()
+            if torch.is_tensor(out):
+                layer_dict[key] = out.cpu()
+            else:
+                layer_dict[key] = out
     else:
         def hook(module, inp, out):
             layer_dict[key] = out
@@ -323,7 +329,7 @@ def inspect_rnn(model, X, hs, insp_keys=[]):
             for k in layer_outs.keys():
                 layer_outs_list[k].append(layer_outs[k])
     
-    layer_outs = {k:np.concatenate(v,axis=0) for k,v in layer_outs_list.items()}
+    layer_outs = {k:np.concatenate(v, axis=0) if isinstance(v[0], np.ndarray) else v for k,v in layer_outs_list.items()}
     resp = torch.cat(resps, dim=0)
     layer_outs['outputs'] = resp.detach().cpu().numpy()
     

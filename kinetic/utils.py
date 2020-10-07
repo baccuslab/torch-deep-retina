@@ -8,49 +8,27 @@ from kinetic.models import *
 from torchdeepretina.intracellular import load_interneuron_data, max_correlation
 import torchdeepretina.stimuli as tdrstim
 
-def get_hs(model, batch_size, device, I20=None):
-    hs = []
-    hs.append(torch.zeros(batch_size, *model.h_shapes[0]).to(device))
-    hs[0][:,0] = 1
-    if isinstance(I20, np.ndarray):
-        hs[0][:,3] = torch.from_numpy(I20)[:,None].to(device)
-    hs.append(deque([],maxlen=model.seq_len))
-    for i in range(model.seq_len):
-        hs[1].append(torch.zeros(batch_size, *model.h_shapes[1]).to(device))
-    return hs
-
-def get_hs_2(model, batch_size, device):
-    hs = []
-    hs.append(torch.zeros(batch_size, *model.h_shapes[0]).to(device))
-    hs[0][:,3] = 100.
-    hs.append(deque([],maxlen=model.seq_len))
-    for i in range(model.seq_len):
-        hs[1].append(torch.zeros(batch_size, *model.h_shapes[1]).to(device))
-    return hs
-
-def get_hs_LNK(model, batch_size, device, I20=None):
-    hs = torch.zeros(batch_size, *model.h_shapes).to(device)
-    hs[:,0] = 1
-    if isinstance(I20, np.ndarray):
-        hs[:,3] = torch.from_numpy(I20)[:,None].to(device)
+def get_hs(model, batch_size, device, I20=None, mode='single'):
+    if mode == 'single':
+        hs = torch.zeros(batch_size, *model.h_shapes).to(device)
+        hs[:,0] = 1
+        if isinstance(I20, np.ndarray):
+            hs[:,3] = torch.from_numpy(I20)[:,None].to(device)
+    elif mode == 'multiple':
+        hs = []
+        hs.append(torch.zeros(batch_size, *model.h_shapes[0]).to(device))
+        hs[0][:,0] = 1
+        if isinstance(I20, np.ndarray):
+            hs[0][:,3] = torch.from_numpy(I20)[:,None].to(device)
+        hs.append(deque([],maxlen=model.seq_len))
+        for i in range(model.seq_len):
+            hs[1].append(torch.zeros(batch_size, *model.h_shapes[1]).to(device))
+    else:
+        raise Exception('Invalid mode')
     return hs
 
 def select_model(cfg, device):
     
-    if cfg.Model.name == 'KineticsChannelModel':
-        model = KineticsChannelModel(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
-                                  recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
-                                  noise=cfg.Model.noise, bias=cfg.Model.bias, 
-                                  linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
-                                  bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
-                                  img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
-    if cfg.Model.name == 'KineticsChannelModelFilter':
-        model = KineticsChannelModelFilter(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
-                                  recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
-                                  noise=cfg.Model.noise, bias=cfg.Model.bias, 
-                                  linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
-                                  bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
-                                  img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
     if cfg.Model.name == 'KineticsChannelModelFilterBipolar':
         model = KineticsChannelModelFilterBipolar(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
                                   recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
@@ -76,13 +54,6 @@ def select_model(cfg, device):
                                   noise=cfg.Model.noise, bias=cfg.Model.bias, 
                                   linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
                                   softplus=cfg.Model.softplus, img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
-    if cfg.Model.name == 'KineticsModel':
-        model = KineticsModel(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
-                          recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
-                          noise=cfg.Model.noise, bias=cfg.Model.bias, 
-                          linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
-                          bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
-                          img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
     if cfg.Model.name == 'KineticsOnePixelChannel':
         model = KineticsOnePixelChannel(recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, dt=0.01, 
                                         scale_kinet=cfg.Model.scale_kinet, bias=cfg.Model.bias, 
@@ -233,18 +204,11 @@ def interneuron_correlation_occupancy(model, root_path, files, stim_keys, length
 
             with torch.no_grad():
                 stim_tensor = torch.from_numpy(stim).to(device)
-                hs = get_hs(model, 1, device, I20)
-                resp = []
-                for i in range(stim_tensor.shape[0]):
-                    inpt = stim_tensor[i:i+1]
-                    fx = model.bipolar(inpt)
-                    fx, h0 = model.kinetics(fx, hs[0]) 
-                    hs[1].append(fx)
-                    h1 = hs[1]
-                    hs = [h0, h1]
-                    resp.append(fx.view(-1, model.chans[0], *model.shapes[0]))
-                resp = torch.cat(resp, dim=0)
-                resp = resp.detach().cpu().numpy()
+                hs = get_hs(model, 1, device, I20, 'multiple')
+                layer_outs = inspect_rnn(model, stim_tensor, hs, ['kinetics'])
+                kinetics_history = [h[1].detach().cpu().numpy().mean(-1) for h in layer_outs['kinetics']]
+                kinetics_history = np.concatenate(kinetics_history, axis=0)
+                resp = kinetics_history[:, 1]
             pots = mem_pot_dict[cell_file][stim_type][:, :length]
             rnge = range(len(pots))
 
