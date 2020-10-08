@@ -28,8 +28,6 @@ def contrast_adaptation_kinetic(model, device, insp_keys, hs_type='single', stim
         raise Exception('Invalid hs type')
     envelope += c0
 
-    # generate a bunch of responses to random noise with the given contrast envelope
-    responses = []
     layer_outs_list  ={key:[] for key in insp_keys}
     with torch.no_grad():
         for _ in range(nrepeats):
@@ -44,7 +42,6 @@ def contrast_adaptation_kinetic(model, device, insp_keys, hs_type='single', stim
                 
             hs = get_hs(model, 1, device, I20, hs_type)
             layer_outs = inspect_rnn(model, x, hs, insp_keys)
-            responses.append(layer_outs['outputs'])
             for key in layer_outs_list.keys():
                 if key == 'kinetics':
                     kinetics_history = [h[1].detach().cpu().numpy().mean(-1) for h in layer_outs['kinetics']]
@@ -57,8 +54,8 @@ def contrast_adaptation_kinetic(model, device, insp_keys, hs_type='single', stim
             layer_outs[key] = np.array(layer_outs_list[key]).mean(0)
         else:
             layer_outs[key] = layer_outs_list[key]
-
-    response = np.asarray(responses).mean(axis=0)
+    
+    response = layer_outs['outputs']
     
     if stim_type == 'full':
         figs = viz.response1D(envelope[filt_depth:, 0, 0], response)
@@ -67,8 +64,6 @@ def contrast_adaptation_kinetic(model, device, insp_keys, hs_type='single', stim
     else:
         raise Exception('Invalid hs type')
     (fig, (ax0,ax1)) = figs
-    
-    layer_outs['outputs'] = response
 
     return (fig, (ax0,ax1)), layer_outs
 
@@ -174,17 +169,17 @@ def LN_model_1d(stim, resp, filter_len = 40, nonlinearity_type = 'bin'):
     
     return tax, normed_sta, x, nonlinear_prediction
 
-def contrast_adaption_nonlinear(stimulus, resp, h_start, l_start, 
+def contrast_adaption_nonlinear(stimulus, resp, h_start, l_start, contrast_duration=2000,
                                 e_duration=500, l_duration=1000, nonlinearity_type = 'bin', filter_len = 40):
     
     stim_he = stimulus[h_start:h_start+e_duration]
     resp_he = resp[h_start:h_start+e_duration]
-    stim_hl = stimulus[h_start+2000-l_duration:h_start+2000]
-    resp_hl = resp[h_start+2000-l_duration:h_start+2000]
+    stim_hl = stimulus[h_start+contrast_duration-l_duration:h_start+contrast_duration]
+    resp_hl = resp[h_start+contrast_duration-l_duration:h_start+contrast_duration]
     stim_le = stimulus[l_start:l_start+e_duration]
     resp_le = resp[l_start:l_start+e_duration]
-    stim_ll = stimulus[l_start+2000-l_duration:l_start+2000]
-    resp_ll = resp[l_start+2000-l_duration:l_start+2000]
+    stim_ll = stimulus[l_start+contrast_duration-l_duration:l_start+contrast_duration]
+    resp_ll = resp[l_start+contrast_duration-l_duration:l_start+contrast_duration]
     _, _, x_he, nonlinear_he = LN_model_1d(stim_he, resp_he)
     _, _, x_hl, nonlinear_hl = LN_model_1d(stim_hl, resp_hl)
     _, _, x_le, nonlinear_le = LN_model_1d(stim_le, resp_le)

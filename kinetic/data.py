@@ -63,64 +63,39 @@ def index_both_idx(index, mask):
     idx = (mask[:index] == stim_type).sum()
     
     return stimulus, idx
+
+def XY(data, stim_type, img_shape, stim_sec, val_size):
+    if stim_type == 'full':
+        X = data.X[:]
+    elif stim_type == 'one_pixel':
+        X = data.X[:, :, img_shape[1]//2, img_shape[2]//2]
+    else:
+        raise Exception('Invalid stimulus type')
+    y = data.y[:]
+    if stim_sec == 'train':
+        X = X[:-val_size]
+        y = y[:-val_size]
+    elif stim_sec == 'validation':
+        X = X[-val_size:]
+        y = y[-val_size:]
+    elif stim_sec == 'test':
+        pass
+    else:
+        raise Exception('Invalid stimlus section')
+    return X, y
     
-class TrainDataset(Dataset):
+class MyDataset(Dataset):
     
-    def __init__(self, cfg, cells='all', stim_type='full'):
+    def __init__(self, stim_sec, img_shape, data_path, date, stim, val_size, 
+                 stats=None, cells='all', stim_type='full', **kwargs):
         super().__init__()
-        data = loadexpt(cfg.Data.date, cells, cfg.Data.stim, 'train',
-                        cfg.img_shape[0], 0, data_path=cfg.Data.data_path)
-        val_size = cfg.Data.val_size
-        if stim_type == 'full':
-            self.X = data.X[:-val_size]
-        elif stim_type == 'one_piel':
-            self.X = data.X[:-val_size, :, cfg.img_shape[1]//2, cfg.img_shape[2]//2]
-        self.y = data.y[:-val_size]
-        self.centers = data.centers
-        self.stats = data.stats
-        
-    def __len__(self):
-        return self.y.shape[0]
-    
-    def __getitem__(self, index):
-        inpt = torch.from_numpy(self.X[index])
-        trgt = torch.from_numpy(self.y[index])
-        return (inpt, trgt)
-    
-class ValidationDataset(Dataset):
-    
-    def __init__(self, cfg, stats, cells='all', stim_type='full'):
-        super().__init__()
-        data = loadexpt(cfg.Data.date, cells, cfg.Data.stim, 'train',
-                        cfg.img_shape[0], 0, norm_stats=stats, data_path=cfg.Data.data_path)
-        val_size = cfg.Data.val_size
-        if stim_type == 'full':
-            self.X = data.X[-val_size:]
-        elif stim_type == 'one_piel':
-            self.X = data.X[-val_size:, :, cfg.img_shape[1]//2, cfg.img_shape[2]//2]
-        self.y = data.y[-val_size:]
-        self.centers = data.centers
-        self.stats = data.stats
-        
-    def __len__(self):
-        return self.y.shape[0]
-    
-    def __getitem__(self, index):
-        inpt = torch.from_numpy(self.X[index])
-        trgt = torch.from_numpy(self.y[index])
-        return (inpt, trgt)
-    
-class TestDataset(Dataset):
-    
-    def __init__(self, cfg, stats, cells='all', stim_type='full'):
-        super().__init__()
-        data = loadexpt(cfg.Data.date, cells, cfg.Data.stim, 'test',
-                        cfg.img_shape[0], 0, norm_stats=stats, data_path=cfg.Data.data_path)
-        if stim_type == 'full':
-            self.X = data.X[:]
-        elif stim_type == 'one_piel':
-            self.X = data.X[:, :, cfg.img_shape[1]//2, cfg.img_shape[2]//2]
-        self.y = data.y[:]
+        if stim_sec == 'train' or stim_sec == 'validation':
+            data = loadexpt(date, cells, stim, 'train', img_shape[0], 0, norm_stats=stats, data_path=data_path)
+        elif stim_sec == 'test':
+            data = loadexpt(date, cells, stim, 'test', img_shape[0], 0, norm_stats=stats, data_path=data_path)
+        else:
+            raise Exception('Invalid stimulus section')
+        self.X, self.y = XY(data, stim_type, img_shape, stim_sec, val_size)
         self.centers = data.centers
         self.stats = data.stats
         

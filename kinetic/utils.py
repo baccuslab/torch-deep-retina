@@ -27,42 +27,14 @@ def get_hs(model, batch_size, device, I20=None, mode='single'):
         raise Exception('Invalid mode')
     return hs
 
-def select_model(cfg, device):
-    
-    if cfg.Model.name == 'KineticsChannelModelFilterBipolar':
-        model = KineticsChannelModelFilterBipolar(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
-                                  recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
-                                  noise=cfg.Model.noise, bias=cfg.Model.bias, 
-                                  linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
-                                  bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
-                                  img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
-    if cfg.Model.name == 'KineticsChannelModelFilterBipolarNoNorm':
-        model = KineticsChannelModelFilterBipolarNoNorm(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
-                                  recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
-                                  noise=cfg.Model.noise, bias=cfg.Model.bias, 
-                                  linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
-                                  softplus=cfg.Model.softplus, img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
-    if cfg.Model.name == 'KineticsChannelModelDeriv':
-        model = KineticsChannelModelDeriv(drop_p=cfg.Model.drop_p,
-                                  recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
-                                  noise=cfg.Model.noise, bias=cfg.Model.bias, 
-                                  linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
-                                  softplus=cfg.Model.softplus, img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
-    if cfg.Model.name == 'KineticsChannelModelFilterAmacrine':
-        model = KineticsChannelModelFilterAmacrine(drop_p=cfg.Model.drop_p, scale_kinet=cfg.Model.scale_kinet, 
-                                  recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, 
-                                  noise=cfg.Model.noise, bias=cfg.Model.bias, 
-                                  linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
-                                  softplus=cfg.Model.softplus, img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
-    if cfg.Model.name == 'KineticsOnePixelChannel':
-        model = KineticsOnePixelChannel(recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, dt=0.01, 
-                                        scale_kinet=cfg.Model.scale_kinet, bias=cfg.Model.bias, 
-                                        linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
-                                        softplus=cfg.Model.softplus, img_shape=cfg.img_shape).to(device)
-    if cfg.Model.name == 'LNK':
-        model = LNK(dt=0.01, filter_len=cfg.img_shape[0]).to(device)
-        
-    return model
+def detach_hs(hs, mode='single', seq_len=None):
+    if mode == 'single':
+        hs_new = hs.detach()
+    elif mode == 'multiple':
+        hs_new = []
+        hs_new.append(hs[0].detach())
+        hs_new.append(deque([h.detach() for h in hs[1]], seq_len))
+    return hs_new
 
 def update_eval_history(cfg, epoch, pearson, epoch_loss):
     eval_history_path = os.path.join(cfg.save_path, cfg.exp_id, 'eval.json')
