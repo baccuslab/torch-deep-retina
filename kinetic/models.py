@@ -2,13 +2,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchdeepretina.torch_utils import *
+from kinetic.custom_modules import *
 
 class KineticsChannelModelFilterBipolar(nn.Module):
     def __init__(self, bnorm=True, drop_p=0, scale_kinet=False, recur_seq_len=5, n_units=5, 
                  noise=0., bias=True, linear_bias=False, chans=[8,8], bn_moment=.01, softplus=True, 
                  inference_exp=False, img_shape=(40,50,50), ksizes=(15,11), centers=None):
-        super(KineticsChannelModelFilterBipolar, self).__init__()
+        super().__init__()
         
         self.n_units = n_units
         self.chans = chans 
@@ -91,11 +91,12 @@ class KineticsChannelModelFilterBipolar(nn.Module):
         return fx, [h0, h1]
     
 class KineticsChannelModelFilterBipolarNoNorm(nn.Module):
-    def __init__(self, bnorm=True, drop_p=0, scale_kinet=False, recur_seq_len=5, n_units=5, 
-                 noise=0., bias=True, linear_bias=False, chans=[8,8], softplus=True, 
+    def __init__(self, name, bnorm=True, drop_p=0, scale_kinet=False, recur_seq_len=5, n_units=5, 
+                 noise=0., bias=True, linear_bias=False, chans=[8,8], softplus=True, k_inits={},
                  inference_exp=False, img_shape=(40,50,50), ksizes=(15,11), centers=None, **kwargs):
-        super(KineticsChannelModelFilterBipolarNoNorm, self).__init__()
+        super().__init__()
         
+        self.name = name
         self.kinetic = True
         self.n_units = n_units
         self.chans = chans 
@@ -129,7 +130,7 @@ class KineticsChannelModelFilterBipolarNoNorm(nn.Module):
         modules.append(Reshape((-1, self.chans[0], shape[0] * shape[1])))
         self.bipolar = nn.Sequential(*modules)
 
-        self.kinetics = Kinetics(chan=self.chans[0], dt=0.01)
+        self.kinetics = Kinetics(chan=self.chans[0], dt=0.01, **k_inits)
         
         if scale_kinet:
             #self.kinet_scale = ScaleShift((self.seq_len, self.chans[0], shape[0]*shape[1]))
@@ -177,7 +178,7 @@ class KineticsChannelModelFilterAmacrine(nn.Module):
     def __init__(self, bnorm=True, drop_p=0, scale_kinet=False, recur_seq_len=5, n_units=5, 
                  noise=0., bias=True, linear_bias=False, chans=[8,8], softplus=True, 
                  inference_exp=False, img_shape=(40,50,50), ksizes=(15,11), centers=None):
-        super(KineticsChannelModelFilterAmacrine, self).__init__()
+        super().__init__()
         
         self.n_units = n_units
         self.chans = chans 
@@ -255,7 +256,7 @@ class KineticsChannelModelFilterAmacrine(nn.Module):
 class KineticsOnePixelChannel(nn.Module):
     def __init__(self, recur_seq_len=5, n_units=5, dt=0.01, scale_kinet=False,
                  bias=True, linear_bias=False, chans=[8,8], softplus=True, img_shape=(40,)):
-        super(KineticsOnePixelChannel, self).__init__()
+        super().__init__()
         
         self.n_units = n_units
         self.chans = chans 
@@ -311,20 +312,24 @@ class KineticsOnePixelChannel(nn.Module):
         return fx, [h0, h1]
     
 class LNK(nn.Module):
-    def __init__(self, dt=0.01, filter_len=100, **kwargs):
-        super(LNK, self).__init__()
+    def __init__(self, name, dt=0.01, img_shape=(100,), ka_offset=False, ksr_gain=False, k_inits={}, **kwargs):
+        super().__init__()
         
+        self.name
         self.dt = dt
-        self.filter_len = filter_len
+        self.filter_len = img_shape[0]
         
         self.ln_filter = Temperal_Filter(self.filter_len, 0)
         self.bias = nn.Parameter(torch.rand(1))
         self.nonlinear = nn.Sigmoid()
-        self.kinetics = Kinetics(dt=self.dt, chan=1)
+        self.kinetics = Kinetics(dt=self.dt, chan=1, ka_offset=ka_offset, ksr_gain=ksr_gain, **k_inits)
         self.scale_shift = nn.Linear(2, 1)
         self.spiking = nn.Softplus()
         n_states = 4
         self.h_shapes = (n_states, 1)
+        self.k_inits = k_inits
+        self.ka_offset = ka_offset
+        self.ksr_gain = ksr_gain
     
     def forward(self, x, hs):
         out = self.ln_filter(x) + self.bias
@@ -340,7 +345,7 @@ class KineticsChannelModelDeriv(nn.Module):
     def __init__(self, bnorm=True, drop_p=0, recur_seq_len=5, n_units=5, 
                  noise=0., bias=True, linear_bias=False, chans=[8,8], softplus=True, 
                  inference_exp=False, img_shape=(40,50,50), ksizes=(15,11), dt=0.01, centers=None):
-        super(KineticsChannelModelDeriv, self).__init__()
+        super().__init__()
         
         self.kinetic = True
         self.n_units = n_units
@@ -420,22 +425,26 @@ class KineticsChannelModelDeriv(nn.Module):
         return fx, hs_new
     
 class KineticsModel(nn.Module):
-    def __init__(self, n_units=5, bias=True, linear_bias=False, chans=[8, 8], img_shape=(40, 50, 50), ksizes=(15, 11),
-                 k_chan=True, ka_offset=False, ksr_gain=False, dt=0.01, scale_shift_chan=True, **kwargs):
-        super(KineticsModel, self).__init__()
+    def __init__(self, name, n_units=5, bias=True, linear_bias=False, chans=[8, 8], img_shape=(40, 50, 50), ksizes=(15, 11),
+                 k_chan=True, ka_offset=False, ksr_gain=False, k_inits={}, dt=0.01, scale_shift_chan=True, **kwargs):
+        super().__init__()
         
+        self.name = name
         self.n_units = n_units
         self.chans = chans 
         self.dt = dt
-        self.bias = bias 
         self.img_shape = img_shape 
         self.ksizes = ksizes 
-        self.linear_bias = linear_bias 
         shape = self.img_shape[1:]
         self.shapes = []
+        self.k_inits= k_inits
+        self.k_chan = k_chan
+        self.ka_offset = ka_offset
+        self.ksr_gain = ksr_gain
+        self.scale_shift_chan = scale_shift_chan
 
         modules = []
-        modules.append(LinearStackedConv2d(self.img_shape[0], self.chans[0], kernel_size=self.ksizes[0], bias=self.bias))
+        modules.append(LinearStackedConv2d(self.img_shape[0], self.chans[0], kernel_size=self.ksizes[0], bias=bias))
         shape = update_shape(shape, self.ksizes[0])
         self.shapes.append(tuple(shape))
         
@@ -444,12 +453,8 @@ class KineticsModel(nn.Module):
         self.bipolar = nn.Sequential(*modules)
         
         n_states = 4
-        if k_chan:
-            self.kinetics = Kinetics(self.dt, self.chans[0], ka_offset, ksr_gain)
-            self.h_shapes = (n_states, self.chans[0], shape[0]*shape[1])
-        else:
-            self.kinetics = Kinetics(self.dt, 1, ka_offset, ksr_gain)
-            self.h_shapes = (n_states, 1, shape[0]*shape[1])
+        self.h_shapes = (n_states, self.chans[0], shape[0]*shape[1])
+        self.kinetics = Kinetics(dt=self.dt, chan=self.chans[0], ka_offset=ka_offset, ksr_gain=ksr_gain, k_chan=k_chan, **k_inits)
             
         if scale_shift_chan:
             self.kinetics_w = nn.Parameter(torch.rand(self.chans[0], 1))
@@ -465,7 +470,7 @@ class KineticsModel(nn.Module):
 
         modules = []
         modules.append(Reshape((-1, self.chans[0], shape[0], shape[1])))
-        modules.append(LinearStackedConv2d(self.chans[0], self.chans[1], kernel_size=self.ksizes[1], bias=self.bias))
+        modules.append(LinearStackedConv2d(self.chans[0], self.chans[1], kernel_size=self.ksizes[1], bias=bias))
         shape = update_shape(shape, self.ksizes[1])
         self.shapes.append(tuple(shape))
         modules.append(Flatten())
@@ -473,7 +478,7 @@ class KineticsModel(nn.Module):
         self.amacrine = nn.Sequential(*modules)
 
         modules = []
-        modules.append(nn.Linear(self.chans[1] * shape[0] * shape[1], self.n_units, bias=self.linear_bias))
+        modules.append(nn.Linear(self.chans[1] * shape[0] * shape[1], self.n_units, bias=linear_bias))
         modules.append(nn.Softplus())
         self.ganglion = nn.Sequential(*modules)
         
@@ -491,10 +496,11 @@ class KineticsModel(nn.Module):
         return fx, hs
     
 class KineticsOnePixel(nn.Module):
-    def __init__(self, n_units=5, bias=True, linear_bias=False, chans=[8, 8], img_shape=(40, ),
-                 k_chan=True, ka_offset=False, ksr_gain=False, dt=0.01, scale_shift_chan=True, **kwargs):
-        super(KineticsOnePixel, self).__init__()
+    def __init__(self, name, n_units=5, bias=True, linear_bias=False, chans=[8, 8], img_shape=(40, ),
+                 k_chan=True, ka_offset=False, ksr_gain=False, k_inits={}, dt=0.01, scale_shift_chan=True, **kwargs):
+        super().__init__()
         
+        self.name = name
         self.n_units = n_units
         self.chans = chans 
         self.bias = bias 
@@ -502,17 +508,19 @@ class KineticsOnePixel(nn.Module):
         self.linear_bias = linear_bias 
         self.dt = dt
         self.h_shapes = []
+        self.k_inits= k_inits
+        self.k_chan = k_chan
+        self.ka_offset = ka_offset
+        self.ksr_gain = ksr_gain
+        self.scale_shift_chan = scale_shift_chan
 
         self.bipolar_weight = nn.Parameter(torch.rand(self.chans[0], self.img_shape[0]))
         self.bipolar_bias = nn.Parameter(torch.rand(self.chans[0]))
 
         n_states = 4
-        if k_chan:
-            self.kinetics = Kinetics(self.dt, self.chans[0], ka_offset, ksr_gain)
-            self.h_shapes = (n_states, self.chans[0], 1)
-        else:
-            self.kinetics = Kinetics(self.dt, 1, ka_offset, ksr_gain)
-            self.h_shapes = (n_states, 1, 1)
+        self.h_shapes = (n_states, self.chans[0], 1)
+        self.kinetics = Kinetics(dt=self.dt, chan=self.chans[0], ka_offset=ka_offset, ksr_gain=ksr_gain, k_chan=k_chan, **k_inits)
+            
             
         if scale_shift_chan:
             self.kinetics_w = nn.Parameter(torch.rand(self.chans[0], 1))

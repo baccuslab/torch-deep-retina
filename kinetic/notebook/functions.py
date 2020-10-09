@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 from torch.utils.data.dataloader import DataLoader
 import pyret
 from kinetic.evaluation import *
-from kinetic.utils import select_model
 from kinetic.config import get_custom_cfg
 from kinetic.data import *
 from torchdeepretina.utils import *

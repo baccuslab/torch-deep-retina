@@ -1,11 +1,9 @@
-exp_id: 'LNK'
-img_shape: (100, 50, 50)
-epoch: 50
+exp_id: 'kinetics_kchans_one_pixel'
+save_intvl: 1
 Model:
-    name: 'LNK'
+    name: 'KineticsModelOnePixel'
     checkpoint: ''
-    n_units: 1
-    k_inits: {'ka':23., 'kfi':50., 'kfr':87.}
+    n_units: 3
 Data:
     trunc_int: 2000
     loss_bin: 1000
@@ -16,8 +14,7 @@ Data:
     stim: 'fullfield_whitenoise'
     stim_type: 'one_pixel'
     hs_mode: 'single'
-    cells: [0]
-    
+    start_idx: 4000
 Optimize:
     loss_fn: 'mse'
-    lr: 0.05
+    lr: 0.2

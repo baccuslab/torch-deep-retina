@@ -3,15 +3,14 @@ import argparse
 import torch
 import torch.nn as nn
 from torch.utils.data.dataloader import DataLoader
-from torch.utils.data.sampler import SequentialSampler
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 import numpy as np
 from tqdm import tqdm
-from collections import deque
 from kinetic.data import *
 from kinetic.evaluation import pearsonr_eval
 from kinetic.utils import *
-from kinetic.models import *
-from kinetic.config import get_default_cfg, get_custom_cfg
+import kinetic.models as models
+from kinetic.config import get_custom_cfg
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=int, required=True)
@@ -28,12 +27,15 @@ def train(cfg):
     
     device = torch.device('cuda:'+str(opt.gpu))
     
-    model = select_model(cfg, device)
+    model_func = getattr(models, cfg.Model.name)
+    model_kwargs = dict(cfg.Model)
+    model = model_func(**model_kwargs).to(device)
     start_epoch = 0
-        
+    
+    model = init_params(model, device)
     model.train()
     
-    loss_fn = nn.PoissonNLLLoss(log_input=False).to(device)
+    loss_fn = select_lossfn(cfg.Optimize.loss_fn).to(device)
     
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.Optimize.lr, 
                                  weight_decay=cfg.Optimize.l2)
@@ -43,39 +45,41 @@ def train(cfg):
         model.load_state_dict(checkpoint['model_state_dict'])
         start_epoch = checkpoint['epoch'] + 1
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        model.eval()
+        
+    scheduler = ReduceLROnPlateau(optimizer, 'max', factor=0.2, patience=5)
     
-    train_dataset = TrainDataset(cfg)
+    data_kwargs = dict(cfg.Data)
+    train_dataset = MyDataset(stim_sec='train', **data_kwargs)
     batch_sampler = BatchRnnSampler(length=len(train_dataset), batch_size=cfg.Data.batch_size,
                                     seq_len=cfg.Data.trunc_int)
     train_data = DataLoader(dataset=train_dataset, batch_sampler=batch_sampler)
-    validation_data =  DataLoader(dataset=ValidationDataset(cfg, train_dataset.stats))
+    validation_data =  DataLoader(dataset=MyDataset(stim_sec='validation', stats=train_dataset.stats, **data_kwargs))
+    seq_len = model.seq_len if cfg.Data.hs_mode == 'multiple' else None
     
     for epoch in range(start_epoch, start_epoch + cfg.epoch):
         epoch_loss = 0
         loss = 0
-        hs = get_hs(model, cfg.Data.batch_size, device)
+        hs = get_hs(model, cfg.Data.batch_size, device, I20=cfg.Data.I20, mode=cfg.Data.hs_mode)
         for idx,(x,y) in enumerate(tqdm(train_data)):
             x = x.to(device)
             y = y.double().to(device)
             out, hs = model(x, hs)
             loss += loss_fn(out.double(), y)
             if idx % cfg.Data.trunc_int == 0:
-                h_0 = []
-                h_0.append(hs[0].detach())
-                h_0.append(deque([h.detach() for h in hs[1]], maxlen=model.seq_len))
+                h_0 = detach_hs(hs, cfg.Data.hs_mode, seq_len)
             if idx % cfg.Data.trunc_int == (cfg.Data.trunc_int - 1):
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 epoch_loss += loss.detach().cpu().numpy()
                 loss = 0
-                hs[0] = h_0[0].detach()
-                hs[1] = deque([h.detach() for h in h_0[1]], maxlen=model.seq_len)
+                hs = detach_hs(h_0, cfg.Data.hs_mode, seq_len)
                 
         epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size
         
-        pearson = pearsonr_eval(model, validation_data, cfg.Model.n_units, len(validation_data), device)
+        pearson = pearsonr_eval(model, validation_data, cfg.Model.n_units, device, 
+                                I20=cfg.Data.I20, start_idx=cfg.Data.start_idx, hs_type=cfg.Data.hs_mode)
+        scheduler.step(pearson)
         
         print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}'.format(epoch, epoch_loss, pearson))
         

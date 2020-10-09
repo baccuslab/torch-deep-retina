@@ -1,0 +1,13 @@
+exp_id: 'kinetics_kchans_both'
+Model:
+    name: 'KineticsModel'
+    checkpoint: ''
+    linear_bias: False
+    scale_kinet: False
+    n_units: 3
+Data:
+    batch_size: 512
+    data_path: '/home/xhding/tem_stim'
+    date: '20-09-15'
+    stim: 'both'
+    hs_mode: 'single'

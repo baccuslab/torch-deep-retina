@@ -36,6 +36,21 @@ def detach_hs(hs, mode='single', seq_len=None):
         hs_new.append(deque([h.detach() for h in hs[1]], seq_len))
     return hs_new
 
+def select_lossfn(loss='poisson'):
+    if loss == 'poisson':
+        return nn.PoissonNLLLoss(log_input=False)
+    if loss == 'mse':
+        return nn.MSELoss()
+    
+def init_params(model, device):
+    if model.name == 'LNK':
+        model.bias.data = -4 * torch.ones(1).to(device)
+    if model.name == 'KineticsModel' or model.name == 'KineticsChannelModelFilterBipolarNoNorm':
+        model.bipolar[0].convs[6].bias.data = -4. * torch.ones(model.chans[0]).to(device)
+        
+    return model
+
+
 def update_eval_history(cfg, epoch, pearson, epoch_loss):
     eval_history_path = os.path.join(cfg.save_path, cfg.exp_id, 'eval.json')
     if not os.path.exists(eval_history_path):
@@ -60,12 +75,10 @@ def LinearStack(conv_weights):
             current_weight = next_weight
     return current_weight
 
-def OnePixelModel(cfg, state_dict, dt, device):
+def OnePixelModelMulti(cfg, state_dict, device):
     
-    model = KineticsOnePixelChannel(recur_seq_len=cfg.Model.recur_seq_len, n_units=cfg.Model.n_units, dt=dt, 
-                                    scale_kinet=cfg.Model.scale_kinet, bias=cfg.Model.bias, 
-                                    linear_bias=cfg.Model.linear_bias, chans=cfg.Model.chans, 
-                                    softplus=cfg.Model.softplus, img_shape=cfg.img_shape).to(device)
+    model_kwargs = dict(cfg.Model)
+    model = KineticsOnePixelChannel(**model_kwargs).to(device)
     
     conv_weights = []
     for i in range((cfg.Model.ksizes[0]-1)//2):
@@ -84,6 +97,42 @@ def OnePixelModel(cfg, state_dict, dt, device):
         model.kinet_scale.shift_param.data = state_dict['kinet_scale.shift_param'].to(device)
     
     model.amacrine_filter.filter.data = state_dict['amacrine.1.filter'].to(device).squeeze(dim=-1)
+    
+    conv_weights = []
+    for i in range((cfg.Model.ksizes[1]-1)//2):
+        conv_weights.append(state_dict['amacrine.2.convs.{}.weight'.format(i)].cpu().numpy())
+    model.amacrine_weight.data = torch.from_numpy(LinearStack(conv_weights).sum(axis=(-1,-2))).to(device)
+    model.amacrine_bias.data = state_dict['amacrine.2.convs.4.bias'].to(device)
+    
+    model.ganglion[0].weight.data = state_dict['ganglion.0.weight'].view(cfg.Model.n_units, cfg.Model.chans[1], -1).sum(-1).to(device)
+    
+    model.float()
+    
+    return model
+
+def OnePixelModel(cfg, state_dict, device):
+    
+    model_kwargs = dict(cfg.Model)
+    model = KineticsOnePixel(**model_kwargs).to(device)
+    
+    conv_weights = []
+    for i in range((cfg.Model.ksizes[0]-1)//2):
+        conv_weights.append(state_dict['bipolar.0.convs.{}.weight'.format(i)].cpu().numpy())
+    model.bipolar_weight.data = torch.from_numpy(LinearStack(conv_weights).sum(axis=(-1,-2))).to(device)
+    model.bipolar_bias.data = state_dict['bipolar.0.convs.6.bias'].to(device)
+    
+    model.kinetics.ksi.data = state_dict['kinetics.ksi'].to(device)
+    model.kinetics.ksr.data = state_dict['kinetics.ksr'].to(device)
+    model.kinetics.ka.data = state_dict['kinetics.ka'].to(device)
+    model.kinetics.kfi.data = state_dict['kinetics.kfi'].to(device)
+    model.kinetics.kfr.data = state_dict['kinetics.kfr'].to(device)
+    if model.ka_offset:
+        model.kinetics.ka_2.data = state_dict['kinetics.ka_2'].to(device)
+    if model.ksr_gain:
+        model.kinetics.ksr_2.data = state_dict['kinetics.ksr_2'].to(device)
+    
+    model.kinetics_w.data = state_dict['kinetics_w'].to(device)
+    model.kinetics_b.data = state_dict['kinetics_b'].to(device)
     
     conv_weights = []
     for i in range((cfg.Model.ksizes[1]-1)//2):

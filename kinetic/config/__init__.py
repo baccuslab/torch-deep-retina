@@ -16,4 +16,6 @@ def get_default_cfg():
 def get_custom_cfg(name):
     cfg = get_default_cfg()
     cfg.merge_from_file(custom_config_files[name])
+    cfg.Model.img_shape = cfg.img_shape
+    cfg.Data.img_shape = cfg.img_shape
     return cfg

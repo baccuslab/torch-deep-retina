@@ -109,15 +109,15 @@ class MyDataset(Dataset):
     
 class TrainDatasetBoth(Dataset):
     
-    def __init__(self, cfg, cells='all'):
+    def __init__(self, img_shape, data_path, date, stim, val_size, cells='all', **kwargs):
         super().__init__()
-        assert cfg.Data.stim == 'both'
-        data_natural = loadexpt(cfg.Data.date, cells, 'naturalscene', 'train',
-                        cfg.img_shape[0], 0, data_path=cfg.Data.data_path)
-        data_noise = loadexpt(cfg.Data.date, cells, 'fullfield_whitenoise', 'train',
-                        cfg.img_shape[0], 0, data_path=cfg.Data.data_path)
+        assert stim == 'both'
+        data_natural = loadexpt(date, cells, 'naturalscene', 'train',
+                                img_shape[0], 0, data_path=data_path)
+        data_noise = loadexpt(date, cells, 'fullfield_whitenoise', 'train',
+                              img_shape[0], 0, data_path=data_path)
         
-        self.val_size = cfg.Data.val_size
+        self.val_size = val_size
         self.len_natural = data_natural.y.shape[0]
         self.len_noise = data_noise.y.shape[0]
         self.n_split = 5
