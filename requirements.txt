@@ -3,14 +3,15 @@ scipy
 matplotlib
 torch
 tqdm
-tableprint
 scikit-learn
 scikit-image
 h5py
-descent
-deepdish
 pyret
 moviepy
 opencv-python
 psutil
+yacs
+json
+argparse
+collections
 

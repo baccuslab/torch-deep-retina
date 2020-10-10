@@ -3,6 +3,7 @@ import argparse
 import torch
 import torch.nn as nn
 from torch.utils.data.dataloader import DataLoader
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 import numpy as np
 from tqdm import tqdm
 from kinetic.data import *
@@ -38,6 +39,8 @@ def train(cfg):
     
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.Optimize.lr, 
                                  weight_decay=cfg.Optimize.l2)
+    
+    scheduler = ReduceLROnPlateau(optimizer, 'max', factor=0.2, patience=2)
     
     if cfg.Model.checkpoint != '':
         checkpoint = torch.load(cfg.Model.checkpoint, map_location=device)
@@ -81,6 +84,8 @@ def train(cfg):
                                         I20=cfg.Data.I20, start_idx=cfg.Data.start_idx, hs_type=cfg.Data.hs_mode)
         pearson_noise = pearsonr_eval(model, validation_data_noise, cfg.Model.n_units, device,
                                       I20=cfg.Data.I20, start_idx=cfg.Data.start_idx, hs_type=cfg.Data.hs_mode)
+        
+        scheduler.step(pearson_natural + pearson_noise)
         
         print('epoch: {:03d}, loss: {:.2f}, pearson_natural: {:.4f}, pearson_noise: {:.4f}'.format(epoch, epoch_loss, pearson_natural, pearson_noise))
         

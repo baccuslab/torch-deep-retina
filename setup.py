@@ -4,8 +4,8 @@ import torchdeepretina
 setup(name='torchdeepretina',
       version=torchdeepretina.__version__,
       description='Neural network models of the retina',
-      author='Niru Maheshwaranathan, Lane McIntosh, Josh Melander, Julia Wang, Satchel Grant',
-      author_email='grantsrb@stanford.edu',
+      author='Niru Maheshwaranathan, Lane McIntosh, Josh Melander, Julia Wang, Satchel Grant, Xuehao Ding',
+      author_email='xhding@stanford.edu',
       url='https://github.com/baccuslab/torch-deep-retina.git',
       install_requires=[i.strip() for i in open("requirements.txt").readlines()],
       long_description='''

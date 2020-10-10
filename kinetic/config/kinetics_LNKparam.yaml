@@ -1,4 +1,4 @@
-exp_id: 'channel_filter_LNK_try'
+exp_id: 'kinetics'
 Model:
     name: 'KineticsModel'
     checkpoint: ''

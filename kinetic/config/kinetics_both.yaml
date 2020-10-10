@@ -1,4 +1,4 @@
-exp_id: 'kinetics_kchans_both'
+exp_id: 'kinetics_both'
 Model:
     name: 'KineticsModel'
     checkpoint: ''
