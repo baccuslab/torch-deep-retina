@@ -37,6 +37,10 @@ def train(cfg):
     
     model.kinetics.ksi.data = torch.rand(model.h_shapes[1], 1).abs().to(device)/10
     model.kinetics.ksr.data = torch.rand(model.h_shapes[1], 1).abs().to(device)/10
+    
+    if model.ksr_gain:
+        model.kinetics.ksr_2.requires_grad = True
+        model.kinetics.ksr_2.data = torch.rand(model.h_shapes[1], 1).abs().to(device)/10
     print("Initial slow parameters: ", model.kinetics.ksi.data, model.kinetics.ksr.data)
     
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.Optimize.lr, 

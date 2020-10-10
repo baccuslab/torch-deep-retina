@@ -3,12 +3,18 @@ Model:
     name: 'KineticsModel'
     checkpoint: ''
     linear_bias: False
-    scale_kinet: False
     n_units: 3
-    ka_offset: True
-    ksr_gain: True
+    k_inits: 
+        ka: 18.
+        ka_2: None
+        kfi: 4.
+        kfr: 12.
+        ksi: 0.
+        ksr: 0. 
+        ksr_2: 0.
 Data:
     batch_size: 512
     data_path: '/home/xhding/tem_stim'
     date: '20-09-15'
     hs_mode: 'single'
+        
