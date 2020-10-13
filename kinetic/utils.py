@@ -136,9 +136,9 @@ def OnePixelModel(cfg, state_dict, device):
     
     conv_weights = []
     for i in range((cfg.Model.ksizes[1]-1)//2):
-        conv_weights.append(state_dict['amacrine.2.convs.{}.weight'.format(i)].cpu().numpy())
+        conv_weights.append(state_dict['amacrine.1.convs.{}.weight'.format(i)].cpu().numpy())
     model.amacrine_weight.data = torch.from_numpy(LinearStack(conv_weights).sum(axis=(-1,-2))).to(device)
-    model.amacrine_bias.data = state_dict['amacrine.2.convs.4.bias'].to(device)
+    model.amacrine_bias.data = state_dict['amacrine.1.convs.4.bias'].to(device)
     
     model.ganglion[0].weight.data = state_dict['ganglion.0.weight'].view(cfg.Model.n_units, cfg.Model.chans[1], -1).sum(-1).to(device)
     

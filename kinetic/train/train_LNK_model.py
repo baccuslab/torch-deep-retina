@@ -51,7 +51,8 @@ def train(cfg):
     
     loss_fn = select_lossfn(cfg.Optimize.loss_fn).to(device)
     
-    scheduler = ReduceLROnPlateau(optimizer, 'max', factor=0.2, patience=5)
+    scheduler_kwargs = dict(cfg.Scheduler)
+    scheduler = ReduceLROnPlateau(optimizer, **scheduler_kwargs)
     
     data_kwargs = dict(cfg.Data)
     train_dataset = MyDataset(stim_sec='train', **data_kwargs)

@@ -40,7 +40,8 @@ def train(cfg):
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.Optimize.lr, 
                                  weight_decay=cfg.Optimize.l2)
     
-    scheduler = ReduceLROnPlateau(optimizer, 'max', factor=0.2, patience=2)
+    scheduler_kwargs = dict(cfg.Scheduler)
+    scheduler = ReduceLROnPlateau(optimizer, **scheduler_kwargs)
     
     if cfg.Model.checkpoint != '':
         checkpoint = torch.load(cfg.Model.checkpoint, map_location=device)

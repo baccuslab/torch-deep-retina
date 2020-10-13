@@ -46,7 +46,8 @@ def train(cfg):
         start_epoch = checkpoint['epoch'] + 1
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         
-    scheduler = ReduceLROnPlateau(optimizer, 'max', factor=0.2, patience=5)
+    scheduler_kwargs = dict(cfg.Scheduler)
+    scheduler = ReduceLROnPlateau(optimizer, **scheduler_kwargs)
     
     data_kwargs = dict(cfg.Data)
     train_dataset = MyDataset(stim_sec='train', **data_kwargs)

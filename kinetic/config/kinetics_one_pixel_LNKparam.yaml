@@ -1,8 +1,8 @@
-exp_id: 'kinetics_kchans_one_pixel'
+exp_id: 'kinetics_one_pixel_LNKparam'
 save_intvl: 1
 Model:
-    name: 'KineticsModelOnePixel'
-    checkpoint: ''
+    name: 'KineticsOnePixel'
+    checkpoint: '/home/xhding/saved_model/kinetics_both/epoch_045_loss_-66.88_pearson_natural_0.5029_pearson_noise_0.6995.pth'
     n_units: 3
 Data:
     trunc_int: 2000

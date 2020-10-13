@@ -41,28 +41,19 @@ class BatchRnnOneTimeSampler(Sampler):
 
     def __len__(self):
         return self.length // self.batch_size
-    
-def index_both_mask(len_natural, len_noise, n_split=5, val_size=30000):
-    
-    each_len_natural =  len_natural // n_split
-    each_len_noise = len_noise // n_split
-    mask = np.concatenate((np.ones(each_len_natural), np.zeros(each_len_noise)))
-    mask = np.tile(mask, n_split-1)
-    mask = np.concatenate((mask, np.ones(len_natural-val_size-(n_split-1)*each_len_natural)))
-    mask = np.concatenate((mask, np.zeros(len_noise-val_size-(n_split-1)*each_len_noise)))
-    return mask
-    
-def index_both_idx(index, mask):
 
-    stim_type = mask[index]
-    
-    if mask[index] == 0.:
-        stimulus = 'noise'
-    if mask[index] == 1.:
-        stimulus = 'natural'
-    idx = (mask[:index] == stim_type).sum()
-    
-    return stimulus, idx
+def interleave(a, b, each_len_a, each_len_b):
+    n_split = a.shape[0] // each_len_a
+    n_split_b = b.shape[0] // each_len_b
+    assert n_split_b == n_split
+    result = []
+    for i in range(n_split):
+        result.append(a[i*each_len_a:(i+1)*each_len_a])
+        result.append(b[i*each_len_b:(i+1)*each_len_b])
+    result.append(a[n_split*each_len_a:])
+    result.append(b[n_split*each_len_b:])
+    result = np.concatenate(result, axis=0)
+    return result
 
 def XY(data, stim_type, img_shape, stim_sec, val_size):
     if stim_type == 'full':
@@ -122,25 +113,30 @@ class TrainDatasetBoth(Dataset):
         self.len_noise = data_noise.y.shape[0]
         self.n_split = 5
         
-        self.X_natural = data_natural.X[:-self.val_size]
-        self.y_natural = data_natural.y[:-self.val_size]
-        self.X_noise = data_noise.X[:-self.val_size]
-        self.y_noise = data_noise.y[:-self.val_size]
+        X_natural = data_natural.X[:-self.val_size]
+        y_natural = data_natural.y[:-self.val_size]
+        X_noise = data_noise.X[:-self.val_size]
+        y_noise = data_noise.y[:-self.val_size]
         
         self.stats_natural = data_natural.stats
         self.stats_noise = data_noise.stats
-        self.index_mask = index_both_mask(self.len_natural, self.len_noise, self.n_split, self.val_size)
+        
+        each_len_natural = self.len_natural // self.n_split
+        each_len_noise = self.len_noise // self.n_split
+        self.X = interleave(X_noise, X_natural, each_len_noise, each_len_natural)
+        self.y = interleave(y_noise, y_natural, each_len_noise, each_len_natural)
+        
+        del X_natural
+        del y_natural
+        del X_noise
+        del y_noise
         
     def __len__(self):
-        return self.y_natural.shape[0] + self.y_noise.shape[0]
+        return self.y.shape[0]
     
     def __getitem__(self, index):
-        stimulus, idx = index_both_idx(index, self.index_mask)
-        if stimulus == 'natural':
-            inpt = torch.from_numpy(self.X_natural[idx])
-            trgt = torch.from_numpy(self.y_natural[idx])
-        if stimulus == 'noise':
-            inpt = torch.from_numpy(self.X_noise[idx])
-            trgt = torch.from_numpy(self.y_noise[idx])
+        
+        inpt = torch.from_numpy(self.X[index])
+        trgt = torch.from_numpy(self.y[index])
                 
         return (inpt, trgt)

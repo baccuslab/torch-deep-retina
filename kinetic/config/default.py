@@ -33,7 +33,6 @@ _C.Model.k_inits.kfr = 87.
 _C.Model.k_inits.ksi = 0.
 _C.Model.k_inits.ksr = 0.
 _C.Model.k_inits.ksr_2 = 0.
-#_C.Model.k_inits = {'ka':23., 'ka_2':None, 'kfi':50., 'kfr':87., 'ksi':0., 'ksr':0., 'ksr_2':0.}
 _C.Model.dt = 0.01
 _C.Model.scale_shift_chan = False
 
@@ -56,3 +55,9 @@ _C.Optimize = CfgNode()
 _C.Optimize.loss_fn = 'poisson'
 _C.Optimize.lr = 1e-3
 _C.Optimize.l2 = 1e-4
+
+_C.Scheduler = CfgNode()
+_C.Scheduler.mode = 'max'
+_C.Scheduler.factor = 0.2
+_C.Scheduler.patience = 2
+_C.Scheduler.verbose = 'True'

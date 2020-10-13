@@ -35,12 +35,17 @@ def train(cfg):
     model.kinetics.ksi.requires_grad = True
     model.kinetics.ksr.requires_grad = True
     
-    model.kinetics.ksi.data = torch.rand(model.h_shapes[1], 1).abs().to(device)/10
-    model.kinetics.ksr.data = torch.rand(model.h_shapes[1], 1).abs().to(device)/10
+    if model.k_chan:
+        chan = model.chans[0]
+    else:
+        chan = 1
+    
+    model.kinetics.ksi.data = torch.rand(chan, 1).abs().to(device)/10
+    model.kinetics.ksr.data = torch.rand(chan, 1).abs().to(device)/10
     
     if model.ksr_gain:
         model.kinetics.ksr_2.requires_grad = True
-        model.kinetics.ksr_2.data = torch.rand(model.h_shapes[1], 1).abs().to(device)/10
+        model.kinetics.ksr_2.data = torch.rand(chan, 1).abs().to(device)/10
     print("Initial slow parameters: ", model.kinetics.ksi.data, model.kinetics.ksr.data)
     
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.Optimize.lr, 
@@ -59,7 +64,8 @@ def train(cfg):
     
     loss_fn = select_lossfn(cfg.Optimize.loss_fn).to(device)
     
-    scheduler = ReduceLROnPlateau(optimizer, 'max', factor=0.2, patience=2)
+    scheduler_kwargs = dict(cfg.Scheduler)
+    scheduler = ReduceLROnPlateau(optimizer, **scheduler_kwargs)
     
     data_kwargs = dict(cfg.Data)
     train_dataset = MyDataset(stim_sec='train', **data_kwargs)
