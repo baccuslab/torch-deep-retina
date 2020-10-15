@@ -8,14 +8,16 @@ import pyret
 from kinetic.evaluation import *
 from kinetic.config import get_custom_cfg
 from kinetic.data import *
+from kinetic.utils import *
+import kinetic.models as models
 from torchdeepretina.utils import *
 import torchdeepretina.stimuli as stim
 import torchdeepretina.visualizations as viz
 from torchdeepretina.retinal_phenomena import normalize_filter
 from pyret.nonlinearities import Binterp, Sigmoid
 
-def contrast_adaptation_kinetic(model, device, insp_keys, hs_type='single', stim_type='full', I20=None,
-                                c0=0.05, c1=0.35, duration=1000, delay=1000, nsamples=3000, nrepeats=10, filt_depth=40):
+def contrast_adaptation_kinetic(model, device, insp_keys, hs_mode='single', stim_type='full', I20=None,
+                                c0=0.05, c1=0.35, duration=1000, delay=1000, nsamples=3000, nrepeats=10, filt_depth=40, **kwargs):
     """Step change in contrast"""
 
     # the contrast envelope
@@ -39,7 +41,7 @@ def contrast_adaptation_kinetic(model, device, insp_keys, hs_type='single', stim
             else:
                 raise Exception('Invalid stimulus type')
                 
-            hs = get_hs(model, 1, device, I20, hs_type)
+            hs = get_hs(model, 1, device, I20, hs_mode)
             layer_outs = inspect_rnn(model, x, hs, insp_keys)
             for key in layer_outs_list.keys():
                 if key == 'kinetics':
@@ -65,6 +67,79 @@ def contrast_adaptation_kinetic(model, device, insp_keys, hs_type='single', stim
     (fig, (ax0,ax1)) = figs
 
     return (fig, (ax0,ax1)), layer_outs
+
+def contrast_adaptation_LN(model, device, hs_mode='single', stim_type='full', I20=None, cells='all', 
+                                c0=0.05, c1=0.35, duration=1000, delay=1000, nsamples=3000, nrepeats=10, filt_depth=40, **kwargs):
+    if stim_type == 'full':
+        envelope = stim.flash(duration, delay, nsamples, intensity=(c1 - c0))
+    elif stim_type == 'one_pixel':
+        envelope = stim.flash(duration, delay, nsamples, intensity=(c1 - c0)).squeeze()
+    else:
+        raise Exception('Invalid hs type')
+    envelope += c0
+
+    stimuli = []
+    responses = []
+    with torch.no_grad():
+        for _ in range(nrepeats):
+            x = np.random.randn(*envelope.shape) * envelope
+            stimuli.append(x.squeeze())
+            x = (x - x.mean())/x.std()
+            if stim_type == 'full':
+                x = torch.from_numpy(stim.concat(x, nh=filt_depth)).to(device)
+            elif stim_type == 'one_pixel':
+                x = torch.from_numpy(stim.rolling_window(x, filt_depth, time_axis=0)).to(device)
+            else:
+                raise Exception('Invalid stimulus type')
+
+            hs = get_hs(model, 1, device, I20, hs_mode)
+            layer_outs = inspect_rnn(model, x, hs)
+            response = np.pad(layer_outs['outputs'], ((filt_depth, 0), (0,0)), 'constant', constant_values=(0,0))
+            responses.append(response)
+    
+    if cells == 'all':
+        cells = range(model.n_units)
+    for cell in cells:
+        _, _, x_he, nonlinear_he = LN_model_multi_trials(stimuli, responses, c1, cell, delay, delay + duration//2)
+        _, _, x_hl, nonlinear_hl = LN_model_multi_trials(stimuli, responses, c1, cell, delay + duration//2, delay + duration)
+        _, _, x_le, nonlinear_le = LN_model_multi_trials(stimuli, responses, c0, cell, delay + duration, 
+                                                         (delay + duration + nsamples)//2)
+        _, _, x_ll, nonlinear_ll = LN_model_multi_trials(stimuli, responses, c0, cell, (delay + duration + nsamples)//2, nsamples)
+        plt.plot(x_he, nonlinear_he, 'r', label='high early')
+        plt.plot(x_hl, nonlinear_hl, 'b', label='high late')
+        plt.plot(x_le, nonlinear_le, 'k', label='low early')
+        plt.plot(x_ll, nonlinear_ll, 'g', label='low late')
+        plt.legend()
+        plt.show()
+        
+    return
+    
+def LN_model_multi_trials(stimuli, responses, contrast, cell, start_idx, end_idx, filter_len=100):
+    sta = 0
+    stimulus = []
+    resp = []
+    for trial in range(len(stimuli)):
+        stim_trial = stimuli[trial][start_idx:end_idx]
+        resp_trial = responses[trial][start_idx:end_idx, cell]
+        stimulus.append(stim_trial)
+        resp.append(resp_trial)
+        sta_trial, tax = pyret.filtertools.revcorr(stim_trial, resp_trial, 0, filter_len)
+        sta += sta_trial
+    sta = np.flip(sta, axis=0)
+    tax = tax / 100
+    sta -= sta.mean()
+    stimulus = np.concatenate(stimulus)
+    resp = np.concatenate(resp)
+    normed_sta, _, _ = normalize_filter(sta, stimulus, contrast)
+    
+    filtered_stim = pyret.filtertools.linear_response(normed_sta, stimulus)
+    nonlinearity = Binterp(80)
+    nonlinearity.fit(filtered_stim[filter_len:], resp[filter_len:])
+
+    x = np.linspace(np.min(filtered_stim), np.max(filtered_stim), 40)
+    nonlinear_prediction = nonlinearity.predict(x)
+    
+    return tax, normed_sta, x, nonlinear_prediction
 
 def stimulus_importance_rnn(model, X, gc_idx=None, alpha_steps=5, 
                             seq_len=8, device=torch.device('cuda:1')):
@@ -168,15 +243,15 @@ def LN_model_1d(stim, resp, filter_len = 40, nonlinearity_type = 'bin'):
     
     return tax, normed_sta, x, nonlinear_prediction
 
-def contrast_adaption_nonlinear(stimulus, resp, h_start, l_start, contrast_duration=2000,
+def contrast_adaption_nonlinear(stimulus, resp, h_start, l_start, contrast_duration=2000, e_start = 0,
                                 e_duration=500, l_duration=1000, nonlinearity_type = 'bin', filter_len = 40):
     
-    stim_he = stimulus[h_start:h_start+e_duration]
-    resp_he = resp[h_start:h_start+e_duration]
+    stim_he = stimulus[h_start+e_start:h_start+e_duration+e_start]
+    resp_he = resp[h_start+e_start:h_start+e_duration+e_start]
     stim_hl = stimulus[h_start+contrast_duration-l_duration:h_start+contrast_duration]
     resp_hl = resp[h_start+contrast_duration-l_duration:h_start+contrast_duration]
-    stim_le = stimulus[l_start:l_start+e_duration]
-    resp_le = resp[l_start:l_start+e_duration]
+    stim_le = stimulus[l_start+e_start:l_start+e_duration+e_start]
+    resp_le = resp[l_start+e_start:l_start+e_duration+e_start]
     stim_ll = stimulus[l_start+contrast_duration-l_duration:l_start+contrast_duration]
     resp_ll = resp[l_start+contrast_duration-l_duration:l_start+contrast_duration]
     _, _, x_he, nonlinear_he = LN_model_1d(stim_he, resp_he)
@@ -189,5 +264,89 @@ def contrast_adaption_nonlinear(stimulus, resp, h_start, l_start, contrast_durat
     plt.plot(x_le, nonlinear_le, 'k', label='low early')
     plt.plot(x_ll, nonlinear_ll, 'g', label='low late')
     plt.legend()
+    plt.show()
 
     return (x_he, nonlinear_he), (x_hl, nonlinear_hl), (x_le, nonlinear_le), (x_ll, nonlinear_ll)
+
+def analyze_one_pixel(cfg_name, checkpoint_path, stimulus, device, n_units=3, channel=0, cell=0, h_start=2000, l_start=4000):
+    
+    cfg = get_custom_cfg(cfg_name)
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    model_func = getattr(models, cfg.Model.name)
+    model_kwargs = dict(cfg.Model)
+    model = model_func(**model_kwargs).to(device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
+    
+    data_kwargs = dict(cfg.Data)
+    _, layer_outs = contrast_adaptation_kinetic(model, device, insp_keys=['kinetics'], **data_kwargs)
+    
+    filter_len = model.img_shape[0]
+
+    plt.plot(np.arange(3000 - filter_len),layer_outs['kinetics'][:, 0, channel], label='R')
+    plt.plot(np.arange(3000 - filter_len),layer_outs['kinetics'][:, 1, channel], label='A')
+    plt.plot(np.arange(3000 - filter_len),layer_outs['kinetics'][:, 2, channel], label='I1')
+    plt.plot(np.arange(3000 - filter_len),layer_outs['kinetics'][:, 3, channel], label='I2')
+    plt.legend()
+    plt.show()
+    
+    train_dataset = MyDataset(stim_sec='train', **data_kwargs)
+    test_data =  DataLoader(dataset=MyDataset(stim_sec='test', stats=train_dataset.stats, **data_kwargs))
+    test_pc, pred, _ = pearsonr_eval(model, test_data, n_units, device, with_responses=True)
+    pred = np.pad(pred, ((filter_len, 0), (0,0)), 'constant', constant_values=(0,0))
+    
+    he, hl, le, ll = contrast_adaption_nonlinear(stimulus, pred[:, cell], h_start=h_start, l_start=l_start)
+    
+    return layer_outs
+
+def analyze(cfg_name, checkpoint_path, checkpoint_path_one_pixel, stimulus, device,
+            n_units=3, channel=0, cell=0, h_start=2000, l_start=4000):
+    
+    cfg = get_custom_cfg(cfg_name)
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    model_func = getattr(models, cfg.Model.name)
+    model_kwargs = dict(cfg.Model)
+    model = model_func(**model_kwargs).to(device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    if checkpoint_path_one_pixel != '':
+        checkpoint_one_pixel = torch.load(checkpoint_path_one_pixel, map_location=device)
+        model.kinetics.ksi.data = checkpoint_one_pixel['model_state_dict']['kinetics.ksi']
+        model.kinetics.ksr.data = checkpoint_one_pixel['model_state_dict']['kinetics.ksr']
+        if model.ksr_gain:
+            try:
+                model.kinetics.ksr_2.data = checkpoint_one_pixel['model_state_dict']['kinetics.ksr_2']
+            except:
+                pass
+    model.eval()
+    
+    filter_len = model.img_shape[0]
+    
+    data_kwargs = dict(cfg.Data)
+    _, layer_outs = contrast_adaptation_kinetic(model, device, insp_keys=['kinetics'], **data_kwargs)
+
+    plt.plot(np.arange(3000 - filter_len),layer_outs['kinetics'][:, 0, channel], label='R')
+    plt.plot(np.arange(3000 - filter_len),layer_outs['kinetics'][:, 1, channel], label='A')
+    plt.plot(np.arange(3000 - filter_len),layer_outs['kinetics'][:, 2, channel], label='I1')
+    plt.plot(np.arange(3000 - filter_len),layer_outs['kinetics'][:, 3, channel], label='I2')
+    plt.legend()
+    plt.show()
+    
+    contrast_adaptation_LN(model, device, **data_kwargs)
+    
+    data_kwargs['stim'] = 'fullfield_whitenoise'
+    train_dataset_noise = MyDataset(stim_sec='train', **data_kwargs)
+    test_data_noise =  DataLoader(dataset=MyDataset(stim_sec='test', stats=train_dataset_noise.stats, **data_kwargs))
+    test_pc_noise, pred_noise, _ = pearsonr_eval(model, test_data_noise, n_units, device, with_responses=True)
+    pred_noise = np.pad(pred_noise, ((filter_len, 0), (0,0)), 'constant', constant_values=(0,0))
+
+    he, hl, le, ll = contrast_adaption_nonlinear(stimulus, pred_noise[:, cell], h_start=h_start, l_start=l_start)
+    
+    data_kwargs['stim'] = 'naturalscene'
+    train_dataset_natural = MyDataset(stim_sec='train', **data_kwargs)
+    test_data_natural =  DataLoader(dataset=MyDataset(stim_sec='test', stats=train_dataset_natural.stats, **data_kwargs))
+    test_pc_natural = pearsonr_eval(model, test_data_natural, n_units, device)
+    
+    print('white noise prediction correlation :{:.4f}'.format(test_pc_noise))
+    print('natural scene prediction correlation: {:.4f}'.format(test_pc_natural))
+    
+    return test_pc_noise, test_pc_natural, layer_outs

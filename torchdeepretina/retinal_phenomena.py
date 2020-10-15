@@ -9,7 +9,7 @@ from tqdm import tqdm
 from itertools import repeat
 import torchdeepretina.stimuli as stim
 import torchdeepretina.visualizations as viz
-from torchdeepretina.utils import compute_sta, batch_compute_model_response, get_hs, inspect_rnn
+from torchdeepretina.utils import compute_sta, batch_compute_model_response, inspect_rnn
 from tqdm import tqdm, trange
 import torch
 

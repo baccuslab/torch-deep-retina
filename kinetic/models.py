@@ -255,7 +255,7 @@ class KineticsChannelModelFilterAmacrine(nn.Module):
     
 class KineticsOnePixelChannel(nn.Module):
     def __init__(self, recur_seq_len=5, n_units=5, dt=0.01, scale_kinet=False,
-                 bias=True, linear_bias=False, chans=[8,8], softplus=True, img_shape=(40,)):
+                 bias=True, linear_bias=False, chans=[8,8], softplus=True, img_shape=(40,), **kwargs):
         super().__init__()
         
         self.n_units = n_units

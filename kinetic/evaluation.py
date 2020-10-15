@@ -3,11 +3,11 @@ import numpy as np
 from scipy.stats import pearsonr
 from kinetic.utils import *
 
-def pearsonr_eval(model, data, n_units, device, I20=None, start_idx=0, hs_type='single', with_responses=False):
+def pearsonr_eval(model, data, n_units, device, I20=None, start_idx=0, hs_mode='single', with_responses=False):
     train_status = model.training
     model = model.to(device)
     model.eval()
-    hs = get_hs(model, 1, device, I20, hs_type)
+    hs = get_hs(model, 1, device, I20, hs_mode)
     with torch.no_grad():
         pearsons = []
         val_pred = []

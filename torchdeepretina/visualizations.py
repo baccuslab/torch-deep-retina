@@ -132,6 +132,8 @@ def response1D(x, r, dt=0.01, us_factor=50, figsize=(8, 5)):
     ax1.set_ylabel('Firing rate (Hz)')
     ax1.set_xlabel('Time (s)')
     adjust_spines(ax1)
+    
+    plt.show()
 
     return fig, (ax0, ax1)
 
