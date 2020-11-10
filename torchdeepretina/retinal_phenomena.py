@@ -30,131 +30,270 @@ else:
     DEVICE = torch.device("cpu")
 device = DEVICE
 
-def dirpref(rf, v, fr, n_steps=32):
+def avg_dirpref(rf, velocities, freqs, n_steps=32):
     """
     This function computes the direction selectivity index and
     orientation selectivity index for a spatiotemporal receptive field
-    It computes the dot product of an x-y-t receptive field with a set
-    of sinusoidal gratings for one velocity and spatial frequency
-
-    Stephen Baccus 12/2019
-    Inputs:
-        rf: ndarray or torch Tensor (T,H,W)
-            the receptive field
-        v: float
-            velocity
-        fr: float
-            spatial frequency
-        n_steps: int divisible by 4
+    It averages over the velocities and frequencies that are argued.
+    This should only be used for LNLNs. See dirpref for CNNs.
+                                                                 
+    Stephen Baccus 12/2019                                       
+    Inputs:                                                      
+        rf: ndarray or torch Tensor (T,H,W)                      
+            the receptive field                                  
+        v: float                                                 
+            velocity                                             
+        fr: float                                                
+            spatial frequency                                    
+        n_steps: int divisible by 4                              
             the number of discrete steps in the period of 0<=x<2π
-    Outputs:
-        dsi: direction selectivity index
-        osi: orientation selectivity index
-        resp_ang: response amplitude for each angle of motion
+    Outputs:                                                     
+        dsi: direction selectivity index                         
+        osi: orientation selectivity index                       
+        resp_ang: response amplitude for each angle of motion    
     """
-    if isinstance(rf,np.ndarray):
-        rf = torch.FloatTensor(rf)
-    rf = rf.to(DEVICE)
-    n_steps = int((n_steps//4)*4)
-    # Using torch.meshgrid gives different results (which is absolutely
-    # fucking stupid. Make me boil)
-    ####rf = rf.permute((1,2,0))
-    ####tup = np.meshgrid(np.arange(1,rf.shape[0]+1),
-    ####                  np.arange(1,rf.shape[1]+1),
-    ####                  np.arange(1,rf.shape[2]+1))
-    ####X,Y,T = (torch.FloatTensor(arr).to(DEVICE) for arr in tup)
-    tup = np.meshgrid(np.arange(1,rf.shape[1]+1),
-                      np.arange(1,rf.shape[0]+1),
-                      np.arange(1,rf.shape[2]+1))
-    X,T,Y = (torch.FloatTensor(arr).to(DEVICE) for arr in tup)
+    if isinstance(rf,torch.Tensor):                                
+        rf = rf.cpu().numpy()                                    
+    n_steps = int((n_steps//4)*4)                                
+    X,T,Y = np.meshgrid(np.arange(1,rf.shape[1]+1),                
+                      np.arange(1,rf.shape[0]+1),                
+                      np.arange(1,rf.shape[2]+1))                
+                                                                 
+    rfz = (rf-rf.mean())/(rf.std()+1e-5)                         
+    period = 2*np.pi                                             
+    pi_range = np.linspace(0, period, n_steps+1)[:-1]
+    frv_resps = np.zeros((len(freqs), len(velocities), n_steps))
+    for fi,fr in enumerate(freqs):
+        for vi,v in enumerate(velocities):
+            resp_ang = []             
+            for i,ang in enumerate(pi_range):
+                resp = []
+                for j,phase in enumerate(pi_range):
+                    # gst: grating stimulus
+                    # fr : spatial frequency
+                    # ang: motion angle
+                    # phase: grating position
+                    # X, Y, T: location in space-time rf
+                    gst = fr*np.cos(ang)*X + fr*np.sin(ang)*Y - T*v + phase
+                    gst = np.sin(gst)
+                    prod = (gst*rfz).mean()
+                    resp.append(prod)
 
-    period = 2*np.pi
-    pi_range = torch.linspace(0, period-period/n_steps, n_steps).to(DEVICE)
-    resp_ang = []
-    for i,ang in enumerate(pi_range):
-        resp = []
-        for j,phase in enumerate(pi_range):
-            # gst: grating stimulus
-            # fr : spatial frequency
-            # ang: motion angle
-            # phase: grating position
-            # X, Y, T: location in space-time rf   
-            gst = fr*torch.cos(ang)*X + fr*torch.sin(ang)*Y - T*v + phase
-            gst = torch.sin(gst)
-            prod = (gst*rf).sum()
-            resp.append(prod.item())
+                if np.max(resp) < 1e-2: diff = 0
+                else: diff = np.max(resp)-np.min(resp)
+                resp_ang.append(diff)
+            frv_resps[fi,vi] = np.asarray(resp_ang)
+    max_resps = np.max(frv_resps.reshape(len(freqs),-1),axis=-1)
+    half_max_resp = np.max(max_resps)/2
+    rows = np.arange(len(freqs))[max_resps>half_max_resp]
+    resp_ang = frv_resps[rows].reshape(-1,n_steps).mean(0)
 
-        diff = np.max(resp)-np.min(resp)
-        resp_ang.append(diff)
-
-    # prefdir: Preferred direction (prefdir) of the rf,
+    # prefdir: Preferred direction (prefdir) of the rf,         
     #          direction that has the largest response amplitude
     # nulldir: Null direction is opposite to preferred direction
     # dsi: Direction selectivity index
     half_steps = n_steps//2
     prefdir = np.argmax(resp_ang)
+    angmax = resp_ang[prefdir]
     nulldir = ((prefdir+half_steps) % n_steps)
-    dsi = (resp_ang[prefdir]-resp_ang[nulldir]) / resp_ang[prefdir]
+    if resp_ang[prefdir] == 0: dsi = 0
+    else:
+        dsi = (angmax-resp_ang[nulldir])/(angmax+1e-5)
 
-    # Compute orientation selectivity index
-    # orthdir1 & 2:Orthogonal directions from preferred-null direction 
-    # osi: Orientation selectivity index
-    # respprefor: Mean response for preferred orientation
-    # respnulllor: Mean response for orthogonal orientation
+    # Compute orientation selectivity index                           
+    # orthdir1 & 2:Orthogonal directions from preferred-null direction
+    # osi: Orientation selectivity index                              
+    # respprefor: Mean response for preferred orientation             
+    # respnulllor: Mean response for orthogonal orientation           
+    resp_vec = (resp_ang[:n_steps//2]+resp_ang[n_steps//2:])/2
+    prefor = np.argmax(resp_vec)
     quart_steps = n_steps//4
-    orthdir1 = (prefdir+quart_steps)   % n_steps
-    orthdir2 = (prefdir+3*quart_steps) % n_steps
-    respprefor = (resp_ang[prefdir]+resp_ang[nulldir])/2
-    respnullor = (resp_ang[orthdir1]+resp_ang[orthdir2])/2
-    osi = (respprefor-respnullor)/respprefor
-    return dsi, osi, np.asarray(resp_ang)
+    orthor = (prefor+quart_steps) % n_steps//2
+        
+    if resp_vec[prefor] == 0: osi = 0
+    else: 
+        osi = (resp_vec[prefor]-resp_vec[orthor])/resp_vec[prefor]
+            
+    return dsi, osi, resp_ang
 
-def dsiosi_idx(rf, velocities=torch.arange(0.1,.71,0.1),
-                  frequencies=torch.arange(0.1,1.11,0.1),
-                  n_steps=32):
+def avg_dsiosi_idx(rf, velocities=np.arange(0.1,.71,0.1),
+                  frequencies=np.arange(0.1,1.01,0.1),
+                  n_steps=32,
+                  verbose=False):
     """
     Computes direction selectivity index (DSI) and orientation
     selectivity index (OSI) for a receptive field for a range of
     velocities and spatial frequencies. It loops over the function
     dirpref, which computes indices for one stimulus.
 
-    Stephen Baccus 12/2019
-    Inputs:
-        rf: ndarray or torch tensor (T,H,W)
-            receptive field
-        velocities: listlike of floats
-            range of velocities
-        frequencies: listlike of floats
-            range of spatial frequencies
-        n_steps: int divisible by 4
+    Stephen Baccus 12/2019                                       
+    Inputs:                                                      
+        rf: ndarray or torch tensor (T,H,W)                      
+            receptive field                                      
+        velocities: listlike of floats                           
+            range of velocities                                  
+        frequencies: listlike of floats                          
+            range of spatial frequencies                         
+        n_steps: int divisible by 4                              
             the number of discrete steps in the period of 0<=x<2π
-    
-    Outputs:
-        dsimax:
-            maximum direction selectivity index
-        osimax:
-            maximum orientation selectivity index
-        angmax:
-            maximum angle
-        respmax: ndarray
-            the response with the maximum response
-    """
+                                                                 
+    Outputs:                                                     
+        dsimax:                                                  
+            maximum direction selectivity index                  
+        osimax:                                                  
+            maximum orientation selectivity index                
+        angmax:                                                  
+            maximum angle                                        
+        respmax: ndarray                                         
+            the response with the maximum response               
+    """                                                          
     n_steps = int((n_steps//4)*4)
     period = 2*np.pi
     # Compute DSI and OSI for the range of velocities and frequencies
-    # DSI will vary with velocity and spatial frequency
-    # if nV,nFR and nDir are the number of velocities and spatial
-    # frequencies and directions, then
-    # dsi: nV x nFR array of DSIs
-    # osi: nV x nFR array of oSIs
-    # resp_ang: nV x nFR x nDir array of response amplitudes
+    # DSI will vary with velocity and spatial frequency              
+    # if nV,nFR and nDir are the number of velocities and spatial    
+    # frequencies and directions, then                               
+    # dsi: nV x nFR array of DSIs                                    
+    # osi: nV x nFR array of oSIs                                    
+    # resp_ang: nV x nFR x nDir array of response amplitudes         
+    tup = avg_dirpref(rf,velocities,frequencies,n_steps=n_steps)
+    dsi,osi,resp_ang = tup
+    # Find the stimulus velocity and spatial frequency with the maximum
+    # response, and choose DSIs and OSIs for that stimulus             
+    # Preferred direction using grating stimulus of max response
+    angmax = np.argmax(resp_ang) * (period/n_steps)
+
+    return dsimax,osimax,angmax,resp_ang
+
+def dirpref(rf, v, fr, n_steps=32):
+    """
+    This function computes the direction selectivity index and
+    orientation selectivity index for a spatiotemporal receptive field
+    It computes the dot product of an x-y-t receptive field with a set
+    of sinusoidal gratings for one velocity and spatial frequency
+                                                                 
+    Stephen Baccus 12/2019                                       
+    Inputs:                                                      
+        rf: ndarray or torch Tensor (T,H,W)                      
+            the receptive field                                  
+        v: float                                                 
+            velocity                                             
+        fr: float                                                
+            spatial frequency                                    
+        n_steps: int divisible by 4                              
+            the number of discrete steps in the period of 0<=x<2π
+    Outputs:                                                     
+        dsi: direction selectivity index                         
+        osi: orientation selectivity index                       
+        resp_ang: response amplitude for each angle of motion    
+    """
+    if isinstance(rf,torch.Tensor):                                
+        rf = rf.cpu().numpy()                                    
+    n_steps = int((n_steps//4)*4)                                
+    X,T,Y = np.meshgrid(np.arange(1,rf.shape[1]+1),                
+                      np.arange(1,rf.shape[0]+1),                
+                      np.arange(1,rf.shape[2]+1))                
+                                                                 
+    rfz = (rf-rf.mean())/(rf.std()+1e-5)                         
+    period = 2*np.pi                                             
+    pi_range = np.linspace(0, period, n_steps+1)[:-1]
+    resp_ang = []             
+    for i,ang in enumerate(pi_range):                            
+        resp = []                                                
+        for j,phase in enumerate(pi_range):                      
+            # gst: grating stimulus                              
+            # fr : spatial frequency                             
+            # ang: motion angle                                  
+            # phase: grating position                            
+            # X, Y, T: location in space-time rf                 
+            gst = fr*np.cos(ang)*X + fr*np.sin(ang)*Y - T*v + phase
+            gst = np.sin(gst)
+            prod = (gst*rfz).mean()
+            resp.append(prod)
+
+        if np.max(resp) < 1e-2: diff = 0
+        else: diff = np.max(resp)-np.min(resp)
+        resp_ang.append(diff)
+
+    # prefdir: Preferred direction (prefdir) of the rf,         
+    #          direction that has the largest response amplitude
+    # nulldir: Null direction is opposite to preferred direction
+    # dsi: Direction selectivity index
+    half_steps = n_steps//2
+    prefdir = np.argmax(resp_ang)
+    nulldir = ((prefdir+half_steps) % n_steps)
+    if resp_ang[prefdir] == 0: dsi = 0
+    else:
+        dsi = (resp_ang[prefdir]-resp_ang[nulldir])/(resp_ang[prefdir]+1e-5)
+
+    # Compute orientation selectivity index                           
+    # orthdir1 & 2:Orthogonal directions from preferred-null direction
+    # osi: Orientation selectivity index                              
+    # respprefor: Mean response for preferred orientation             
+    # respnulllor: Mean response for orthogonal orientation           
+    resp_ang = np.asarray(resp_ang)
+    resp_vec = (resp_ang[:n_steps//2]+resp_ang[n_steps//2:])/2
+    prefor = np.argmax(resp_vec)
+    quart_steps = n_steps//4
+    orthor = (prefor+quart_steps) % n_steps//2
+        
+    if resp_vec[prefor] == 0: osi = 0
+    else: 
+        osi = (resp_vec[prefor]-resp_vec[orthor])/resp_vec[prefor]
+            
+    return dsi, osi, resp_ang
+
+def dsiosi_idx(rf, velocities=np.arange(0.1,.71,0.1),
+                  frequencies=np.arange(0.1,1.01,0.1),
+                  n_steps=32,
+                  verbose=False):
+    """
+    Computes direction selectivity index (DSI) and orientation
+    selectivity index (OSI) for a receptive field for a range of
+    velocities and spatial frequencies. It loops over the function
+    dirpref, which computes indices for one stimulus.
+
+    Stephen Baccus 12/2019                                       
+    Inputs:                                                      
+        rf: ndarray or torch tensor (T,H,W)                      
+            receptive field                                      
+        velocities: listlike of floats                           
+            range of velocities                                  
+        frequencies: listlike of floats                          
+            range of spatial frequencies                         
+        n_steps: int divisible by 4                              
+            the number of discrete steps in the period of 0<=x<2π
+                                                                 
+    Outputs:                                                     
+        dsimax:                                                  
+            maximum direction selectivity index                  
+        osimax:                                                  
+            maximum orientation selectivity index                
+        angmax:                                                  
+            maximum angle                                        
+        respmax: ndarray                                         
+            the response with the maximum response               
+    """                                                          
+    n_steps = int((n_steps//4)*4)
+    period = 2*np.pi
+    # Compute DSI and OSI for the range of velocities and frequencies
+    # DSI will vary with velocity and spatial frequency              
+    # if nV,nFR and nDir are the number of velocities and spatial    
+    # frequencies and directions, then                               
+    # dsi: nV x nFR array of DSIs                                    
+    # osi: nV x nFR array of oSIs                                    
+    # resp_ang: nV x nFR x nDir array of response amplitudes         
     shape = (len(velocities), len(frequencies), n_steps)
     dsis = np.zeros(shape[:2])
     osis = np.zeros(shape[:2])
     resp_angs = np.zeros(shape)
 
+    tot_len = len(velocities)*len(frequencies)
     for i,v in enumerate(velocities):
         for j,f in enumerate(frequencies):
+            if verbose:
+                print("{}/{}".format(i*len(frequencies)+j,tot_len),
+                                                      end="   \r")
             dsi,osi,resp_ang = dirpref(rf,v,f,n_steps=n_steps)
 
             dsis[i,j] = dsi
@@ -162,10 +301,13 @@ def dsiosi_idx(rf, velocities=torch.arange(0.1,.71,0.1),
             resp_angs[i,j,:] = resp_ang
 
     # Find the stimulus velocity and spatial frequency with the maximum
-    # response, and choose DSIs and OSIs for that stimulus
+    # response, and choose DSIs and OSIs for that stimulus             
     maxresp = np.max(resp_angs,axis=2) # Max response across directions
-                              # for each velocity,v and frequency, fr
-    row,col,value = tdrutils.max_matrix(maxresp) # Max response across v and fr
+                              # for each velocity,v and frequency, fr  
+    # Max response across v and fr
+    row,col,value = tdrutils.max_matrix(maxresp) 
+    vel = velocities[row]
+    freq = frequencies[col]
 
     # DSI and OSI using grating stimulus of max response
     dsimax = dsis[row,col]
@@ -175,7 +317,7 @@ def dsiosi_idx(rf, velocities=torch.arange(0.1,.71,0.1),
     respmax = resp_angs[row,col,:]
     angmax = np.argmax(respmax) * (period/n_steps)
 
-    return dsimax,osimax,angmax,respmax,resp_angs
+    return dsimax,osimax,angmax,respmax,resp_angs,(vel,freq)
 
 def step_response(model, duration=100, delay=50, nsamples=200,
                                 intensity=-1., filt_depth=40):
