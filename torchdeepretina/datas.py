@@ -152,6 +152,8 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0,
                                               be 'train' or 'test'"
     if type(cells) == type(str()) and cells=="all":
         cells = utils.try_key(CELLS,expt,default=None)
+    elif isinstance(cells, int):
+        cells = [cells]
 
     # load the hdf5 file
     with _loadexpt_h5(expt, filename, root=data_path) as f:
