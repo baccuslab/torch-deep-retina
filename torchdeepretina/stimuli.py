@@ -21,6 +21,7 @@ from skimage.transform import downscale_local_mean
 import skimage.draw
 import cv2
 import torch
+import torch.nn.functional as F
 import pyret.filtertools as ft
 
 __all__ = ['concat', 'white', 'contrast_steps', 'flash','spatialize',
@@ -59,14 +60,13 @@ def get_cutout(stimulus, center, span=20, pad_to=50):
         pads the cutout with zeros on every side by pad amount
         if 0, no padding occurs
     """
-    if pad_to is None or pad_to < span:
-        pad_to = span
+    if pad_to is None or pad_to < span: pad_to = None
     row = (max(0,center[0]-span//2), min(center[0]+span//2+(span%2),
                                                 stimulus.shape[-2]))
     col = (max(0,center[1]-span//2), min(center[1]+span//2+(span%2),
                                                 stimulus.shape[-1]))
     s = stimulus[...,row[0]:row[1],col[0]:col[1]]
-    if pad_to > 0:
+    if pad_to is not None and pad_to > 0:
         s = spatial_pad(s,pad_to)
     return s
 
@@ -945,7 +945,7 @@ def spatial_pad(stimulus, H, W=None):
     if type(stimulus) == type(torch.FloatTensor()):
         leading_zeros = [0 for i in range((len(stimulus.shape)-2)*2)]
         pads = (*pad_w, *pad_h, *leading_zeros)
-        return torch.pad(stimulus, pads, "constant", 0)
+        return F.pad(stimulus, pads, "constant", 0)
     else:
         leading_zeros = [(0,0) for i in range(len(stimulus.shape)-2)]
         p = np.pad(stimulus,(*leading_zeros,pad_h,pad_w),"constant")
