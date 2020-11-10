@@ -1245,3 +1245,9 @@ class NullScheduler:
     def step(self, *args, **kwargs):
         pass
 
+class Sin(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self,x):
+        return torch.sin(x)
