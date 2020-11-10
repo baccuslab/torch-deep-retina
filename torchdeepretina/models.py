@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.nn import ReLU, Tanh
 from torchdeepretina.custom_modules import *
 from torchdeepretina.utils import get_conv_layer_names
 import numpy as np
@@ -221,7 +222,7 @@ class BNCNN(TDRModel):
         self.shapes.append(tuple(shape))
         if self.bnaftrelu:
             modules.append(GaussianNoise(std=self.noise))
-            modules.append(getattr(nn,self.activ_fxn)())
+            modules.append(globals()[self.activ_fxn]())
         if self.bnorm_d == 1:
             modules.append(Flatten())
             size = self.chans[0]*shape[0]*shape[1]
@@ -233,7 +234,7 @@ class BNCNN(TDRModel):
                                          momentum=self.bn_moment))
         if not self.bnaftrelu:
             modules.append(GaussianNoise(std=self.noise))
-            modules.append(getattr(nn,self.activ_fxn)())
+            modules.append(globals()[self.activ_fxn]())
         modules.append(nn.Conv2d(self.chans[0],self.chans[1],
                                   kernel_size=self.ksizes[1],
                                   bias=self.bias))
@@ -241,7 +242,7 @@ class BNCNN(TDRModel):
         self.shapes.append(tuple(shape))
         if self.bnaftrelu:
             modules.append(GaussianNoise(std=self.noise))
-            modules.append(getattr(nn,self.activ_fxn)())
+            modules.append(globals()[self.activ_fxn]())
         if self.bnorm_d == 1:
             modules.append(Flatten())
             size = self.chans[1]*shape[0]*shape[1]
@@ -254,7 +255,7 @@ class BNCNN(TDRModel):
                                          momentum=self.bn_moment))
         if not self.bnaftrelu:
             modules.append(GaussianNoise(std=self.noise))
-            modules.append(getattr(nn,self.activ_fxn)())
+            modules.append(globals()[self.activ_fxn]())
         if self.convgc:
             modules.append(nn.Conv2d(self.chans[1], self.n_units,
                                       kernel_size=self.ksizes[2],
@@ -375,7 +376,7 @@ class LinearStackedBNCNN(TDRModel):
         self.shapes.append(tuple(shape))
         if self.bnaftrelu:
             modules.append(GaussianNoise(std=self.noise))
-            modules.append(getattr(nn,self.activ_fxn)())
+            modules.append(globals()[self.activ_fxn]())
         # BatchNorm
         if self.bnorm_d == 1:
             modules.append(Flatten())
@@ -390,7 +391,7 @@ class LinearStackedBNCNN(TDRModel):
         # Noise and Activation
         if not self.bnaftrelu:
             modules.append(GaussianNoise(std=self.noise))
-            modules.append(getattr(nn,self.activ_fxn)())
+            modules.append(globals()[self.activ_fxn]())
 
         ##### Second Layer
         # Convolution
@@ -415,7 +416,7 @@ class LinearStackedBNCNN(TDRModel):
         self.shapes.append(tuple(shape))
         if self.bnaftrelu:
             modules.append(GaussianNoise(std=self.noise))
-            modules.append(getattr(nn,self.activ_fxn)())
+            modules.append(globals()[self.activ_fxn]())
         # BatchNorm
         if self.bnorm_d == 1:
             modules.append(Flatten())
@@ -430,7 +431,7 @@ class LinearStackedBNCNN(TDRModel):
         # Noise and Activation
         if not self.bnaftrelu:
             modules.append(GaussianNoise(std=self.noise))
-            modules.append(getattr(nn,self.activ_fxn)())
+            modules.append(globals()[self.activ_fxn]())
 
         ##### Final Layer
         if self.convgc:
@@ -683,7 +684,7 @@ class VaryModel(TDRModel):
                     
             if self.bnaftrelu:
                 modules.append(GaussianNoise(std=self.noise))
-                modules.append(getattr(nn,self.activ_fxn)())
+                modules.append(globals()[self.activ_fxn]())
             ## BatchNorm
             if self.bnorm_d == 1:
                 modules.append(Flatten())
@@ -698,7 +699,7 @@ class VaryModel(TDRModel):
             # Noise and Activation
             if not self.bnaftrelu:
                 modules.append(GaussianNoise(std=self.noise))
-                modules.append(getattr(nn,self.activ_fxn)())
+                modules.append(globals()[self.activ_fxn]())
 
         ##### Final Layer
         if self.convgc:
@@ -851,7 +852,7 @@ class RetinotopicModel(TDRModel):
             ## BatchNorm
             if self.bnaftrelu:
                 modules.append(GaussianNoise(std=self.noise))
-                modules.append(getattr(nn,self.activ_fxn)())
+                modules.append(globals()[self.activ_fxn]())
             if self.bnorm_d == 1:
                 modules.append(Flatten())
                 size = temp_chans[i+1]*shape[0]*shape[1]
@@ -865,7 +866,7 @@ class RetinotopicModel(TDRModel):
             # Noise and Activation
             if not self.bnaftrelu:
                 modules.append(GaussianNoise(std=self.noise))
-                modules.append(getattr(nn,self.activ_fxn)())
+                modules.append(globals()[self.activ_fxn]())
 
         ##### Final Layer
         if self.finalstack:
