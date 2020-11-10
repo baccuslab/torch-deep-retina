@@ -136,7 +136,7 @@ def get_model_folders(main_folder):
             contents = os.listdir(os.path.join(d,sub_d))
             for content in contents:
                 if ".pt" in content or "hyperparams.txt" == content:
-                    folders.append(sub_d)
+                    folders.append(sub_d.strip())
                     break
     return sorted(folders, key=foldersort)
 
