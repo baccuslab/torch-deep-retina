@@ -72,8 +72,25 @@ def correlation_matrix(pred, targ, single_trial, binary, thre=1, num_cells=5, nu
 def Fano(single_trial):
     fano = np.nanmean(np.var(0.01*single_trial, axis=0)/np.mean(0.01*single_trial, axis=0))
     return fano
+
+def Pearsonr_std(single_trial, pred_single_trial, n_cells):
+    stds = single_trial.std(0)
+    pred_stds = pred_single_trial.std(0)
+    pearsons = []
+    for cell in range(n_cells):
+        pearsons.append(pearsonr(pred_stds[:,cell],stds[:,cell])[0])
+    mean_pearson = np.array(pearsons).mean()
+    return mean_pearson
+
+def STD_error(single_trial, pred_single_trial):
+    pred_single_trial = pred_single_trial * single_trial.mean() / pred_single_trial.mean()
+    stds = single_trial.std(0)
+    pred_stds = pred_single_trial.std(0)
+    error = np.abs(pred_stds - stds).sum()/stds.sum()
+    return error
     
-def Noises(model, data, single_corr, device, n_repeats=5, n_cells=5, poisson=[None, None, None], gaussian=[0, 0, 0, 0]):
+def Noises(model, data, single_corr, single_trial, device, 
+           n_repeats=5, n_cells=5, poisson=[None, None, None], gaussian=[0, 0, 0, 0]):
     model = model.to(device)
     with torch.no_grad():
         pred_corr = []
@@ -98,13 +115,14 @@ def Noises(model, data, single_corr, device, n_repeats=5, n_cells=5, poisson=[No
     for cell in range(n_cells):
         pearsons.append(pearsonr(pred_mean[:,cell],val_targ[:,cell])[0])
     accuracy = np.array(pearsons).mean()
+    std_error = STD_error(single_trial, pred_single_trial)
     fano = Fano(pred_single_trial)
     stim_corr = stimuli_corr_matrix(n_cells, n_repeats, pred_single_trial)
     noise_corr = pred_corr - stim_corr
     diagonal_idxs = list(range(0, n_cells*n_cells, n_cells+1))
     mean_stim_corr = np.delete(stim_corr.flatten(), diagonal_idxs).mean()
     mean_noise_corr = np.delete(noise_corr.flatten(), diagonal_idxs).mean()
-    return error, accuracy, fano, mean_stim_corr, mean_noise_corr
+    return error, accuracy, fano, mean_stim_corr, mean_noise_corr, std_error
 
 def noise_model(x, model, device, poisson=[None, None, None], gaussian=[0, 0, 0, 0]):
     with torch.no_grad():
@@ -134,7 +152,7 @@ def noise_model(x, model, device, poisson=[None, None, None], gaussian=[0, 0, 0,
     return out 
     
 def single_noise_plot(para_name, noise_list, error_list, accuracy_list, fano_list, mean_stim_corr_list, mean_noise_corr_list,
-               recorded_fano=0.091, recorded_mean_stim_corr=0.1638, recorded_mean_noise_corr=0.0127):
+                      std_error_list, recorded_fano=0.091, recorded_mean_stim_corr=0.1638, recorded_mean_noise_corr=0.0127):
     plt.plot(noise_list, error_list, 'bo-')
     plt.xlabel(para_name)
     plt.ylabel('error')
@@ -156,4 +174,8 @@ def single_noise_plot(para_name, noise_list, error_list, accuracy_list, fano_lis
     plt.xlabel(para_name)
     plt.ylabel('correlation')
     plt.legend()
+    plt.show()
+    plt.plot(noise_list, std_error_list, 'bo-')
+    plt.xlabel(para_name)
+    plt.ylabel('std error')
     plt.show()

@@ -82,9 +82,9 @@ def train(cfg):
         epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size
         
         pearson_natural = pearsonr_eval(model, validation_data_natural, cfg.Model.n_units, device,
-                                        I20=cfg.Data.I20, start_idx=cfg.Data.start_idx, hs_type=cfg.Data.hs_mode)
+                                        I20=cfg.Data.I20, start_idx=cfg.Data.start_idx, hs_mode=cfg.Data.hs_mode)
         pearson_noise = pearsonr_eval(model, validation_data_noise, cfg.Model.n_units, device,
-                                      I20=cfg.Data.I20, start_idx=cfg.Data.start_idx, hs_type=cfg.Data.hs_mode)
+                                      I20=cfg.Data.I20, start_idx=cfg.Data.start_idx, hs_mode=cfg.Data.hs_mode)
         
         scheduler.step(pearson_natural + pearson_noise)
         

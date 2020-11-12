@@ -29,7 +29,8 @@ def contrast_adaptation_kinetic(model, device, insp_keys, hs_mode='single', stim
         raise Exception('Invalid hs type')
     envelope += c0
 
-    layer_outs_list  ={key:[] for key in insp_keys}
+    layer_outs_list = {key:[] for key in insp_keys}
+    layer_outs_list['outputs'] = []
     with torch.no_grad():
         for _ in range(nrepeats):
             x = np.random.randn(*envelope.shape) * envelope + 1
@@ -69,7 +70,7 @@ def contrast_adaptation_kinetic(model, device, insp_keys, hs_mode='single', stim
     return (fig, (ax0,ax1)), layer_outs
 
 def contrast_adaptation_LN(model, device, hs_mode='single', stim_type='full', I20=None, cells='all', 
-                                c0=0.05, c1=0.35, duration=1000, delay=1000, nsamples=3000, nrepeats=10, filt_depth=40, **kwargs):
+                           c0=0.05, c1=0.35, duration=1000, delay=1000, nsamples=3000, nrepeats=10, filt_depth=40, **kwargs):
     if stim_type == 'full':
         envelope = stim.flash(duration, delay, nsamples, intensity=(c1 - c0))
     elif stim_type == 'one_pixel':
@@ -100,11 +101,11 @@ def contrast_adaptation_LN(model, device, hs_mode='single', stim_type='full', I2
     if cells == 'all':
         cells = range(model.n_units)
     for cell in cells:
-        _, _, x_he, nonlinear_he = LN_model_multi_trials(stimuli, responses, c1, cell, delay, delay + duration//2)
-        _, _, x_hl, nonlinear_hl = LN_model_multi_trials(stimuli, responses, c1, cell, delay + duration//2, delay + duration)
-        _, _, x_le, nonlinear_le = LN_model_multi_trials(stimuli, responses, c0, cell, delay + duration, 
-                                                         (delay + duration + nsamples)//2)
-        _, _, x_ll, nonlinear_ll = LN_model_multi_trials(stimuli, responses, c0, cell, (delay + duration + nsamples)//2, nsamples)
+        _, x_he, nonlinear_he = LN_model_multi_trials_fourier(stimuli, responses, c1, cell, delay, delay + 500)
+        _, x_hl, nonlinear_hl = LN_model_multi_trials_fourier(stimuli, responses, c1, cell, delay + duration - 600, delay + duration)
+        _, x_le, nonlinear_le = LN_model_multi_trials_fourier(stimuli, responses, c0, cell, delay + duration, 
+                                                         delay + duration + 500)
+        _, x_ll, nonlinear_ll = LN_model_multi_trials_fourier(stimuli, responses, c0, cell, nsamples - 600, nsamples)
         plt.plot(x_he, nonlinear_he, 'r', label='high early')
         plt.plot(x_hl, nonlinear_hl, 'b', label='high late')
         plt.plot(x_le, nonlinear_le, 'k', label='low early')
@@ -113,8 +114,8 @@ def contrast_adaptation_LN(model, device, hs_mode='single', stim_type='full', I2
         plt.show()
         
     return
-    
-def LN_model_multi_trials(stimuli, responses, contrast, cell, start_idx, end_idx, filter_len=100):
+
+def LN_model_multi_trials(stimuli, responses, contrast, cell, start_idx, end_idx, filter_len=100, sta_type='fourier', offset=10):
     sta = 0
     stimulus = []
     resp = []
@@ -123,23 +124,62 @@ def LN_model_multi_trials(stimuli, responses, contrast, cell, start_idx, end_idx
         resp_trial = responses[trial][start_idx:end_idx, cell]
         stimulus.append(stim_trial)
         resp.append(resp_trial)
-        sta_trial, tax = pyret.filtertools.revcorr(stim_trial, resp_trial, 0, filter_len)
+        if sta_type == 'revcor':
+            sta_trial, _ = pyret.filtertools.revcorr(stim_trial, resp_trial, 0, filter_len)
+            sta_trial = np.flip(sta_trial, axis=0)
+        elif sta_type == 'fourier':
+            sta_trial = fourier_sta(stim_trial, resp_trial, filter_len, offset)
         sta += sta_trial
-    sta = np.flip(sta, axis=0)
-    tax = tax / 100
     sta -= sta.mean()
     stimulus = np.concatenate(stimulus)
     resp = np.concatenate(resp)
     normed_sta, _, _ = normalize_filter(sta, stimulus, contrast)
     
     filtered_stim = pyret.filtertools.linear_response(normed_sta, stimulus)
-    nonlinearity = Binterp(80)
+    nonlinearity = Binterp(10)
     nonlinearity.fit(filtered_stim[filter_len:], resp[filter_len:])
 
-    x = np.linspace(np.min(filtered_stim), np.max(filtered_stim), 40)
+    x = np.linspace(np.min(filtered_stim), np.max(filtered_stim), 10)
     nonlinear_prediction = nonlinearity.predict(x)
     
-    return tax, normed_sta, x, nonlinear_prediction
+    return normed_sta, x, nonlinear_prediction
+
+def LN_model_multi_trials_fourier(stimuli, responses, contrast, cell, start_idx, end_idx, filter_len=100, offset=10):
+    stimulus = []
+    resp = []
+    N = end_idx - start_idx
+    
+    num_pers = np.int(np.floor((N - filter_len)/offset))
+    cross_xy = np.zeros(filter_len)
+    denom = np.zeros(filter_len)
+    
+    for trial in range(len(stimuli)):
+        stim_trial = stimuli[trial][start_idx:end_idx]
+        resp_trial = responses[trial][start_idx:end_idx, cell]
+        stimulus.append(stim_trial)
+        resp.append(resp_trial)
+        for i in range(num_pers):
+            x_per = stim_trial[i*offset:i*offset + filter_len]
+            y_per = resp_trial[i*offset:i*offset + filter_len]
+            auto_x = np.abs(np.fft.fft(x_per))**2
+            auto_y = np.abs(np.fft.fft(y_per))**2
+            cross_xy = cross_xy + np.conjugate(np.fft.fft(x_per)) * np.fft.fft(y_per)
+            denom = denom + auto_x + np.mean(auto_y)*10
+    fft_f = cross_xy / denom
+    sta = np.real(np.fft.ifft(fft_f))
+    sta -= sta.mean()
+    stimulus = np.concatenate(stimulus)
+    resp = np.concatenate(resp)
+    normed_sta, _, _ = normalize_filter(sta, stimulus, contrast)
+    
+    filtered_stim = pyret.filtertools.linear_response(normed_sta, stimulus)
+    nonlinearity = Binterp(10)
+    nonlinearity.fit(filtered_stim[filter_len:], resp[filter_len:])
+
+    x = np.linspace(np.min(filtered_stim), np.max(filtered_stim), 10)
+    nonlinear_prediction = nonlinearity.predict(x)
+    
+    return normed_sta, x, nonlinear_prediction
 
 def stimulus_importance_rnn(model, X, gc_idx=None, alpha_steps=5, 
                             seq_len=8, device=torch.device('cuda:1')):
@@ -182,82 +222,120 @@ def stimulus_importance_rnn(model, X, gc_idx=None, alpha_steps=5,
     intg_grad = intg_grad.data.cpu().numpy()
     return intg_grad
 
-def rev_sta(stim, resp, filter_len = 40):
+def rev_sta(stim, resp, filter_len = 100):
 
-    sta, tax = pyret.filtertools.revcorr(stim, resp, 0, filter_len)
+    sta, _ = pyret.filtertools.revcorr(stim, resp, 0, filter_len)
     sta = sta / resp.sum() * 100
     sta = np.flip(sta, axis=0)
-    tax = tax / 100
     sta -= sta.mean()
     normed_sta, _, _ = normalize_filter(sta, stim, stim.std())
     
-    return normed_sta, tax
+    return normed_sta
 
-def fourier_sta(x, y, M):
+def fourier_sta(x, y, filter_len=100, offset=10):
     
     N = x.shape[0]
-    contrast = x.std() / x.mean()
-    x = scipy.stats.zscore(x) * contrast
-    #x = x - np.mean(x)
-    y = y - np.mean(y)
+    
+    num_pers = np.int(np.floor((N - filter_len)/offset))
 
-    offset = 100
-    num_pers = np.int(np.floor((N-M)/offset))
-
-    f = np.zeros(M)
-    fft_f = np.zeros(M)
-    cross_xy = fft_f
-    denom = cross_xy
+    cross_xy = np.zeros(filter_len)
+    denom = np.zeros(filter_len)
 
     for i in range(num_pers):
-        x_per = x[i*offset:i*offset + M]
-        y_per = y[i*offset:i*offset + M]
+        x_per = x[i*offset:i*offset + filter_len]
+        y_per = y[i*offset:i*offset + filter_len]
 
         auto_x = np.abs(np.fft.fft(x_per))**2
         auto_y = np.abs(np.fft.fft(y_per))**2
 
         cross_xy = cross_xy + np.conjugate(np.fft.fft(x_per)) * np.fft.fft(y_per)
         denom = denom + auto_x + np.mean(auto_y)*10
+        #denom = denom + auto_x
 
     fft_f = cross_xy / denom
     f = np.real(np.fft.ifft(fft_f))
-
-    return f
-
-def LN_model_1d(stim, resp, filter_len = 40, nonlinearity_type = 'bin'):
     
-    contrast = stim.std() / stim.mean()
-    stim = scipy.stats.zscore(stim) * contrast
-    
-    normed_sta, tax = rev_sta(stim, resp, filter_len)
+    f -= f.mean()
+    normed_f, _, _ = normalize_filter(f, x, x.std())
 
+    return normed_f
+
+def nonlinearity(stim, resp, normed_sta, nonlinearity_type, filter_len):
+    
     filtered_stim = pyret.filtertools.linear_response(normed_sta, stim)
     if nonlinearity_type == 'bin':
-        nonlinearity = Binterp(80)
+        nonlinearity = Binterp(10)
     else:
         nonlinearity = Sigmoid()
     nonlinearity.fit(filtered_stim[filter_len:], resp[filter_len:])
 
-    x = np.linspace(np.min(filtered_stim), np.max(filtered_stim), 40)
+    x = np.linspace(np.min(filtered_stim), np.max(filtered_stim), 10)
     nonlinear_prediction = nonlinearity.predict(x)
     
-    return tax, normed_sta, x, nonlinear_prediction
+    return x, nonlinear_prediction
 
-def contrast_adaption_nonlinear(stimulus, resp, h_start, l_start, contrast_duration=2000, e_start = 0,
-                                e_duration=500, l_duration=1000, nonlinearity_type = 'bin', filter_len = 40):
+def LN_model_1d(stim, resp, filter_len=100, nonlinearity_type='bin', sta_method='fourier', offset=10):
     
-    stim_he = stimulus[h_start+e_start:h_start+e_duration+e_start]
-    resp_he = resp[h_start+e_start:h_start+e_duration+e_start]
-    stim_hl = stimulus[h_start+contrast_duration-l_duration:h_start+contrast_duration]
-    resp_hl = resp[h_start+contrast_duration-l_duration:h_start+contrast_duration]
-    stim_le = stimulus[l_start+e_start:l_start+e_duration+e_start]
-    resp_le = resp[l_start+e_start:l_start+e_duration+e_start]
-    stim_ll = stimulus[l_start+contrast_duration-l_duration:l_start+contrast_duration]
-    resp_ll = resp[l_start+contrast_duration-l_duration:l_start+contrast_duration]
-    _, _, x_he, nonlinear_he = LN_model_1d(stim_he, resp_he)
-    _, _, x_hl, nonlinear_hl = LN_model_1d(stim_hl, resp_hl)
-    _, _, x_le, nonlinear_le = LN_model_1d(stim_le, resp_le)
-    _, _, x_ll, nonlinear_ll = LN_model_1d(stim_ll, resp_ll)
+    contrast = stim.std() / stim.mean()
+    stim = scipy.stats.zscore(stim) * contrast
+    
+    if sta_method == 'revcor':
+        normed_sta = rev_sta(stim, resp, filter_len)
+    elif sta_method == 'fourier':
+        normed_sta = fourier_sta(stim, resp, filter_len, offset)
+
+    x, nonlinear_prediction = nonlinearity(stim, resp, normed_sta, nonlinearity_type, filter_len)
+    
+    return normed_sta, x, nonlinear_prediction
+
+def contrast_adaption_nonlinear(stimulus, resp, h_start, l_start, contrast_duration=2000, e_start=100, e_duration=400, 
+                                l_duration=500, nonlinearity_type='bin', filter_len=100, sta_method='fourier', offset=10):
+
+    stim_he = stimulus[h_start+e_start-filter_len:h_start+e_duration+e_start]
+    resp_he = resp[h_start+e_start-filter_len:h_start+e_duration+e_start]
+    stim_hl = stimulus[h_start+contrast_duration-l_duration-filter_len:h_start+contrast_duration]
+    resp_hl = resp[h_start+contrast_duration-l_duration-filter_len:h_start+contrast_duration]
+    stim_le = stimulus[l_start+e_start-filter_len:l_start+e_duration+e_start]
+    resp_le = resp[l_start+e_start-filter_len:l_start+e_duration+e_start]
+    stim_ll = stimulus[l_start+contrast_duration-l_duration-filter_len:l_start+contrast_duration]
+    resp_ll = resp[l_start+contrast_duration-l_duration-filter_len:l_start+contrast_duration]
+    _, x_he, nonlinear_he = LN_model_1d(stim_he, resp_he, filter_len, nonlinearity_type, sta_method, offset)
+    _, x_hl, nonlinear_hl = LN_model_1d(stim_hl, resp_hl, filter_len, nonlinearity_type, sta_method, offset)
+    _, x_le, nonlinear_le = LN_model_1d(stim_le, resp_le, filter_len, nonlinearity_type, sta_method, offset)
+    _, x_ll, nonlinear_ll = LN_model_1d(stim_ll, resp_ll, filter_len, nonlinearity_type, sta_method, offset)
+    
+    plt.plot(x_he, nonlinear_he, 'r', label='high early')
+    plt.plot(x_hl, nonlinear_hl, 'b', label='high late')
+    plt.plot(x_le, nonlinear_le, 'k', label='low early')
+    plt.plot(x_ll, nonlinear_ll, 'g', label='low late')
+    plt.legend()
+    plt.show()
+
+    return (x_he, nonlinear_he), (x_hl, nonlinear_hl), (x_le, nonlinear_le), (x_ll, nonlinear_ll)
+
+def contrast_adaption_nonlinear2(stimulus, resp, h_start, l_start, contrast_duration=2000, e_start=100, e_duration=400, 
+                                l_duration=500, nonlinearity_type='bin', filter_len=100, sta_method='fourier', offset=10):
+
+    stim_h = stimulus[h_start:h_start+contrast_duration]
+    resp_h = resp[h_start:h_start+contrast_duration]
+    stim_l = stimulus[l_start:l_start+contrast_duration]
+    resp_l = resp[l_start:l_start+contrast_duration]
+    filter_h, _, _ = LN_model_1d(stim_h, resp_h, filter_len, nonlinearity_type, sta_method, offset)
+    filter_l, _, _ = LN_model_1d(stim_h, resp_h, filter_len, nonlinearity_type, sta_method, offset)
+    
+    stim_he = stimulus[h_start+e_start-filter_len:h_start+e_duration+e_start]
+    resp_he = resp[h_start+e_start-filter_len:h_start+e_duration+e_start]
+    stim_hl = stimulus[h_start+contrast_duration-l_duration-filter_len:h_start+contrast_duration]
+    resp_hl = resp[h_start+contrast_duration-l_duration-filter_len:h_start+contrast_duration]
+    stim_le = stimulus[l_start+e_start-filter_len:l_start+e_duration+e_start]
+    resp_le = resp[l_start+e_start-filter_len:l_start+e_duration+e_start]
+    stim_ll = stimulus[l_start+contrast_duration-l_duration-filter_len:l_start+contrast_duration]
+    resp_ll = resp[l_start+contrast_duration-l_duration-filter_len:l_start+contrast_duration]
+    
+    x_he, nonlinear_he = nonlinearity(stim_he, resp_he, filter_h, nonlinearity_type, filter_len)
+    x_hl, nonlinear_hl = nonlinearity(stim_hl, resp_hl, filter_h, nonlinearity_type, filter_len)
+    x_le, nonlinear_le = nonlinearity(stim_le, resp_le, filter_l, nonlinearity_type, filter_len)
+    x_ll, nonlinear_ll = nonlinearity(stim_ll, resp_ll, filter_l, nonlinearity_type, filter_len)
     
     plt.plot(x_he, nonlinear_he, 'r', label='high early')
     plt.plot(x_hl, nonlinear_hl, 'b', label='high late')
@@ -290,6 +368,8 @@ def analyze_one_pixel(cfg_name, checkpoint_path, stimulus, device, n_units=3, ch
     plt.legend()
     plt.show()
     
+    contrast_adaptation_LN(model, device, **data_kwargs)
+    
     train_dataset = MyDataset(stim_sec='train', **data_kwargs)
     test_data =  DataLoader(dataset=MyDataset(stim_sec='test', stats=train_dataset.stats, **data_kwargs))
     test_pc, pred, _ = pearsonr_eval(model, test_data, n_units, device, with_responses=True)
@@ -297,10 +377,12 @@ def analyze_one_pixel(cfg_name, checkpoint_path, stimulus, device, n_units=3, ch
     
     he, hl, le, ll = contrast_adaption_nonlinear(stimulus, pred[:, cell], h_start=h_start, l_start=l_start)
     
+    print('white noise prediction correlation :{:.4f}'.format(test_pc_noise))
+    
     return layer_outs
 
 def analyze(cfg_name, checkpoint_path, checkpoint_path_one_pixel, stimulus, device,
-            n_units=3, channel=0, cell=0, h_start=2000, l_start=4000):
+            nrepeats=10, n_units=3, channel=0, cell=0, h_start=2000, l_start=4000):
     
     cfg = get_custom_cfg(cfg_name)
     checkpoint = torch.load(checkpoint_path, map_location=device)
@@ -312,17 +394,17 @@ def analyze(cfg_name, checkpoint_path, checkpoint_path_one_pixel, stimulus, devi
         checkpoint_one_pixel = torch.load(checkpoint_path_one_pixel, map_location=device)
         model.kinetics.ksi.data = checkpoint_one_pixel['model_state_dict']['kinetics.ksi']
         model.kinetics.ksr.data = checkpoint_one_pixel['model_state_dict']['kinetics.ksr']
-        if model.ksr_gain:
-            try:
+        try:
+            if model.ksr_gain:
                 model.kinetics.ksr_2.data = checkpoint_one_pixel['model_state_dict']['kinetics.ksr_2']
-            except:
-                pass
+        except:
+            pass
     model.eval()
     
     filter_len = model.img_shape[0]
     
     data_kwargs = dict(cfg.Data)
-    _, layer_outs = contrast_adaptation_kinetic(model, device, insp_keys=['kinetics'], **data_kwargs)
+    _, layer_outs = contrast_adaptation_kinetic(model, device, insp_keys=['kinetics'], nrepeats=nrepeats, **data_kwargs)
 
     plt.plot(np.arange(3000 - filter_len),layer_outs['kinetics'][:, 0, channel], label='R')
     plt.plot(np.arange(3000 - filter_len),layer_outs['kinetics'][:, 1, channel], label='A')
@@ -331,20 +413,22 @@ def analyze(cfg_name, checkpoint_path, checkpoint_path_one_pixel, stimulus, devi
     plt.legend()
     plt.show()
     
-    contrast_adaptation_LN(model, device, **data_kwargs)
+    contrast_adaptation_LN(model, device, nrepeats=nrepeats, **data_kwargs)
     
     data_kwargs['stim'] = 'fullfield_whitenoise'
     train_dataset_noise = MyDataset(stim_sec='train', **data_kwargs)
     test_data_noise =  DataLoader(dataset=MyDataset(stim_sec='test', stats=train_dataset_noise.stats, **data_kwargs))
-    test_pc_noise, pred_noise, _ = pearsonr_eval(model, test_data_noise, n_units, device, with_responses=True)
+    test_pc_noise, pred_noise, _ = pearsonr_eval(model, test_data_noise, n_units, device, with_responses=True,
+                                                 I20=cfg.Data.I20, start_idx=cfg.Data.start_idx, hs_mode=cfg.Data.hs_mode)
     pred_noise = np.pad(pred_noise, ((filter_len, 0), (0,0)), 'constant', constant_values=(0,0))
 
-    he, hl, le, ll = contrast_adaption_nonlinear(stimulus, pred_noise[:, cell], h_start=h_start, l_start=l_start)
+    he, hl, le, ll = contrast_adaption_nonlinear2(stimulus, pred_noise[:, cell], h_start=h_start, l_start=l_start)
     
     data_kwargs['stim'] = 'naturalscene'
     train_dataset_natural = MyDataset(stim_sec='train', **data_kwargs)
     test_data_natural =  DataLoader(dataset=MyDataset(stim_sec='test', stats=train_dataset_natural.stats, **data_kwargs))
-    test_pc_natural = pearsonr_eval(model, test_data_natural, n_units, device)
+    test_pc_natural = pearsonr_eval(model, test_data_natural, n_units, device,
+                                    I20=cfg.Data.I20, start_idx=cfg.Data.start_idx, hs_mode=cfg.Data.hs_mode)
     
     print('white noise prediction correlation :{:.4f}'.format(test_pc_noise))
     print('natural scene prediction correlation: {:.4f}'.format(test_pc_natural))

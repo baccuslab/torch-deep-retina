@@ -315,7 +315,7 @@ class LNK(nn.Module):
     def __init__(self, name, dt=0.01, img_shape=(100,), ka_offset=False, ksr_gain=False, k_inits={}, **kwargs):
         super().__init__()
         
-        self.name
+        self.name = name
         self.dt = dt
         self.filter_len = img_shape[0]
         

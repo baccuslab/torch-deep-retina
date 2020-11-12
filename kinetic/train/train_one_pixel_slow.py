@@ -102,7 +102,7 @@ def train(cfg):
         epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size * cfg.Data.loss_bin
         
         pearson = pearsonr_eval(model, validation_data, cfg.Model.n_units, device, 
-                                I20=cfg.Data.I20, start_idx=cfg.Data.start_idx, hs_type=cfg.Data.hs_mode)
+                                I20=cfg.Data.I20, start_idx=cfg.Data.start_idx, hs_mode=cfg.Data.hs_mode)
         scheduler.step(pearson)
         
         print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}'.format(epoch, epoch_loss, pearson))

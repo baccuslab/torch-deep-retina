@@ -1,0 +1,14 @@
+exp_id: 'BN_CNN_Stack_whitenoise'
+img_shape: [40,50,50]
+Model:
+    name: 'BN_CNN_Stack'
+    ksizes: (15, 11)
+    checkpoint: ''
+Data:
+    batch_size: 512
+    data_path: '/home/TRAIN_DATA'
+    stim: 'whitenoise'
+Optimize:
+    trunc_intvl: 1
+    l2: 1e-3
+    l1: 1e-4
