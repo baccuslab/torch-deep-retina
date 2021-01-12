@@ -1,7 +1,7 @@
 {
-    "exp_name":"sinfxn",
+    "exp_name":"myfirstexp",
     "exp_num_offset":0,
-    "description":null,
+    "description":"type a description here!",
     "n_repeats":1,
     "cross_val":false,
     "cross_val_idx":null,
