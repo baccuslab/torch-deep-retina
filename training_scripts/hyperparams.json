@@ -1,5 +1,5 @@
 {
-    "exp_name":"myfirstexp",
+    "exp_name":"test",
     "exp_num_offset":0,
     "description":"type a description here!",
     "n_repeats":1,
@@ -10,6 +10,7 @@
     "save_every_epoch":false,
     "startpt":null,
 
+    "datapath":"~/demo_tdr_data/",
     "dataset":"15-10-07",
     "cells":"all",
     "stim_type":"naturalscene",
