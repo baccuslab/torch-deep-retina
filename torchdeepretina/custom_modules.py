@@ -1251,3 +1251,258 @@ class Sin(nn.Module):
 
     def forward(self,x):
         return torch.sin(x)
+
+
+    def forward(self, x):
+        pass
+
+class SelfAttn2d(nn.Module):
+    """
+    This applies attention over a block of features.
+    """
+    def __init__(self, in_chans, attn_size=64, n_heads=8,
+                                               prob_attn=False):
+        """
+        in_chans: int
+            the size of the embeddings
+        attn_size: int
+            the size of the projected spaces in the attention layers
+        n_heads: int
+            the number of attention heads
+        prob_attn: bool
+            if true, the queries and keys are projected into a
+            gaussian parameter vectors space and sampled
+        """
+        super().__init__()
+        self.in_chans = in_chans
+        self.attn_size = attn_size
+        self.n_heads = n_heads
+        self.prob_attn = prob_attn
+
+        self.norm1 = nn.LayerNorm(self.in_chans)
+        self.multi_attn = MultiHeadAttention(self.in_chans,
+                                             self.attn_size,
+                                             self.n_heads,
+                                             self.prob_attn)
+        self.norm2 = nn.LayerNorm(self.in_chans)
+
+    def forward(self,x):
+        """
+        x: torch tensor (B,C,H,W)
+        """
+        shape = x.shape
+        x = x.reshape(shape[0],shape[1],-1).permute(0,2,1)
+        x = self.norm1(x)
+        fx = self.multi_attn(x,x,x)
+        x = self.norm2(fx+x)
+        return x.permute(0,2,1).reshape(shape)
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self, emb_size, attn_size, n_heads=8,
+                                            prob_attn=False):
+        """
+        emb_size: int
+            the size of the embeddings
+        attn_size: int
+            the size of the projected spaces in the attention layers
+        n_heads: int
+            the number of attention heads
+        prob_attn: bool
+            if true, the queries and keys are projected into a
+            gaussian parameter vectors space and sampled
+        """
+        super().__init__()
+        self.emb_size = emb_size
+        self.n_heads = n_heads
+        self.prob_attn = prob_attn
+        self.attn_size = attn_size
+        self.qk_attn_size = 2*attn_size if prob_attn else attn_size
+
+        xavier_scale = np.sqrt((emb_size + attn_size*n_heads)/2)
+        w_v = torch.randn(emb_size, attn_size*n_heads)/xavier_scale
+        self.w_v = nn.Parameter(w_v)
+
+        attnhead = self.qk_attn_size*n_heads
+        w_q = torch.randn(emb_size, attnhead)/xavier_scale
+        self.w_q = nn.Parameter(w_q)
+        w_k = torch.randn(emb_size, attnhead)/xavier_scale
+        self.w_k = nn.Parameter(w_k)
+
+        self.outs = nn.Linear(attn_size*n_heads, emb_size)
+        self.ps = None
+
+    def forward(self, q, k, v, mask=None, q_mask=None,
+                                          k_mask=None):
+        """
+        q: tensor (B,S,E)
+            the queries
+        k: tensor (B,S,E)
+            the keys
+        v: tensor (B,S,E)
+            the values
+        mask: tensor (S,S)
+            a mask consisting of 0s and some large magnitude negative
+            number in the positions that should not influence the
+            attention.
+            [0,-1e9,-1e9,-1e9]
+            [0,   0,-1e9,-1e9]
+            [0,   0,   0,-1e9]
+            [0,   0,   0,   0]
+        q_mask: tensor (B,S)
+            a mask consisting of 0s and some large magnitude negative
+            number in the positions that should not influence the
+            attention for each query.
+            [0,-1e9,-1e9,-1e9]
+        k_mask: tensor (B,S)
+            a mask consisting of 0s and some large magnitude negative
+            number in the positions that should not influence the
+            attention for each query.
+            [0,-1e9,-1e9,-1e9]
+        """
+        fq = torch.matmul(q, self.w_q) # (B,S,H*A)
+        fk = torch.matmul(k, self.w_k) # (B,S,H*A)
+        fv = torch.matmul(v, self.w_v) # (B,S,H*A)
+
+        batch,seq_q = q.shape[:2]
+        fq = fq.reshape(batch, seq_q, self.n_heads, self.qk_attn_size) 
+        fq = fq.permute(0,2,1,3) # (B,H,Sq, A)
+
+        batch,seq_k = k.shape[:2]
+        fk = fk.reshape(batch, seq_k, self.n_heads, self.qk_attn_size) 
+        fk = fk.permute(0,2,3,1) # (B,H,A,Sk)
+        # seq_k should always be equal to seq_v
+        fv = fv.reshape(batch, seq_k, self.n_heads, self.attn_size) 
+        fv = fv.permute(0,2,1,3) # (B,H,Sk,A)
+
+        if self.prob_attn:
+            fk = sample_probs(fk,dim=-2)
+            fq = sample_probs(fq)
+
+        f = torch.matmul(fq,fk)/np.sqrt(self.attn_size) # (B,H,Sq,Sk)
+        if mask is not None:
+            row,col = f.shape[-2:]
+            f = f + mask[:row,:col]
+        new_min = torch.min(f).item()
+        if q_mask is not None:
+            f = f + q_mask[:,None,:f.shape[-2],None]
+        if k_mask is not None:
+            f = f + k_mask[:,None,None,:f.shape[-1]]
+        f = torch.clamp(f,new_min,torch.max(f).item())
+        ps = F.softmax(f,dim=-1) # (B,H,Sq,Sk) ps along Sk
+        self.ps = ps
+        attns = torch.matmul(ps,fv) # (B,H,Sq,A)
+        attns = attns.permute(0,2,1,3) # (B,Sq,H,A)
+        attns = attns.reshape(batch,seq_q,-1)
+        return self.outs(attns)
+
+class AttnConv2d(nn.Module):
+    """
+    This applies local, spatially invariant attention over a block of
+    features. The best way to describe this is convolutional attention.
+    Essentially attention is applied to only the features in the local
+    2d vicinity of each other feature.
+
+    The general algorithm is as follows:
+    Inpts: tensor (B,C,H,W)
+        1. self attention is applied over the flattened H and W
+    """
+    def __init__(self, in_chans, kernel_size, attn_size=64,
+                                              n_heads=8,
+                                              prob_attn=False):
+        """
+        emb_size: int
+            the size of the embeddings
+        attn_size: int
+            the size of the projected spaces in the attention layers
+        n_heads: int
+            the number of attention heads
+        prob_attn: bool
+            if true, the queries and keys are projected into a
+            gaussian parameter vectors space and sampled
+        """
+        super().__init__()
+        raise NotImplemented
+
+        self.in_chans = in_chans
+        self.kernel_size = kernel_size
+        self.attn_size = attn_size
+        self.n_heads = n_heads
+        self.qk_attn_size = 2*attn_size if prob_attn else attn_size
+
+        xavier_scale = np.sqrt((emb_size + attn_size*n_heads)/2)
+        w_v = torch.randn(emb_size, attn_size*n_heads)/xavier_scale
+        self.w_v = nn.Parameter(w_v)
+
+        attnhead = self.qk_attn_size*n_heads
+        w_q = torch.randn(emb_size, attnhead)/xavier_scale
+        self.w_q = nn.Parameter(w_q)
+        w_k = torch.randn(emb_size, attnhead)/xavier_scale
+        self.w_k = nn.Parameter(w_k)
+
+        self.outs = nn.Linear(attn_size*n_heads, emb_size)
+        self.ps = None
+
+    def forward(self, q, k, v, mask=None, q_mask=None,
+                                          k_mask=None):
+        """
+        q: tensor (B,S,E)
+            the queries
+        k: tensor (B,S,E)
+            the keys
+        v: tensor (B,S,E)
+            the values
+        mask: tensor (S,S)
+            a mask consisting of 0s and some large magnitude negative
+            number in the positions that should not influence the
+            attention.
+            [0,-1e9,-1e9,-1e9]
+            [0,   0,-1e9,-1e9]
+            [0,   0,   0,-1e9]
+            [0,   0,   0,   0]
+        q_mask: tensor (B,S)
+            a mask consisting of 0s and some large magnitude negative
+            number in the positions that should not influence the
+            attention for each query.
+            [0,-1e9,-1e9,-1e9]
+        k_mask: tensor (B,S)
+            a mask consisting of 0s and some large magnitude negative
+            number in the positions that should not influence the
+            attention for each query.
+            [0,-1e9,-1e9,-1e9]
+        """
+        fq = torch.matmul(q, self.w_q) # (B,S,H*A)
+        fk = torch.matmul(k, self.w_k) # (B,S,H*A)
+        fv = torch.matmul(v, self.w_v) # (B,S,H*A)
+
+        batch,seq_q = q.shape[:2]
+        fq = fq.reshape(batch, seq_q, self.n_heads, self.qk_attn_size) 
+        fq = fq.permute(0,2,1,3) # (B,H,Sq, A)
+
+        batch,seq_k = k.shape[:2]
+        fk = fk.reshape(batch, seq_k, self.n_heads, self.qk_attn_size) 
+        fk = fk.permute(0,2,3,1) # (B,H,A,Sk)
+        # seq_k should always be equal to seq_v
+        fv = fv.reshape(batch, seq_k, self.n_heads, self.attn_size) 
+        fv = fv.permute(0,2,1,3) # (B,H,Sk,A)
+
+        if self.prob_attn:
+            fk = sample_probs(fk,dim=-2)
+            fq = sample_probs(fq)
+
+        f = torch.matmul(fq,fk)/np.sqrt(self.attn_size) # (B,H,Sq,Sk)
+        if mask is not None:
+            row,col = f.shape[-2:]
+            f = f + mask[:row,:col]
+        new_min = torch.min(f).item()
+        if q_mask is not None:
+            f = f + q_mask[:,None,:f.shape[-2],None]
+        if k_mask is not None:
+            f = f + k_mask[:,None,None,:f.shape[-1]]
+        f = torch.clamp(f,new_min,torch.max(f).item())
+        ps = F.softmax(f,dim=-1) # (B,H,Sq,Sk) ps along Sk
+        self.ps = ps
+        attns = torch.matmul(ps,fv) # (B,H,Sq,A)
+        attns = attns.permute(0,2,1,3) # (B,Sq,H,A)
+        attns = attns.reshape(batch,seq_q,-1)
+        return self.outs(attns)
+

@@ -235,7 +235,7 @@ class Trainer:
                 model.eval()
                 with torch.no_grad():
                     # Miscellaneous Initializations
-                    step_size = 500
+                    step_size = 128 if hyps['self_attn'] else 500
                     n_loops = data_distr.val_shape[0]//step_size
                     if verbose:
                         print()
@@ -267,8 +267,10 @@ class Trainer:
                     avg_pearson = 0
                     if test_data is not None:
                         test_x = torch.from_numpy(test_data.X)
-                        test_obs = model(test_x.to(DEVICE)).cpu()
-                        test_obs = test_obs.detach().numpy()
+                        test_obs = utils.inspect(model,
+                                               X=test_x,
+                                               batch_size=step_size,
+                                               to_numpy=True)['outputs']
                         rng = range(test_obs.shape[-1])
                         pearsons = utils.pearsonr(test_obs,test_data.y)
                         for cell,r in enumerate(pearsons):
@@ -771,6 +773,8 @@ def validate_static(hyps, model, data_distr, loss_fn, step_size=500,
         if verbose and i%max((n_loops//10),1) == 0:
             n = data_distr.val_y.shape[0]
             print("{}/{}".format(i*step_size,n), end="     \r")
+        if hyps['exp_name']=="test" and i >= 3:
+            break
     return val_loss, val_preds, val_targs
 
 def get_model_and_distr(hyps, train_data):

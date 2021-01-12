@@ -170,7 +170,8 @@ def test_model(model, hyps, verbose=False):
     """
     data = tdrdatas.load_test_data(hyps,verbose=verbose)
     with torch.no_grad():
-        response = tdrutils.inspect(model, data.X, batch_size=1000,
+        batch_size = 128 if hyps['self_attn'] else 1000
+        response = tdrutils.inspect(model, data.X, batch_size=128,
                                          to_numpy=False)['outputs']
         if hyps['lossfxn'] == "PoissonNLLLoss":
             lp = hyps['log_poisson']
@@ -620,9 +621,10 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'],
                                   filt_len=model.img_shape[0],
                                   verbose=verbose)
 
+    batch_size = 128
     df = tdrintr.get_intr_cors(model, stim_dict, mem_pot_dict,
                                            layers=set(layers),
-                                           batch_size=500,
+                                           batch_size=batch_size,
                                            slide_steps=slide_steps,
                                            verbose=verbose,
                                            window=False)
@@ -753,7 +755,10 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
     if verbose:
         print("Test Cor:", gc_cor,"  Loss:", gc_loss)
 
-    layers = tdrutils.get_conv_layer_names(model)
+    if hyps['self_attn']:
+        layers = ["sequential.0", "sequential.5","sequential.10"]
+    else:
+        layers = tdrutils.get_conv_layer_names(model)
     layers = sorted(layers, key=lambda x: int(x.split(".")[-1]))
     if intrnrn_stim is not None and intrnrn_stim.lower() != "none":
         if verbose:
@@ -762,7 +767,8 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
         if intrnrn_stim.lower() == "all": stim_keys = {"boxes",
                                                        "lines"}
         else: stim_keys = {intrnrn_stim}
-        intr_df = get_intr_cors(model, layers=layers,
+        with torch.no_grad():
+            intr_df = get_intr_cors(model, layers=layers,
                                        stim_keys=stim_keys,
                                        slide_steps=slide_steps,
                                        verbose=verbose)

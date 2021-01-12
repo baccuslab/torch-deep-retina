@@ -36,6 +36,9 @@ class TDRModel(nn.Module):
                                                 n_layers=3,
                                                 stackconvs=True,
                                                 bnaftrelu=False,
+                                                attn_size=64,
+                                                n_heads=8,
+                                                prob_attn=False,
                                                 **kwargs):
         """
         n_units: int
@@ -93,6 +96,13 @@ class TDRModel(nn.Module):
         bnaftrelu: bool
             if true, the batchnorm is placed after the relu. Usually
             it is placed before.
+        attn_size: int
+            the size of the projected spaces in the attention layers
+        n_heads: int
+            the number of attention heads
+        prob_attn: bool
+            if true, the queries and keys are projected into a
+            gaussian parameter vectors space and sampled
         """
         super().__init__()
         self.n_units = n_units
@@ -117,6 +127,9 @@ class TDRModel(nn.Module):
         self.n_layers = n_layers
         self.stackconvs = stackconvs
         self.bnaftrelu = bnaftrelu
+        self.attn_size = attn_size
+        self.n_heads   = n_heads
+        self.prob_attn = prob_attn
 
     def forward(self, x):
         return x
@@ -613,7 +626,9 @@ class VaryModel(TDRModel):
     """
     def __init__(self, drop_p=0, one2one=False, stack_ksizes=3,
                                         stack_chans=None,
-                                        paddings=None, **kwargs):
+                                        paddings=None,
+                                        self_attn=False,
+                                        **kwargs):
         super().__init__(**kwargs)
         """
         drop_p: float
@@ -631,10 +646,14 @@ class VaryModel(TDRModel):
         paddings: list of ints
             the padding for each conv layer. If none,
             defaults to 0.
+        self_attn: bool
+            if true, a SelfAttn2d module is added to layers 1 and 2.
+            (See `custom_modules.SelfAttn2d` for details)
         """
         self.name = 'VaryNet'
         self.drop_p = drop_p
         self.one2one = one2one
+        self.self_attn = self_attn
         if isinstance(stack_ksizes, int):
             stack_ksizes=[stack_ksizes for i in\
                                         range(len(self.ksizes))]
@@ -681,6 +700,11 @@ class VaryModel(TDRModel):
             shape = update_shape(shape, self.ksizes[i],
                                         padding=self.paddings[i])
             self.shapes.append(tuple(shape))
+            if self.self_attn and i>0: # first layer doesn't get attn
+                attn = SelfAttn2d(temp_chans[i+1], self.attn_size,
+                                                   self.n_heads,
+                                                   self.prob_attn)
+                modules.append(attn)
                     
             if self.bnaftrelu:
                 modules.append(GaussianNoise(std=self.noise))
@@ -714,6 +738,11 @@ class VaryModel(TDRModel):
             modules.append(conv)
             shape = update_shape(shape, self.ksizes[self.n_layers-1])
             self.shapes.append(tuple(shape))
+            if self.self_attn:
+                attn = SelfAttn2d(self.n_units, self.attn_size,
+                                                self.n_heads,
+                                                self.prob_attn)
+                modules.append(attn)
             modules.append(GrabUnits(self.centers,
                                      self.ksizes[:self.n_layers],
                                      self.img_shape))
