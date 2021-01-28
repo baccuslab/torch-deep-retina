@@ -146,6 +146,44 @@ def OnePixelModel(cfg, state_dict, device):
     
     return model
 
+def OneDimModel(cfg, state_dict, device):
+    
+    model_kwargs = dict(cfg.Model)
+    model = KineticsModel1D(**model_kwargs).to(device)
+    
+    conv_weights = []
+    for i in range((cfg.Model.ksizes[0]-1)//2):
+        conv_weights.append(state_dict['bipolar.0.convs.{}.weight'.format(i)].cpu().numpy())
+    model.bipolar[0].weight.data = torch.from_numpy(LinearStack(conv_weights).sum(axis=(-2))).to(device)
+    model.bipolar[0].bias.data = state_dict['bipolar.0.convs.6.bias'].to(device)
+    
+    model.kinetics.ksi.data = state_dict['kinetics.ksi'].to(device)
+    model.kinetics.ksr.data = state_dict['kinetics.ksr'].to(device)
+    model.kinetics.ka.data = state_dict['kinetics.ka'].to(device)
+    model.kinetics.kfi.data = state_dict['kinetics.kfi'].to(device)
+    model.kinetics.kfr.data = state_dict['kinetics.kfr'].to(device)
+    
+    if model.ka_offset:
+        model.kinetics.ka_2.data = state_dict['kinetics.ka_2'].to(device)
+    if model.ksr_gain:
+        model.kinetics.ksr_2.data = state_dict['kinetics.ksr_2'].to(device)
+    
+    model.kinetics_w.data = state_dict['kinetics_w'].to(device)
+    model.kinetics_b.data = state_dict['kinetics_b'].to(device)
+    
+    conv_weights = []
+    for i in range((cfg.Model.ksizes[1]-1)//2):
+        conv_weights.append(state_dict['amacrine.1.convs.{}.weight'.format(i)].cpu().numpy())
+    model.amacrine[1].weight.data = torch.from_numpy(LinearStack(conv_weights).sum(axis=(-2))).to(device)
+    model.amacrine[1].bias.data = state_dict['amacrine.1.convs.4.bias'].to(device)
+    
+    shape0 = int(np.sqrt(state_dict['ganglion.0.weight'].shape[1] // cfg.Model.chans[1]))
+    model.ganglion[0].weight.data = state_dict['ganglion.0.weight'].view(cfg.Model.n_units, cfg.Model.chans[1], shape0, shape0).sum(-2).view(cfg.Model.n_units, cfg.Model.chans[1] * shape0).to(device)
+    
+    model.float()
+    
+    return model
+
 def temporal_frequency_normalized_loss(y_pred, y_targ, loss_fn, device, cut_off=8, num_units=1, filter_len=25, dt=0.01):
     
     numtaps = filter_len

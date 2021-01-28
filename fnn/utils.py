@@ -61,9 +61,10 @@ def get_data(cfg):
     norm_stats['mean'] = train_data.stats['mean']
     norm_stats['std']= train_data.stats['std'] 
     
-    test_data = DataContainer(loadexpt(cfg.Data.date, 'all', cfg.Data.stim, 'test', cfg.img_shape[0], 0, 
-                                        norm_stats=norm_stats, data_path=cfg.Data.data_path))
-    return train_data, test_data
+    #test_data = DataContainer(loadexpt(cfg.Data.date, 'all', cfg.Data.stim, 'test', cfg.img_shape[0], 0, 
+     #                                   norm_stats=norm_stats, data_path=cfg.Data.data_path))
+    #return train_data, test_data
+    return train_data
 
 def get_model_and_distr(train_data, num_val=10000, batch_size=5000):
     data_distr = DataDistributor(train_data, num_val, batch_size, 

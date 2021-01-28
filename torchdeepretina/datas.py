@@ -26,7 +26,10 @@ CELLS = {
     '16-01-07': [0, 2, 7, 10, 11, 12, 31],
     '16-01-08': [0, 3, 7, 9, 11],
     '16-05-31': [2, 3, 4, 14, 16, 18, 20, 25, 27],
-    '20-09-15': [0, 1, 2]
+    '20-09-15': [0, 1, 2],
+    '20-12-02': [1, 2, 3],
+    '21-01-26': [0, 1, 2, 3],
+    '21-01-262': [0, 1, 2, 3]
 }
 CENTERS = {
     '15-10-07': [[21,18], [24,20], [22,18], [27,18], [31,20]],
@@ -36,7 +39,10 @@ CENTERS = {
             [27,11], [26,13], [24,10]],
     '16-01-07': None,
     '16-01-08': None,
-    '20-09-15': None
+    '20-09-15': None,
+    '20-12-02': None,
+    '21-01-26': None,
+    '21-01-262': None
 }
 
 Exptdata = namedtuple('Exptdata', ['X','y','spkhist','stats',"cells","centers"])
@@ -102,7 +108,8 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, cutout_widt
 
         # load the stimulus into memory as a numpy array, and z-score it
         if cutout_width is None:
-            stim = np.asarray(f[train_or_test]['stimulus']).astype('float32')
+            #stim = np.asarray(f[train_or_test]['stimulus']).astype('float32')
+            stim = np.asarray(f[train_or_test]['stimulus'])
         else:
             arr = np.asarray(f[train_or_test]['stimulus'])
             stim = ft.cutout(arr, idx=(px, py), width=cutout_width).astype('float32')
@@ -113,7 +120,7 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, cutout_widt
         else:
             stats['mean'] = stim.mean()
             stats['std'] = stim.std()+1e-7
-        stim = (stim-stats['mean'])/stats['std']
+        #stim = (stim-stats['mean'])/stats['std']
 
         # apply clipping to remove the stimulus just after transitions
         num_blocks = NUM_BLOCKS[expt] if train_or_test == 'train' and nskip > 0 else 1

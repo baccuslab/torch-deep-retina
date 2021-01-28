@@ -557,3 +557,74 @@ class KineticsOnePixel(nn.Module):
         fx = F.relu(fx)
         fx = self.ganglion(fx)
         return fx, hs
+    
+class KineticsModel1D(nn.Module):
+    def __init__(self, name, n_units=5, bias=True, linear_bias=False, chans=[8, 8], img_shape=(40, 50, 50), ksizes=(15, 11),
+                 k_chan=True, ka_offset=False, ksr_gain=False, k_inits={}, dt=0.01, scale_shift_chan=True, **kwargs):
+        super().__init__()
+        
+        self.name = name
+        self.n_units = n_units
+        self.chans = chans 
+        self.dt = dt
+        self.img_shape = img_shape 
+        self.ksizes = ksizes 
+        shape = self.img_shape[1:]
+        self.shapes = []
+        self.k_inits= k_inits
+        self.k_chan = k_chan
+        self.ka_offset = ka_offset
+        self.ksr_gain = ksr_gain
+        self.scale_shift_chan = scale_shift_chan
+
+        modules = []
+        modules.append(nn.Conv1d(self.img_shape[0], self.chans[0], kernel_size=self.ksizes[0], bias=bias))
+        shape = update_shape(shape, self.ksizes[0])
+        self.shapes.append(tuple(shape))
+        
+        modules.append(nn.Sigmoid())
+        modules.append(Reshape((-1, self.chans[0], shape[0])))
+        self.bipolar = nn.Sequential(*modules)
+        
+        n_states = 4
+        self.h_shapes = (n_states, self.chans[0], shape[0])
+        self.kinetics = Kinetics(dt=self.dt, chan=self.chans[0], ka_offset=ka_offset, ksr_gain=ksr_gain, k_chan=k_chan, **k_inits)
+            
+        if scale_shift_chan:
+            self.kinetics_w = nn.Parameter(torch.rand(self.chans[0], 1))
+            self.kinetics_b = nn.Parameter(torch.rand(self.chans[0], 1))
+        else:
+            self.kinetics_w = nn.Parameter(torch.rand(1))
+            self.kinetics_b = nn.Parameter(torch.rand(1))
+            
+        modules = []
+        modules.append(nn.ReLU())
+        self.spiking_block = nn.Sequential(*modules)
+        
+
+        modules = []
+        modules.append(Reshape((-1, self.chans[0], shape[0])))
+        modules.append(nn.Conv1d(self.chans[0], self.chans[1], kernel_size=self.ksizes[1], bias=bias))
+        shape = update_shape(shape, self.ksizes[1])
+        self.shapes.append(tuple(shape))
+        modules.append(Flatten())
+        modules.append(nn.ReLU())
+        self.amacrine = nn.Sequential(*modules)
+
+        modules = []
+        modules.append(nn.Linear(self.chans[1] * shape[0], self.n_units, bias=linear_bias))
+        modules.append(nn.Softplus())
+        self.ganglion = nn.Sequential(*modules)
+        
+    def forward(self, x, hs):
+        """
+        x - FloatTensor (B, C, H, W)
+        hs - (B,S,C,N) or (B,S,1,N)
+        """
+        fx = self.bipolar(x)
+        fx, hs = self.kinetics(fx, hs)
+        fx = self.kinetics_w * fx + self.kinetics_b
+        fx = self.spiking_block(fx)
+        fx = self.amacrine(fx)
+        fx = self.ganglion(fx)
+        return fx, hs

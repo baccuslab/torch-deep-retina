@@ -60,6 +60,8 @@ def XY(data, stim_type, img_shape, stim_sec, val_size):
         X = data.X[:]
     elif stim_type == 'one_pixel':
         X = data.X[:, :, img_shape[1]//2, img_shape[2]//2]
+    elif stim_type == 'code_bar':
+        X = data.X[:, :, img_shape[1]//2, :]
     else:
         raise Exception('Invalid stimulus type')
     y = data.y[:]
@@ -94,7 +96,7 @@ class MyDataset(Dataset):
         return self.y.shape[0]
     
     def __getitem__(self, index):
-        inpt = torch.from_numpy(self.X[index])
+        inpt = torch.from_numpy((self.X[index].astype('float32') - self.stats['mean']) / self.stats['std'])
         trgt = torch.from_numpy(self.y[index])
         return (inpt, trgt)
     
@@ -126,6 +128,10 @@ class TrainDatasetBoth(Dataset):
         self.X = interleave(X_noise, X_natural, each_len_noise, each_len_natural)
         self.y = interleave(y_noise, y_natural, each_len_noise, each_len_natural)
         
+        self.stats = {}
+        self.stats['mean'] = (data_natural.stats['mean'] + data_noise.stats['mean']) / 2
+        self.stats['std'] = np.sqrt((data_natural.stats['std']**2 + data_noise.stats['std']**2) / 2)
+        
         del X_natural
         del y_natural
         del X_noise
@@ -136,7 +142,7 @@ class TrainDatasetBoth(Dataset):
     
     def __getitem__(self, index):
         
-        inpt = torch.from_numpy(self.X[index])
+        inpt = torch.from_numpy((self.X[index].astype('float32') - self.stats['mean']) / self.stats['std'])
         trgt = torch.from_numpy(self.y[index])
                 
         return (inpt, trgt)

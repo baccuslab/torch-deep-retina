@@ -47,7 +47,7 @@ def train(cfg):
     
     model.train()
     
-    train_data, test_data = get_data(cfg)
+    train_data = get_data(cfg)
     data_distr = get_model_and_distr(train_data, cfg.Data.val_size, cfg.Data.batch_size)
     
     for epoch in range(cfg.epoch):
@@ -68,22 +68,24 @@ def train(cfg):
                 
         epoch_loss = epoch_loss / data_distr.train_shape[0] * cfg.Data.batch_size
         
-        pearson, _,_,_ = pearsonr_batch_eval(model, data_distr.val_sample(500), cfg.Model.n_units, device, cfg)
+        #pearson, _,_,_ = pearsonr_batch_eval(model, data_distr.val_sample(500), cfg.Model.n_units, device, cfg)
+        pearsons = pearsonr_eval_cell(model, data_distr.val_sample(500), cfg.Model.n_units, device)
         #scheduler.step(eval_loss)
         
-        print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}'.format(epoch, epoch_loss, pearson))
+        #print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}'.format(epoch, epoch_loss, pearsons))
+        print(epoch, epoch_loss, pearsons)
         
-        update_eval_history(cfg, epoch, pearson, epoch_loss)
+        #update_eval_history(cfg, epoch, pearson, epoch_loss)
         
-        if epoch % cfg.save_intvl == 0:
-            save_path = os.path.join(cfg.save_path, cfg.exp_id, 
-                                     'epoch_{:03d}_loss_{:.2f}_pearson_{:.4f}'
-                                     .format(epoch, epoch_loss, pearson)+'.pth')
+        #if epoch % cfg.save_intvl == 0:
+        #    save_path = os.path.join(cfg.save_path, cfg.exp_id, 
+        #                             'epoch_{:03d}_loss_{:.2f}_pearson_{:.4f}'
+        #                             .format(epoch, epoch_loss, pearson)+'.pth')
             
-            torch.save({'epoch': epoch,
-                        'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                        'loss': epoch_loss}, save_path)
+        #    torch.save({'epoch': epoch,
+        #                'model_state_dict': model.state_dict(),
+        #                'optimizer_state_dict': optimizer.state_dict(),
+        #                'loss': epoch_loss}, save_path)
     
 if __name__ == "__main__":
     cfg = get_custom_cfg(opt.hyper)

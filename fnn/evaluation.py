@@ -5,6 +5,7 @@ from scipy.stats import pearsonr
 from fnn.utils import *
 
 def pearsonr_batch_eval(model, data, n_units, device, cfg):
+    model_status = model.training
     model = model.to(device)
     model.eval()
     loss_fn = nn.PoissonNLLLoss(log_input=False).to(device)
@@ -23,7 +24,7 @@ def pearsonr_batch_eval(model, data, n_units, device, cfg):
         val_targ = np.concatenate(val_targ, axis=0)
         for cell in range(n_units):
             pearsons.append(pearsonr(val_pred[:,cell],val_targ[:,cell])[0])
-        model.train()
+        model.train(model_status)
         loss = loss / cfg.Data.val_size * cfg.Data.batch_size
         return np.array(pearsons).mean(), loss.item(), val_pred, val_targ
     

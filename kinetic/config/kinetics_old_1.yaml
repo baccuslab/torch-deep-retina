@@ -1,0 +1,14 @@
+exp_id: 'kinetics_old_1'
+Model:
+    name: 'KineticsChannelModelFilterBipolarNoNorm'
+    checkpoint: ''
+    linear_bias: False
+    n_units: 5
+    ksr_gain: False
+    k_chan: True
+Data:
+    batch_size: 512
+    data_path: '/home/xhding/tem_stim'
+    date: '20-12-02'
+    stim: 'fullfield'
+    hs_mode: 'multiple'

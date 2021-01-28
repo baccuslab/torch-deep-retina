@@ -1,0 +1,16 @@
+exp_id: 'BN_CNN_Stack'
+img_shape: [40,50,50]
+Model:
+    name: 'BN_CNN_Stack'
+    ksizes: (15, 11)
+    checkpoint: ''
+    n_units: 4
+Data:
+    date: '21-01-26'
+    batch_size: 512
+    data_path: '/home/xhding/tem_stim'
+    stim: 'fullfield_whitenoise'
+Optimize:
+    trunc_intvl: 1
+    l2: 1e-3
+    l1: 1e-4

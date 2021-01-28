@@ -1,0 +1,20 @@
+exp_id: 'kinetics_one_dimension'
+save_intvl: 1
+Model:
+    name: 'KineticsModel1D'
+    checkpoint: '/home/xhding/saved_model/kinetics_1/epoch_005_loss_-75.76_pearson_0.2917.pth'
+    n_units: 3
+Data:
+    trunc_int: 2000
+    loss_bin: 1000
+    val_size: 30000
+    batch_size: 5
+    data_path: '/home/xhding/tem_stim'
+    date: '20-12-02'
+    stim: 'codebar'
+    stim_type: 'code_bar'
+    hs_mode: 'single'
+    start_idx: 4000
+Optimize:
+    loss_fn: 'poisson'
+    lr: 0.2
