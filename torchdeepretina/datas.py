@@ -29,7 +29,7 @@ CELLS = {
     '20-09-15': [0, 1, 2],
     '20-12-02': [1, 2, 3],
     '21-01-26': [0, 1, 2, 3],
-    '21-01-262': [0, 1, 2, 3]
+    '21-03-15': [0, 1, 2, 3, 4, 6]
 }
 CENTERS = {
     '15-10-07': [[21,18], [24,20], [22,18], [27,18], [31,20]],
@@ -42,7 +42,7 @@ CENTERS = {
     '20-09-15': None,
     '20-12-02': None,
     '21-01-26': None,
-    '21-01-262': None
+    '21-03-15': None
 }
 
 Exptdata = namedtuple('Exptdata', ['X','y','spkhist','stats',"cells","centers"])
@@ -50,10 +50,10 @@ __all__ = ['loadexpt','stimcut','CELLS',"CENTERS","DataContainer","DataObj","Dat
 
 class DataContainer():
     def __init__(self, data):
-        self.X = data.X
-        self.y = data.y
         self.centers = data.centers
         self.stats = data.stats
+        self.X = (data.X - self.stats['mean']) / self.stats['std']
+        self.y = data.y
 
 def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, cutout_width=None,                          norm_stats=None, data_path="/home/salamander/experiments/data"):
     """Loads an experiment from an h5 file on disk

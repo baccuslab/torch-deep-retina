@@ -1,6 +1,7 @@
 import torch
 import os
 import scipy
+import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 from torch.utils.data.dataloader import DataLoader
@@ -101,11 +102,11 @@ def contrast_adaptation_LN(model, device, hs_mode='single', stim_type='full', I2
     if cells == 'all':
         cells = range(model.n_units)
     for cell in cells:
-        _, x_he, nonlinear_he = LN_model_multi_trials_fourier(stimuli, responses, c1, cell, delay, delay + 500)
-        _, x_hl, nonlinear_hl = LN_model_multi_trials_fourier(stimuli, responses, c1, cell, delay + duration - 600, delay + duration)
-        _, x_le, nonlinear_le = LN_model_multi_trials_fourier(stimuli, responses, c0, cell, delay + duration, 
-                                                         delay + duration + 500)
-        _, x_ll, nonlinear_ll = LN_model_multi_trials_fourier(stimuli, responses, c0, cell, nsamples - 600, nsamples)
+        _, x_he, nonlinear_he = LN_model_multi_trials(stimuli, responses, c1, cell, delay, delay + 500, sta_type='revcor')
+        _, x_hl, nonlinear_hl = LN_model_multi_trials(stimuli, responses, c1, cell, delay + duration - 600, delay + duration, sta_type='revcor')
+        _, x_le, nonlinear_le = LN_model_multi_trials(stimuli, responses, c0, cell, delay + duration, 
+                                                         delay + duration + 500, sta_type='revcor')
+        _, x_ll, nonlinear_ll = LN_model_multi_trials(stimuli, responses, c0, cell, nsamples - 600, nsamples, sta_type='revcor')
         plt.plot(x_he, nonlinear_he, 'r', label='high early')
         plt.plot(x_hl, nonlinear_hl, 'b', label='high late')
         plt.plot(x_le, nonlinear_le, 'k', label='low early')
@@ -434,3 +435,41 @@ def analyze(cfg_name, checkpoint_path, checkpoint_path_one_pixel, stimulus, devi
     print('natural scene prediction correlation: {:.4f}'.format(test_pc_natural))
     
     return test_pc_noise, test_pc_natural, layer_outs
+
+def contrast_adaptation_fullfield_multi(model, device):
+    
+    with h5py.File('/home/xhding/tem_stim/21-01-262/fullfield.h5', 'r') as f:
+        stimulus =  np.asarray(f['train']['stimulus'][:, 25, 25]).astype('float32')
+    
+    fullfield_dataset = MyDataset('validation', (40,50,50), '/home/xhding/tem_stim', '21-01-262', 'fullfield', 0, cells=[1,2,7,10])
+    fullfield_data =  DataLoader(fullfield_dataset)
+    
+    pearson, val_pred, val_targ = pearsonr_eval(model, fullfield_data, 4, device, with_responses=True)
+    
+    stimuli = stimulus[4006:40060].reshape((9,-1))
+    responses = val_pred[3966:40020, :].reshape((9, -1, 4))
+    
+    
+    fig,ax = plt.subplots(5,1,figsize=(20,10))
+    ax[0].plot(stimulus[:])
+    for i in range(4):
+        ax[i+1].plot(responses.mean(0)[:, i])
+    plt.show()
+    
+    for cell in [0,1,2,3]:
+        #_, x_he, nonlinear_he = LN_model_multi_trials(stimuli, responses, 0.35, cell, 0, 500, sta_type='revcor')
+        #_, x_hl, nonlinear_hl = LN_model_multi_trials(stimuli, responses, 0.35, cell, 1400, 2000, sta_type='revcor')
+        #_, x_le, nonlinear_le = LN_model_multi_trials(stimuli, responses, 0.05, cell, 2000, 2500, sta_type='revcor')
+        #_, x_ll, nonlinear_ll = LN_model_multi_trials(stimuli, responses, 0.05, cell, 3400, 4000, sta_type='revcor')
+        _, x_he, nonlinear_he = LN_model_multi_trials_fourier(stimuli, responses, 0.35, cell, 0, 500)
+        _, x_hl, nonlinear_hl = LN_model_multi_trials_fourier(stimuli, responses, 0.35, cell, 1400, 2000)
+        _, x_le, nonlinear_le = LN_model_multi_trials_fourier(stimuli, responses, 0.05, cell, 2000, 2500)
+        _, x_ll, nonlinear_ll = LN_model_multi_trials_fourier(stimuli, responses, 0.05, cell, 3400, 4000)
+        plt.plot(x_he, nonlinear_he, 'r', label='high early')
+        plt.plot(x_hl, nonlinear_hl, 'b', label='high late')
+        plt.plot(x_le, nonlinear_le, 'k', label='low early')
+        plt.plot(x_ll, nonlinear_ll, 'g', label='low late')
+        plt.legend()
+        plt.show()
+    
+    return pearson, stimuli, responses

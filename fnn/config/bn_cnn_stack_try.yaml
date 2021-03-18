@@ -4,12 +4,13 @@ Model:
     name: 'BN_CNN_Stack'
     ksizes: (15, 11)
     checkpoint: ''
-    n_units: 4
+    n_units: 6
 Data:
-    date: '21-01-26'
+    date: '21-03-15'
     batch_size: 512
     data_path: '/home/xhding/tem_stim'
-    stim: 'fullfield_whitenoise'
+    stim: 'naturalscene'
+    val_size: 10000
 Optimize:
     trunc_intvl: 1
     l2: 1e-3

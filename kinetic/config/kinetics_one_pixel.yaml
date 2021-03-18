@@ -2,15 +2,15 @@ exp_id: 'kinetics_one_pixel'
 save_intvl: 1
 Model:
     name: 'KineticsOnePixel'
-    checkpoint: '/home/xhding/saved_model/kinetics_both/epoch_045_loss_-66.61_pearson_natural_0.5144_pearson_noise_0.7054.pth'
-    n_units: 3
+    checkpoint: '/home/xhding/saved_model/kinetics_both/epoch_045_loss_-60.15_pearson_natural_0.4562_pearson_noise_0.4354.pth'
+    n_units: 4
 Data:
     trunc_int: 2000
     loss_bin: 1000
     val_size: 30000
     batch_size: 5
     data_path: '/home/xhding/tem_stim'
-    date: '20-09-15'
+    date: '21-01-26'
     stim: 'fullfield_whitenoise'
     stim_type: 'one_pixel'
     hs_mode: 'single'
@@ -18,3 +18,5 @@ Data:
 Optimize:
     loss_fn: 'mse'
     lr: 0.2
+Scheduler:
+    mode: 'min'

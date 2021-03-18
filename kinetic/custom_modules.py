@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.nn.modules.loss import _Loss
 import torch.nn.functional as F
 import numpy as np
 
@@ -266,3 +267,14 @@ class Chan_Temperal_Filter(nn.Module):
         out = (x * self.filter).sum(axis=-self.spatial-1)
         return out
                                   
+class Weighted_Poisson_MSE(_Loss):
+    
+    def __init__(self, a=1., b=1.):
+        super().__init__()
+        self.a = a
+        self.b = b
+    
+    def forward(self, input, target):
+        out = self.a * nn.PoissonNLLLoss(log_input=False)(input, target)
+        out += self.b * nn.MSELoss()(input, target)
+        return out

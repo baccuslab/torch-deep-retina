@@ -7,6 +7,7 @@ from collections import deque
 from kinetic.models import *
 from torchdeepretina.intracellular import load_interneuron_data, max_correlation
 import torchdeepretina.stimuli as tdrstim
+from kinetic.custom_modules import Weighted_Poisson_MSE
 
 def get_hs(model, batch_size, device, I20=None, mode='single'):
     if mode == 'single':
@@ -41,6 +42,8 @@ def select_lossfn(loss='poisson'):
         return nn.PoissonNLLLoss(log_input=False)
     if loss == 'mse':
         return nn.MSELoss()
+    if loss == 'mix':
+        return Weighted_Poisson_MSE()
     
 def init_params(model, device):
     if model.name == 'LNK':
@@ -206,10 +209,13 @@ def temporal_frequency_normalized_loss(y_pred, y_targ, loss_fn, device, cut_off=
     low_std = torch.std(y_targ_low, dim=-1)[:, :, None]
     high_std = torch.std(y_targ_high, dim=-1)[:, :, None]
     
-    y_pred_low_norm = y_pred_low / low_std
-    y_pred_high_norm = y_pred_high / high_std
-    y_targ_low_norm = y_targ_low / low_std
-    y_targ_high_norm = y_targ_high / high_std
+    low_std[low_std < 5.] = 5.
+    high_std[high_std < 5.] = 5.
+    
+    y_pred_low_norm = y_pred_low / (low_std)
+    y_pred_high_norm = y_pred_high / (high_std)
+    y_targ_low_norm = y_targ_low / (low_std)
+    y_targ_high_norm = y_targ_high / (high_std)
     
     loss = loss_fn(y_pred_low_norm, y_targ_low_norm)
     loss += loss_fn(y_pred_high_norm, y_targ_high_norm)

@@ -7,6 +7,8 @@ Model:
 Data:
     batch_size: 512
     data_path: '/home/xhding/tem_stim'
-    date: '21-01-262'
+    date: '21-01-26'
     stim: 'both'
     hs_mode: 'single'
+Optimize:
+    loss_fn: 'mix'
