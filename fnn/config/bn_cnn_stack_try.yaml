@@ -3,7 +3,7 @@ img_shape: [40,50,50]
 Model:
     name: 'BN_CNN_Stack'
     ksizes: (15, 11)
-    checkpoint: ''
+    checkpoint: '/home/xhding/saved_model/BN_CNN_Stack/epoch_045_loss_67.19_pearson_0.6992.pth'
     n_units: 6
 Data:
     date: '21-03-15'

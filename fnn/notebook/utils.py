@@ -89,6 +89,10 @@ def Fano(single_trial):
     fano = np.nanmean(np.var(0.01*single_trial, axis=0)/np.mean(0.01*single_trial, axis=0))
     return fano
 
+def Fano_bin(single_trial):
+    fano = np.nanmean(np.var(single_trial, axis=0)/np.mean(single_trial, axis=0))
+    return fano
+
 def Fano2(single_trial):
     fano = np.var(0.01*single_trial.sum(axis=1), axis=0)/np.mean(0.01*single_trial.sum(axis=1), axis=0)
     fano = fano.mean()
@@ -169,16 +173,18 @@ def noise_model_pre(x, model, device, poisson=[None, None, None], gaussian=[0, 0
         out = model.ganglion[2:](out)
     return out
 
-def noise_model_post(out, poisson_2, thre=0):
+def noise_model_post(out, poisson_2, device, thre=0):
     with torch.no_grad():
         out[out < thre] = 0
+        if type(poisson_2) == list:
+            poisson_2 = torch.tensor(poisson_2).to(device)
         if poisson_2 != None:
             out = torch.poisson(poisson_2*out)/poisson_2
     return out
 
 def noise_model(x, model, device, poisson=[None, None, None], gaussian=[0, 0, 0, 0], thre=0):
     out = noise_model_pre(x, model, device, poisson, gaussian)
-    out = noise_model_post(out, poisson[2], thre)
+    out = noise_model_post(out, poisson[2], device, thre)
     return out 
     
 def single_noise_plot(para_name, noise_list, error_list, accuracy_list, fano_list, mean_stim_corr_list, mean_noise_corr_list,
@@ -291,10 +297,10 @@ def correlation_plot(single_trial, pred_single_trial, num_trials=5, num_cells=5)
     
     diagonal_idxs = list(range(0, num_cells*num_cells, num_cells+1))
     
-    corr = single_trial_corr_matrix(num_cells, 5, single_trial)
+    corr = single_trial_corr_matrix(num_cells, num_trials, single_trial)
     pred_corr = single_trial_corr_matrix(num_cells, num_trials, pred_single_trial)
     
-    stim_corr = stimuli_corr_matrix(num_cells, 5, single_trial)
+    stim_corr = stimuli_corr_matrix(num_cells, num_trials, single_trial)
     noise_corr = corr - stim_corr
     pred_stim_corr = stimuli_corr_matrix(num_cells, num_trials, pred_single_trial)
     pred_noise_corr = pred_corr - pred_stim_corr
@@ -304,12 +310,16 @@ def correlation_plot(single_trial, pred_single_trial, num_trials=5, num_cells=5)
     
     corr = np.delete(corr.flatten(), diagonal_idxs)
     pred_corr = np.delete(pred_corr.flatten(), diagonal_idxs)
+    trial_corr = stim_corr.flatten()[diagonal_idxs]
+    pred_trial_corr = pred_stim_corr.flatten()[diagonal_idxs]
     stim_corr = np.delete(stim_corr.flatten(), diagonal_idxs)
     pred_stim_corr = np.delete(pred_stim_corr.flatten(), diagonal_idxs)
     noise_corr = np.delete(noise_corr.flatten(), diagonal_idxs)
     pred_noise_corr = np.delete(pred_noise_corr.flatten(), diagonal_idxs)
     ave_corr = np.delete(ave_corr.flatten(), diagonal_idxs)
     pred_ave_corr = np.delete(pred_ave_corr.flatten(), diagonal_idxs)
+    fano = np.nanmean(np.var(single_trial, axis=0)/np.mean(single_trial, axis=0), axis=0)
+    pred_fano = np.nanmean(np.var(pred_single_trial, axis=0)/np.mean(pred_single_trial, axis=0), axis=0)
     
     plt.plot(corr, pred_corr, 'bo')
     plt.plot(corr, corr, 'r-')
@@ -335,12 +345,33 @@ def correlation_plot(single_trial, pred_single_trial, num_trials=5, num_cells=5)
     plt.ylabel('model')
     plt.title('trial-averaged correlation')
     plt.show()
+    x = np.arange(num_cells)
+    width = 0.35
+    fig, ax = plt.subplots()
+    rects1 = ax.bar(x - width/2, trial_corr, width, label='data')
+    rects2 = ax.bar(x + width/2, pred_trial_corr, width, label='model')
+    ax.set_ylabel('correlation')
+    ax.set_xlabel('cells')
+    ax.set_title('trial-to-trial correlation')
+    ax.set_xticks(x)
+    ax.legend()
+    plt.show()
+    x = np.arange(num_cells)
+    width = 0.35
+    fig, ax = plt.subplots()
+    rects1 = ax.bar(x - width/2, fano, width, label='data')
+    rects2 = ax.bar(x + width/2, pred_fano, width, label='model')
+    ax.set_ylabel('Fano Factor')
+    ax.set_xlabel('cells')
+    ax.set_xticks(x)
+    ax.legend()
+    plt.show()
     
 def correlation_plot_2(single_trial, pred_single_trial, num_trials=5, num_cells=5):
     
     diagonal_idxs = list(range(0, num_cells*num_cells, num_cells+1))
     
-    corr = single_trial_corr_matrix(num_cells, 5, single_trial)
+    corr = single_trial_corr_matrix(num_cells, num_trials, single_trial)
     pred_corr = single_trial_corr_matrix(num_cells, num_trials, pred_single_trial)
     
     stim_corr = stim_corr2(single_trial)
