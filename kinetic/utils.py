@@ -2,6 +2,7 @@ import os
 import json
 import torch
 import torch.nn as nn
+import matplotlib.pyplot as plt
 from scipy import signal
 from collections import deque
 from kinetic.models import *
@@ -24,6 +25,19 @@ def get_hs(model, batch_size, device, I20=None, mode='single'):
         hs.append(deque([],maxlen=model.seq_len))
         for i in range(model.seq_len):
             hs[1].append(torch.zeros(batch_size, *model.h_shapes[1]).to(device))
+    elif mode == 'double':
+        hs1 = torch.zeros(batch_size, *model.h_shapes).to(device)
+        hs1[:,0] = 1
+        if isinstance(I20[0], np.ndarray):
+            hs1[:,3] = torch.from_numpy(I20[0])[:,None].to(device)
+        h_shapes = list(model.h_shapes)
+        h_shapes[1] = 1
+        h_shapes = tuple(h_shapes)
+        hs2 = torch.zeros(batch_size, *h_shapes).to(device)
+        hs2[:,0] = 1
+        if isinstance(I20[1], np.ndarray):
+            hs2[:,3] = torch.from_numpy(I20[1])[:,None].to(device)
+        hs = (hs1, hs2)
     else:
         raise Exception('Invalid mode')
     return hs
@@ -35,6 +49,8 @@ def detach_hs(hs, mode='single', seq_len=None):
         hs_new = []
         hs_new.append(hs[0].detach())
         hs_new.append(deque([h.detach() for h in hs[1]], seq_len))
+    elif mode == 'double':
+        hs_new = (hs[0].detach(), hs[1].detach())
     return hs_new
 
 def select_lossfn(loss='poisson'):
@@ -298,4 +314,35 @@ def slow_parameters_solver(A_l, A_h, decay_rate, kfi, kfr, ka, u_l, u_h):
     ksi = decay_rate / ((kfi*u_h*ka)/(kfi*u_h*ka + kfr*u_h*ka + kfr*kfi)+I1_h/(I20 + delta_I2_h))
     ksr = I1_h / (I20 + delta_I2_h) * ksi
     return ksi, ksr, I20
+
+def adaptive_index(response, l_start=1960):
+    re = response[l_start+50:l_start+300].mean(0)
+    rl = response[-250:].mean(0)
+    return (re - rl) / (re + rl)
+
+def adaptive_index_bipolar(layer_outs):
+    responses = layer_outs['spiking_block2']
+    shape = responses.shape
+    responses = responses.reshape((shape[0], shape[1], 36, 36))
+    fig, axs = plt.subplots(2, 4, figsize=(10,5))
+    for i in range(shape[1]//2):
+        axs[0, i].imshow(adaptive_index(responses[:, i, :, :]), vmin=-0.1, vmax=0.1, cmap='bwr')
+        axs[1, i].imshow(adaptive_index(responses[:, i+shape[1]//2, :, :]), vmin=-0.1, vmax=0.1, cmap='bwr')
+        
+def adaptive_index_amacrine(layer_outs):
+    responses = layer_outs['amacrine']
+    shape = responses.shape
+    responses = responses.reshape((shape[0], 8, 26, 26))
+    shape = responses.shape
+    fig, axs = plt.subplots(2, 4, figsize=(10,5))
+    for i in range(shape[1]//2):
+        axs[0, i].imshow(adaptive_index(responses[:, i, :, :]), vmin=-0.1, vmax=0.1, cmap='bwr')
+        axs[1, i].imshow(adaptive_index(responses[:, i+shape[1]//2, :, :]), vmin=-0.1, vmax=0.1, cmap='bwr')
+        
+def adaptive_index_ganglion(layer_outs):
+    responses = layer_outs['ganglion']
+    fig, axs = plt.subplots()
+    axs.imshow(adaptive_index(responses[:,0,:,:]), vmin=-0.1, vmax=0.1, cmap='bwr')
+    
+    
     

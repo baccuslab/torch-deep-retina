@@ -1,0 +1,12 @@
+exp_id: 'kinetics_sen'
+Model:
+    name: 'KineticsModelSen'
+    checkpoint: '/home/xhding/saved_model/kinetics_both/epoch_045_loss_-60.15_pearson_natural_0.4562_pearson_noise_0.4354.pth'
+    linear_bias: False
+    n_units: 4
+Data:
+    batch_size: 512
+    data_path: '/home/xhding/tem_stim'
+    date: '21-01-26'
+    stim: 'naturalscene'
+    hs_mode: 'double'

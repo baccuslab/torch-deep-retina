@@ -102,11 +102,17 @@ def contrast_adaptation_LN(model, device, hs_mode='single', stim_type='full', I2
     if cells == 'all':
         cells = range(model.n_units)
     for cell in cells:
-        _, x_he, nonlinear_he = LN_model_multi_trials(stimuli, responses, c1, cell, delay, delay + 500, sta_type='revcor')
-        _, x_hl, nonlinear_hl = LN_model_multi_trials(stimuli, responses, c1, cell, delay + duration - 600, delay + duration, sta_type='revcor')
-        _, x_le, nonlinear_le = LN_model_multi_trials(stimuli, responses, c0, cell, delay + duration, 
-                                                         delay + duration + 500, sta_type='revcor')
-        _, x_ll, nonlinear_ll = LN_model_multi_trials(stimuli, responses, c0, cell, nsamples - 600, nsamples, sta_type='revcor')
+        #_, x_he, nonlinear_he = LN_model_multi_trials(stimuli, responses, c1, cell, delay, delay + 500, sta_type='revcor')
+        #_, x_hl, nonlinear_hl = LN_model_multi_trials(stimuli, responses, c1, cell, delay + duration - 600, delay + duration, sta_type='revcor')
+        #_, x_le, nonlinear_le = LN_model_multi_trials(stimuli, responses, c0, cell, delay + duration, 
+        #                                                 delay + duration + 500, sta_type='revcor')
+        #_, x_ll, nonlinear_ll = LN_model_multi_trials(stimuli, responses, c0, cell, nsamples - 600, nsamples, sta_type='revcor')
+        
+        _, x_he, nonlinear_he = LN_model_multi_trials_fourier(stimuli, responses, c1, cell, delay, delay + 500)
+        _, x_hl, nonlinear_hl = LN_model_multi_trials_fourier(stimuli, responses, c1, cell, delay + duration - 600, delay + duration)
+        _, x_le, nonlinear_le = LN_model_multi_trials_fourier(stimuli, responses, c0, cell, delay + duration, 
+                                                              delay + duration + 500)
+        _, x_ll, nonlinear_ll = LN_model_multi_trials_fourier(stimuli, responses, c0, cell, nsamples - 600, nsamples)
         plt.plot(x_he, nonlinear_he, 'r', label='high early')
         plt.plot(x_hl, nonlinear_hl, 'b', label='high late')
         plt.plot(x_le, nonlinear_le, 'k', label='low early')
@@ -382,7 +388,7 @@ def analyze_one_pixel(cfg_name, checkpoint_path, stimulus, device, n_units=3, ch
     
     return layer_outs
 
-def analyze(cfg_name, checkpoint_path, checkpoint_path_one_pixel, stimulus, device,
+def analyze(cfg_name, checkpoint_path, checkpoint_path_one_pixel, stimulus, device, c0=0.05, c1=0.35,
             nrepeats=10, n_units=3, channel=0, cell=0, h_start=2000, l_start=4000):
     
     cfg = get_custom_cfg(cfg_name)
@@ -405,7 +411,7 @@ def analyze(cfg_name, checkpoint_path, checkpoint_path_one_pixel, stimulus, devi
     filter_len = model.img_shape[0]
     
     data_kwargs = dict(cfg.Data)
-    _, layer_outs = contrast_adaptation_kinetic(model, device, insp_keys=['kinetics'], nrepeats=nrepeats, **data_kwargs)
+    _, layer_outs = contrast_adaptation_kinetic(model, device, insp_keys=['kinetics'], nrepeats=nrepeats, c0=c0, c1=c1, **data_kwargs)
 
     plt.plot(np.arange(3000 - filter_len),layer_outs['kinetics'][:, 0, channel], label='R')
     plt.plot(np.arange(3000 - filter_len),layer_outs['kinetics'][:, 1, channel], label='A')
@@ -414,7 +420,7 @@ def analyze(cfg_name, checkpoint_path, checkpoint_path_one_pixel, stimulus, devi
     plt.legend()
     plt.show()
     
-    contrast_adaptation_LN(model, device, nrepeats=nrepeats, **data_kwargs)
+    contrast_adaptation_LN(model, device, c0=c0, c1=c1, nrepeats=nrepeats, **data_kwargs)
     
     data_kwargs['stim'] = 'fullfield_whitenoise'
     train_dataset_noise = MyDataset(stim_sec='train', **data_kwargs)
