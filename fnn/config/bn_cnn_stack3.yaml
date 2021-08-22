@@ -1,14 +1,15 @@
-exp_id: 'kinetics_both'
+exp_id: 'BN_CNN_Stack'
+img_shape: [40,50,50]
 Model:
-    name: 'KineticsModel'
+    name: 'BN_CNN_Stack'
+    ksizes: (15, 11)
     checkpoint: ''
-    linear_bias: False
     n_units: 4
 Data:
     batch_size: 512
     data_path: '/home/xhding/tem_stim'
     date: '21-01-26'
-    stim: 'both'
-    hs_mode: 'single'
 Optimize:
-    loss_fn: 'poisson'
+    trunc_intvl: 1
+    l2: 1e-3
+    l1: 1e-4

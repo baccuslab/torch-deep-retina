@@ -11,6 +11,7 @@ import torchdeepretina.stimuli as tdrstim
 from torchdeepretina.physiology import Physio
 from tqdm import tqdm
 import pyret.filtertools as ft
+from kinetic.utils import get_hs, detach_hs
 
 DEVICE = torch.device("cuda:0")
 
@@ -245,69 +246,33 @@ def stimulus_importance(model, X, gc_idx=None, alpha_steps=5, batch_size=500,
         return intg_grad.data.cpu().numpy()
     return intg_grad
 
-def inspect(model, X, insp_keys={}, batch_size=None, to_numpy=True, device=torch.device('cuda:1')):
-    """
-    Get the response from the argued layers in the model as np arrays. If model is on cpu,
-    operations are performed on cpu. Put model on gpu if you desire operations to be
-    performed on gpu.
-
-    model - torch Module or torch gpu Module
-    X - ndarray (T,C,H,W)
-    insp_keys - set of str
-        name of layers activations to collect
-    to_numpy - bool
-        if true, activations will all be ndarrays. Otherwise torch tensors
-    to_cpu - bool
-        if true, torch tensors will be on the cpu.
-        only effective if to_numpy is false.
-
-    returns dict of np arrays or torch cpu tensors
-    """
+def inspect(model, X, insp_keys=[]):
+    
     layer_outs = dict()
     handles = []
-    if "all" in insp_keys:
-        for i in range(len(model.sequential)):
-            key = "sequential."+str(i)
-            hook = get_hook(layer_outs, key, to_numpy=to_numpy, to_cpu=True)
-            handle = model.sequential[i].register_forward_hook(hook)
+    for key, mod in model.named_modules():
+        if key in insp_keys:
+            hook = get_hook(layer_outs, key, to_numpy=True)
+            handle = mod.register_forward_hook(hook)
             handles.append(handle)
-    else:
-        for key, mod in model.named_modules():
-            if key in insp_keys:
-                hook = get_hook(layer_outs, key, to_numpy=to_numpy, to_cpu=True)
-                handle = mod.register_forward_hook(hook)
-                handles.append(handle)
-    X = torch.FloatTensor(X)
-    if batch_size is None:
-        if next(model.parameters()).is_cuda:
-            X = X.to(device)
-        preds = model(X)
-        if to_numpy:
-            layer_outs['outputs'] = preds.detach().cpu().numpy()
-        else:
-            layer_outs['outputs'] = preds.cpu()
-    else:
-        use_cuda = next(model.parameters()).is_cuda
-        batched_outs = {key:[] for key in insp_keys}
-        outputs = []
-        for batch in range(0,len(X), batch_size):
-            x = X[batch:batch+batch_size]
-            if use_cuda:
-                x = x.to(device)
-            preds = model(x).cpu()
-            if to_numpy:
-                preds = preds.detach().numpy()
-            outputs.append(preds)
+
+    resps = []
+    layer_outs_list = {key:[] for key in insp_keys}
+    with torch.no_grad():
+        for i in range(X.shape[0]):
+            resp = model(X[i:i+1])
+            resps.append(resp)
             for k in layer_outs.keys():
-                batched_outs[k].append(layer_outs[k])
-        batched_outs['outputs'] = outputs
-        if to_numpy:
-            layer_outs = {k:np.concatenate(v,axis=0) for k,v in batched_outs.items()}
-        else:
-            layer_outs = {k:torch.cat(v,dim=0) for k,v in batched_outs.items()}
+                layer_outs_list[k].append(layer_outs[k])
+    
+    layer_outs = {k:np.concatenate(v, axis=0) if isinstance(v[0], np.ndarray) else v for k,v in layer_outs_list.items()}
+    resp = torch.cat(resps, dim=0)
+    layer_outs['outputs'] = resp.detach().cpu().numpy()
+    
     for i in range(len(handles)):
         handles[i].remove()
     del handles
+    
     return layer_outs
 
 def inspect_rnn(model, X, hs, insp_keys=[]):
@@ -338,6 +303,41 @@ def inspect_rnn(model, X, hs, insp_keys=[]):
     del handles
     
     return layer_outs
+
+def inspect_grad_rnn(model, X, hs, cell_idx, layer='ganglion'):
+    device = next(model.parameters()).get_device()
+    hook_outs = dict()
+    module = None
+    for name, modu in model.named_modules():
+        if name == layer:
+            module = modu
+            hook = get_hook(hook_outs,key=layer,to_numpy=False)
+            hook_handle = module.register_forward_hook(hook)
+
+    # Get gradient with respect to activations
+    model.eval()
+    X.requires_grad = True
+    n_loops = X.shape[0]
+    rng = range(n_loops)
+    responses = []
+    for i in rng:
+        x = X[i:i+1]
+        x = x.to(device)
+        _, hs = model(x, hs)
+        hs = detach_hs(hs, 'single', None)
+        # Outs are the activations at the argued layer and cell idx accross the batch
+        if type(cell_idx) == type(int()):
+            fx = hook_outs[layer][:,cell_idx]
+        elif len(cell_idx) == 1:
+            fx = hook_outs[layer][:,cell_idx[0]]
+        else:
+            fx = hook_outs[layer][:, cell_idx[0], cell_idx[1], cell_idx[2]]
+        fx = fx.mean()
+        fx.backward()
+        responses.append(fx.data.cpu().numpy())
+    hook_handle.remove()
+    responses = np.array(responses)
+    return X.grad.data.cpu().numpy(), responses
 
 def batch_compute_model_response(stimulus, model, batch_size=500, recurrent=False, 
                                 insp_keys={'all'}, cust_h_init=False, verbose=False):
@@ -395,7 +395,7 @@ def batch_compute_model_response(stimulus, model, batch_size=500, recurrent=Fals
     del phys
     return model_response
 
-def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, verbose=True, I20=None):
+def get_stim_grad_rnn(model, X, layer, cell_idx, batch_size=1, layer_shape=None, verbose=True, I20=None):
     """
     Gets the gradient of the model output at the specified layer and cell idx with respect
     to the inputs (X). Returns a gradient array with the same shape as X.
@@ -405,11 +405,7 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, v
     requires_grad(model, False)
     device = next(model.parameters()).get_device()
 
-    if model.kinetic:
-        hs = get_hs(model, batch_size, device, I20)
-    elif model.recurrent:
-        batch_size = 1
-        hs = [torch.zeros(batch_size, *h_shape).to(device) for h_shape in model.h_shapes]
+    hs = get_hs(model, batch_size, device, I20)
 
     hook_outs = dict()
     module = None
@@ -432,15 +428,8 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, v
         idx = i*batch_size
         x = X[idx:idx+batch_size]
         x = x.to(device)
-        if model.kinetic:
-            _, hs = model(x, hs)
-            hs[0] = hs[0].detach()
-            hs[1] = deque([h.detach() for h in hs[1]], maxlen=model.seq_len)
-        elif model.recurrent:
-            _, hs = model(x, hs)
-            hs = [h.data for h in hs]
-        else:
-            _ = model(x)
+        _, hs = model(x, hs)
+        hs = detach_hs(hs, 'single', None)
         # Outs are the activations at the argued layer and cell idx accross the batch
         if type(cell_idx) == type(int()):
             fx = hook_outs[layer][:,cell_idx]
@@ -454,19 +443,92 @@ def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, v
     requires_grad(model, True)
     return X.grad.data.cpu().numpy()
 
-def compute_sta(model, contrast, layer, cell_index, layer_shape=None, verbose=True, I20=None):
+def get_stim_grad(model, X, layer, cell_idx, batch_size=500, layer_shape=None, verbose=True):
+    """
+    Gets the gradient of the model output at the specified layer and cell idx with respect
+    to the inputs (X). Returns a gradient array with the same shape as X.
+    """
+    if verbose:
+        print("layer:", layer)
+    requires_grad(model, False)
+    device = next(model.parameters()).get_device()
+
+    hook_outs = dict()
+    module = None
+    for name, modu in model.named_modules():
+        if name == layer:
+            if verbose:
+                print("hook attached to " + name)
+            module = modu
+            hook = get_hook(hook_outs,key=layer,to_numpy=False)
+            hook_handle = module.register_forward_hook(hook)
+
+    # Get gradient with respect to activations
+    model.eval()
+    X.requires_grad = True
+    n_loops = X.shape[0]//batch_size
+    rng = range(n_loops)
+    if verbose:
+        rng = tqdm(rng)
+    for i in rng:
+        idx = i*batch_size
+        x = X[idx:idx+batch_size]
+        x = x.to(device)
+        _ = model(x)
+        if type(cell_idx) == type(int()):
+            fx = hook_outs[layer][:,cell_idx]
+        elif len(cell_idx) == 1:
+            fx = hook_outs[layer][:,cell_idx[0]]
+        else:
+            fx = hook_outs[layer][:, cell_idx[0], cell_idx[1], cell_idx[2]]
+        fx = fx.mean()
+        fx.backward()
+    hook_handle.remove()
+    requires_grad(model, True)
+    return X.grad.data.cpu().numpy()
+
+def compute_sta(model, contrast, layer, cell_index, layer_shape=None, verbose=True):
     """
     Computes the STA using the average of instantaneous receptive 
     fields (gradient of output with respect to input)
     """
     # generate some white noise
     #X = stim.concat(white(1040, contrast=contrast)).copy()
-    X = tdrstim.concat(contrast*np.random.randn(10000,50,50),nh=model.img_shape[0])
+    x = contrast*np.random.randn(347,50,50)
+    x = np.repeat(x, 3, axis=0)
+    #x = (x + 1) * 127.5
+    #x = (x - 51.8)/53.9
+    x = 2.37 * x
+    X = tdrstim.concat(x,nh=model.img_shape[0])
     X = torch.FloatTensor(X)
     X.requires_grad = True
 
     # compute the gradient of the model with respect to the stimulus
-    drdx = get_stim_grad(model, X, layer, cell_index, layer_shape=layer_shape, verbose=verbose, I20=I20)
+    drdx = get_stim_grad(model, X, layer, cell_index, layer_shape=layer_shape, verbose=verbose)
+    sta = drdx.mean(0)
+
+    del X
+    return sta
+
+def compute_sta_rnn(model, contrast, layer, cell_index, layer_shape=None, verbose=True):
+    """
+    Computes the STA using the average of instantaneous receptive 
+    fields (gradient of output with respect to input)
+    """
+    # generate some white noise
+    #X = stim.concat(white(1040, contrast=contrast)).copy()
+    x = contrast*np.random.randn(347,50,50)
+    x = np.repeat(x, 3, axis=0)
+    #x = (x + 1) * 127.5
+    #x = (x - 51.8)/53.9
+    #x = 2.37 * x
+    x = 2.95 * x
+    X = tdrstim.concat(x,nh=model.img_shape[0])
+    X = torch.FloatTensor(X)
+    X.requires_grad = True
+
+    # compute the gradient of the model with respect to the stimulus
+    drdx = get_stim_grad_rnn(model, X, layer, cell_index, layer_shape=layer_shape, verbose=verbose)
     sta = drdx.mean(0)
 
     del X

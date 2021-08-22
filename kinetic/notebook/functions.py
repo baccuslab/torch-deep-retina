@@ -70,7 +70,7 @@ def contrast_adaptation_kinetic(model, device, insp_keys, hs_mode='single', stim
 
     return (fig, (ax0,ax1)), layer_outs
 
-def contrast_adaptation_LN(model, device, hs_mode='single', stim_type='full', I20=None, cells='all', 
+def contrast_adaptation_LN(model, device, hs_mode='single', stim_type='full', I20=None, cells='all', scale=3.99, shift=0,
                            c0=0.05, c1=0.35, duration=1000, delay=1000, nsamples=3000, nrepeats=10, filt_depth=40, **kwargs):
     if stim_type == 'full':
         envelope = stim.flash(duration, delay, nsamples, intensity=(c1 - c0))
@@ -86,7 +86,8 @@ def contrast_adaptation_LN(model, device, hs_mode='single', stim_type='full', I2
         for _ in range(nrepeats):
             x = np.random.randn(*envelope.shape) * envelope
             stimuli.append(x.squeeze())
-            x = (x - x.mean())/x.std()
+            #x = (x - x.mean())/x.std()
+            x = scale * x + shift
             if stim_type == 'full':
                 x = torch.from_numpy(stim.concat(x, nh=filt_depth)).to(device)
             elif stim_type == 'one_pixel':
@@ -102,17 +103,17 @@ def contrast_adaptation_LN(model, device, hs_mode='single', stim_type='full', I2
     if cells == 'all':
         cells = range(model.n_units)
     for cell in cells:
-        #_, x_he, nonlinear_he = LN_model_multi_trials(stimuli, responses, c1, cell, delay, delay + 500, sta_type='revcor')
-        #_, x_hl, nonlinear_hl = LN_model_multi_trials(stimuli, responses, c1, cell, delay + duration - 600, delay + duration, sta_type='revcor')
-        #_, x_le, nonlinear_le = LN_model_multi_trials(stimuli, responses, c0, cell, delay + duration, 
-        #                                                 delay + duration + 500, sta_type='revcor')
-        #_, x_ll, nonlinear_ll = LN_model_multi_trials(stimuli, responses, c0, cell, nsamples - 600, nsamples, sta_type='revcor')
+        sta_he, x_he, nonlinear_he = LN_model_multi_trials(stimuli, responses, c1, cell, delay, delay + 500, sta_type='revcor')
+        sta_hl, x_hl, nonlinear_hl = LN_model_multi_trials(stimuli, responses, c1, cell, delay + duration - 600, delay + duration, sta_type='revcor')
+        sta_le, x_le, nonlinear_le = LN_model_multi_trials(stimuli, responses, c0, cell, delay + duration, 
+                                                         delay + duration + 500, sta_type='revcor')
+        sta_ll, x_ll, nonlinear_ll = LN_model_multi_trials(stimuli, responses, c0, cell, nsamples - 600, nsamples, sta_type='revcor')
         
-        _, x_he, nonlinear_he = LN_model_multi_trials_fourier(stimuli, responses, c1, cell, delay, delay + 500)
-        _, x_hl, nonlinear_hl = LN_model_multi_trials_fourier(stimuli, responses, c1, cell, delay + duration - 600, delay + duration)
-        _, x_le, nonlinear_le = LN_model_multi_trials_fourier(stimuli, responses, c0, cell, delay + duration, 
-                                                              delay + duration + 500)
-        _, x_ll, nonlinear_ll = LN_model_multi_trials_fourier(stimuli, responses, c0, cell, nsamples - 600, nsamples)
+        #sta_he, x_he, nonlinear_he = LN_model_multi_trials_fourier(stimuli, responses, c1, cell, delay, delay + 500)
+        #sta_hl, x_hl, nonlinear_hl = LN_model_multi_trials_fourier(stimuli, responses, c1, cell, delay + duration - 600, delay + duration)
+        #sta_le, x_le, nonlinear_le = LN_model_multi_trials_fourier(stimuli, responses, c0, cell, delay + duration, 
+        #                                                      delay + duration + 500)
+        #sta_ll, x_ll, nonlinear_ll = LN_model_multi_trials_fourier(stimuli, responses, c0, cell, nsamples - 600, nsamples)
         plt.plot(x_he, nonlinear_he, 'r', label='high early')
         plt.plot(x_hl, nonlinear_hl, 'b', label='high late')
         plt.plot(x_le, nonlinear_le, 'k', label='low early')
@@ -120,7 +121,14 @@ def contrast_adaptation_LN(model, device, hs_mode='single', stim_type='full', I2
         plt.legend()
         plt.show()
         
-    return
+        plt.plot(sta_he, 'r', label='high early')
+        plt.plot(sta_hl, 'b', label='high late')
+        plt.plot(sta_le, 'k', label='low early')
+        plt.plot(sta_ll, 'g', label='low late')
+        plt.legend()
+        plt.show()
+        
+    return responses
 
 def LN_model_multi_trials(stimuli, responses, contrast, cell, start_idx, end_idx, filter_len=100, sta_type='fourier', offset=10):
     sta = 0
@@ -140,10 +148,43 @@ def LN_model_multi_trials(stimuli, responses, contrast, cell, start_idx, end_idx
     sta -= sta.mean()
     stimulus = np.concatenate(stimulus)
     resp = np.concatenate(resp)
-    normed_sta, _, _ = normalize_filter(sta, stimulus, contrast)
+    #normed_sta, _, _= normalize_filter(sta, stimulus, contrast)
+    normed_sta = normalize_filter2(sta, stimulus)
+    
+    filtered_stim = pyret.filtertools.linear_response(normed_sta, stimulus)
+    #nonlinearity = Binterp(10)
+    nonlinearity = Sigmoid(peak=100.)
+    nonlinearity.fit(filtered_stim[filter_len:], resp[filter_len:], maxfev=50000)
+
+    x = np.linspace(np.min(filtered_stim), np.max(filtered_stim), 10)
+    nonlinear_prediction = nonlinearity.predict(x)
+    
+    return normed_sta, x, nonlinear_prediction
+
+def LN_model_multi_trials2(stimuli, responses, contrast, cell, start_idx, end_idx, filter_len=100, sta_type='fourier', offset=10):
+    stimulus = []
+    resp = []
+    for trial in range(len(stimuli)):
+        stim_trial = stimuli[trial][start_idx:end_idx]
+        resp_trial = responses[trial][start_idx:end_idx, cell]
+        stimulus.append(stim_trial)
+        resp.append(resp_trial)
+    stimulus = np.concatenate(stimulus)
+    resp = np.concatenate(resp)
+    
+    if sta_type == 'revcor':
+        sta, _ = pyret.filtertools.revcorr(stimulus, scipy.stats.zscore(resp), 0, filter_len)
+        sta = np.flip(sta, axis=0)
+    elif sta_type == 'fourier':
+        sta = fourier_sta(stimulus, resp, filter_len, offset)
+    sta -= sta.mean()
+    
+    #normed_sta, _, _= normalize_filter(sta, stimulus, contrast)
+    normed_sta = normalize_filter2(sta, stimulus)
     
     filtered_stim = pyret.filtertools.linear_response(normed_sta, stimulus)
     nonlinearity = Binterp(10)
+    #nonlinearity = Sigmoid(peak=100.)
     nonlinearity.fit(filtered_stim[filter_len:], resp[filter_len:])
 
     x = np.linspace(np.min(filtered_stim), np.max(filtered_stim), 10)
@@ -479,3 +520,46 @@ def contrast_adaptation_fullfield_multi(model, device):
         plt.show()
     
     return pearson, stimuli, responses
+
+def gradient_LN(model, device, cell = 0, c0 = 0.15, c1 = 0.35, scale=2.95, shift=0.88, stim_type='checkerboard',
+                filt_depth = 40, nrepeats = 10, fpf = 3, I20 = None, hs_mode = 'single'):
+    if stim_type == 'checkerboard':
+        envelope = np.ones((3040, 50, 50))
+        envelope[:1040] = c0
+        envelope[1040:2040] = c1
+        envelope[2040:] = c0
+    elif stim_type == 'fullfield':
+        envelope = np.ones((3040, 1, 1))
+        envelope[:1040] = c0
+        envelope[1040:2040] = c1
+        envelope[2040:] = c0
+
+    data_list = []
+    for _ in range(nrepeats):
+        x = random_from_envelope(envelope, repeat=fpf)
+        if stim_type == 'fullfield':
+            x = x * np.ones((envelope.shape[0], 50, 50))
+        stimulus = x
+        x = scale * x + shift
+
+        x = torch.from_numpy(stim.rolling_window(x, filt_depth, time_axis=0)).float().to(device)
+
+        hs = get_hs(model, 1, device, I20, hs_mode)
+        grad, output = inspect_grad_rnn(model, x, hs, cell_idx=cell)
+        segment_dict = later_early_segments(stimulus, grad, output)
+        data_list.append(segment_dict)
+    
+    if stim_type == 'fullfield':
+        fullfield = True
+    elif stim_type == 'checkerboard':
+        fullfield = False
+    filters = gradient_filter(data_list, fullfield)
+    nonlinear = nonlinearities(data_list, filters)
+    
+    for key in nonlinear.keys():
+        x, nonlinear_prediction = nonlinear[key]
+        plt.plot(x, nonlinear_prediction, label=key)
+    plt.legend()
+    plt.show()
+    
+    return filters, nonlinear

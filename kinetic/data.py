@@ -146,3 +146,57 @@ class TrainDatasetBoth(Dataset):
         trgt = torch.from_numpy(self.y[index])
                 
         return (inpt, trgt)
+    
+class TrainDatasetBoth2(Dataset):
+    
+    def __init__(self, img_shape, data_path, date, stim, val_size, cells='all', **kwargs):
+        super().__init__()
+        assert stim == 'both'
+        data_natural = loadexpt(date, cells, 'naturalscene', 'train',
+                                img_shape[0], 0, data_path=data_path)
+        data_noise = loadexpt(date, cells, 'fullfield_whitenoise', 'train',
+                              img_shape[0], 0, data_path=data_path)
+        
+        self.val_size = val_size
+        self.len_natural = data_natural.y.shape[0]
+        self.len_noise = data_noise.y.shape[0]
+        self.n_split = 5
+        
+        self.stats_natural = data_natural.stats
+        self.stats_noise = data_noise.stats
+        
+        X_natural = data_natural.X[:-self.val_size]
+        y_natural = data_natural.y[:-self.val_size]
+        X_noise = data_noise.X[:-self.val_size]
+        y_noise = data_noise.y[:-self.val_size]
+        
+        mean_array_natural = np.ones((X_natural.shape[0],1,1,1)).astype('float32') * self.stats_natural['mean']
+        mean_array_noise = np.ones((X_noise.shape[0],1,1,1)).astype('float32') * self.stats_noise['mean']
+        std_array_natural = np.ones((X_natural.shape[0],1,1,1)).astype('float32') * self.stats_natural['std']
+        std_array_noise = np.ones((X_noise.shape[0],1,1,1)).astype('float32') * self.stats_noise['std']
+        
+        each_len_natural = self.len_natural // self.n_split
+        each_len_noise = self.len_noise // self.n_split
+        self.X = interleave(X_noise, X_natural, each_len_noise, each_len_natural)
+        self.y = interleave(y_noise, y_natural, each_len_noise, each_len_natural)
+        self.mean_array = interleave(mean_array_noise, mean_array_natural, each_len_noise, each_len_natural)
+        self.std_array = interleave(std_array_noise, std_array_natural, each_len_noise, each_len_natural)
+        
+        del X_natural
+        del y_natural
+        del X_noise
+        del y_noise
+        del mean_array_natural
+        del mean_array_noise
+        del std_array_natural
+        del std_array_noise
+        
+    def __len__(self):
+        return self.y.shape[0]
+    
+    def __getitem__(self, index):
+        
+        inpt = torch.from_numpy((self.X[index].astype('float32') - self.mean_array[index]) / self.std_array[index])
+        trgt = torch.from_numpy(self.y[index])
+                
+        return (inpt, trgt)

@@ -5,6 +5,10 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 from scipy import signal
 from collections import deque
+import pyret.filtertools as ft
+from pyret.stimulustools import slicestim
+from pyret.utils import flat2d
+from pyret.nonlinearities import Binterp, Sigmoid
 from kinetic.models import *
 from torchdeepretina.intracellular import load_interneuron_data, max_correlation
 import torchdeepretina.stimuli as tdrstim
@@ -344,5 +348,81 @@ def adaptive_index_ganglion(layer_outs):
     fig, axs = plt.subplots()
     axs.imshow(adaptive_index(responses[:,0,:,:]), vmin=-0.1, vmax=0.1, cmap='bwr')
     
+def normalize_filter2(sta, stimulus):
+    '''Enforces filtered stimulus to have the same standard deviation
+    as the stimulus.'''
+    theta = stimulus.std() / ft.linear_response(sta, stimulus).std()
+    return theta * sta
     
+def later_early_segments(stimulus, grad, output, segments=[(1100,1500),(1500,2000),(2100,2500),(2500,3000)], filt_depth=40):
     
+    result = {}
+    for i, seg in enumerate(['he', 'hl', 'le', 'll']):
+        start = segments[i][0]
+        end = segments[i][1]
+        result[seg] = (stimulus[start:end+filt_depth-1], grad[start:end].mean(0), output[start:end])
+    return result
+
+def gradient_filter(data_list, fullfield=False):
+    
+    filters = {}
+    for key in ['he', 'hl', 'le', 'll']:
+        stimuli = []
+        filtered = []
+        sta = 0
+        for i in range(len(data_list)):
+            sta += np.flip(data_list[i][key][1], axis=0)
+            stimuli.append(data_list[i][key][0])
+        if fullfield:
+            sta = np.ones(sta.shape) * np.expand_dims(sta.mean(axis=(-1,-2)), axis=(1,2))
+        for stimulus in stimuli:
+            resp = linear_response_no_pad(sta, stimulus)
+            filtered.append(resp)
+        theta = np.array(stimuli).std() / np.array(filtered).std()
+        filters[key] = theta * sta
+        
+    return filters
+
+def nonlinearities(data_list, filters):
+    
+    result = {}
+    for key in ['he', 'hl', 'le', 'll']:
+        sta = filters[key]
+        filtered = []
+        responses = []
+        for i in range(len(data_list)):
+            stimulus = data_list[i][key][0]
+            filtered.append(linear_response_no_pad(sta, stimulus))
+            responses.append(data_list[i][key][2])
+        
+        filtered = np.array(filtered).flatten()
+        responses = np.array(responses).flatten()
+        nonlinearity = Sigmoid(peak=100.)
+        nonlinearity.fit(filtered, responses, maxfev=50000)
+
+        x = np.linspace(np.min(filtered), np.max(filtered), 10)
+        nonlinear_prediction = nonlinearity.predict(x)
+        
+        result[key] = (x, nonlinear_prediction)
+    return result
+
+def linear_response_no_pad(filt, stim, nsamples_after=0):
+    
+    slices = np.fliplr(slicestim(stim, filt.shape[0] - nsamples_after, nsamples_after))
+    return np.einsum('tx,x->t', flat2d(slices), filt.ravel())
+
+def random_from_envelope(envelope, repeat=3):
+    
+    if repeat > 1:
+        timelen = envelope.shape[0]
+        stimulus = np.random.randn(timelen//repeat, *envelope.shape[1:])
+        stimulus = np.repeat(stimulus, repeat, axis=0)
+        leftover = np.random.randn(timelen - timelen//repeat*repeat,  *envelope.shape[1:])
+        stimulus = np.concatenate((leftover, stimulus), axis=0)
+    elif repeat == 1:
+        stimulus = np.random.randn(*envelope.shape)
+        
+    assert stimulus.shape == envelope.shape
+    stimulus = stimulus * envelope
+    
+    return stimulus

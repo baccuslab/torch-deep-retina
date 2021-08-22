@@ -2,7 +2,8 @@ exp_id: 'kinetics_one_pixel'
 save_intvl: 1
 Model:
     name: 'KineticsOnePixel'
-    checkpoint: '/home/xhding/saved_model/kinetics_both/epoch_045_loss_-60.15_pearson_natural_0.4562_pearson_noise_0.4354.pth'
+    #checkpoint: '/home/xhding/saved_model/kinetics_both/epoch_045_loss_-60.15_pearson_natural_0.4562_pearson_noise_0.4354.pth'
+    checkpoint: '/home/xhding/saved_model/kinetics_both/epoch_045_loss_-60.35_pearson_natural_0.4354_pearson_noise_0.4798.pth'
     n_units: 4
 Data:
     trunc_int: 2000
