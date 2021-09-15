@@ -11,7 +11,7 @@ import torchdeepretina.stimuli as tdrstim
 from torchdeepretina.physiology import Physio
 from tqdm import tqdm
 import pyret.filtertools as ft
-from kinetic.utils import get_hs, detach_hs
+#from kinetic.utils import get_hs, detach_hs
 
 DEVICE = torch.device("cuda:0")
 

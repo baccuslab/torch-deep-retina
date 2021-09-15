@@ -1,5 +1,6 @@
 import os
 import json
+from numpy.polynomial.polynomial import polyfit
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
@@ -426,3 +427,12 @@ def random_from_envelope(envelope, repeat=3):
     stimulus = stimulus * envelope
     
     return stimulus
+
+def slope_statistic(filtered_input, output, thresh=1):
+    if np.max(output) <= thresh:
+        return None
+    
+    pos_x = [x for idx, x in enumerate(filtered_input) if output[idx] > thresh]
+    pos_y = [x for x in output if x > thresh]
+    p = polyfit(pos_x, pos_y, 1)
+    return p[1]

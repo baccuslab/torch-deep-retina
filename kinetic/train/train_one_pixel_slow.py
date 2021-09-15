@@ -107,7 +107,7 @@ def train(cfg):
         scheduler.step(epoch_loss)
         
         print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}'.format(epoch, epoch_loss, pearson))
-        print("Slow parameters: ", model.kinetics.ksi.data, model.kinetics.ksr.data, model.kinetics.ksr_2.data)
+        print("Slow parameters: ", model.kinetics.ksi.data, model.kinetics.ksr.data)
         
         update_eval_history(cfg, epoch, pearson, epoch_loss)
         

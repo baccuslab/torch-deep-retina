@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from scipy.stats import sem
 from scipy.stats import pearsonr
 from kinetic.utils import *
 
@@ -23,8 +24,9 @@ def pearsonr_eval(model, data, n_units, device, I20=None, start_idx=0, hs_mode='
         for cell in range(n_units):
             pearsons.append(pearsonr(val_pred[:,cell],val_targ[:,cell])[0])
     pearson = np.array(pearsons).mean()
+    error = sem(pearsons)
     model.train(train_status)
     if with_responses:
-        return pearson, val_pred, val_targ
+        return pearson, val_pred, val_targ, error
     else:
-        return pearson
+        return pearson, error

@@ -61,3 +61,4 @@ _C.Scheduler.mode = 'max'
 _C.Scheduler.factor = 0.2
 _C.Scheduler.patience = 2
 _C.Scheduler.verbose = 'True'
+_C.Scheduler.min_lr = 0

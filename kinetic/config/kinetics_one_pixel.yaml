@@ -3,8 +3,10 @@ save_intvl: 1
 Model:
     name: 'KineticsOnePixel'
     #checkpoint: '/home/xhding/saved_model/kinetics_both/epoch_045_loss_-60.15_pearson_natural_0.4562_pearson_noise_0.4354.pth'
-    checkpoint: '/home/xhding/saved_model/kinetics_both/epoch_045_loss_-60.35_pearson_natural_0.4354_pearson_noise_0.4798.pth'
+    #checkpoint: '/home/xhding/saved_model/kinetics_both/epoch_045_loss_-60.35_pearson_natural_0.4354_pearson_noise_0.4798.pth'
+    checkpoint: '/home/xhding/saved_model/kinetics_both/epoch_045_loss_-62.71_pearson_natural_0.4564_pearson_noise_0.4508.pth'
     n_units: 4
+    ksr_gain: False
 Data:
     trunc_int: 2000
     loss_bin: 1000

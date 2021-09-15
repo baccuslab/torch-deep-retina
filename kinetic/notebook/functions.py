@@ -16,9 +16,10 @@ import torchdeepretina.stimuli as stim
 import torchdeepretina.visualizations as viz
 from torchdeepretina.retinal_phenomena import normalize_filter
 from pyret.nonlinearities import Binterp, Sigmoid
+from pyret.filtertools import decompose
 
-def contrast_adaptation_kinetic(model, device, insp_keys, hs_mode='single', stim_type='full', I20=None,
-                                c0=0.05, c1=0.35, duration=1000, delay=1000, nsamples=3000, nrepeats=10, filt_depth=40, **kwargs):
+def contrast_adaptation_kinetic(model, device, insp_keys, hs_mode='single', stim_type='full', I20=None, scale=3.99, fpf=1,
+                                c0=0.05, c1=0.35, duration=1000, delay=1000, nsamples=3000, nrepeats=10, filt_depth=40, load_stimuli=None, **kwargs):
     """Step change in contrast"""
 
     # the contrast envelope
@@ -29,13 +30,16 @@ def contrast_adaptation_kinetic(model, device, insp_keys, hs_mode='single', stim
     else:
         raise Exception('Invalid hs type')
     envelope += c0
-
     layer_outs_list = {key:[] for key in insp_keys}
     layer_outs_list['outputs'] = []
     with torch.no_grad():
-        for _ in range(nrepeats):
-            x = np.random.randn(*envelope.shape) * envelope + 1
-            x = (x - x.mean())/x.std()
+        for trial in range(nrepeats):
+            if load_stimuli == None:
+                x = random_from_envelope(envelope, repeat=fpf)
+            else:
+                x = load_stimuli[trial] - 1
+                x = np.expand_dims(x, axis=(-1,-2))
+            x = scale * x
             if stim_type == 'full':
                 x = torch.from_numpy(stim.concat(x, nh=filt_depth)).to(device)
             elif stim_type == 'one_pixel':
@@ -70,8 +74,8 @@ def contrast_adaptation_kinetic(model, device, insp_keys, hs_mode='single', stim
 
     return (fig, (ax0,ax1)), layer_outs
 
-def contrast_adaptation_LN(model, device, hs_mode='single', stim_type='full', I20=None, cells='all', scale=3.99, shift=0,
-                           c0=0.05, c1=0.35, duration=1000, delay=1000, nsamples=3000, nrepeats=10, filt_depth=40, **kwargs):
+def contrast_adaptation_LN(model, device, hs_mode='single', stim_type='full', I20=None, cells='all', scale=4.46, fpf=1,
+                           c0=0.05, c1=0.35, duration=1000, delay=1000, nsamples=3000, nrepeats=10, filt_depth=40, load_stimuli=None, **kwargs):
     if stim_type == 'full':
         envelope = stim.flash(duration, delay, nsamples, intensity=(c1 - c0))
     elif stim_type == 'one_pixel':
@@ -83,11 +87,14 @@ def contrast_adaptation_LN(model, device, hs_mode='single', stim_type='full', I2
     stimuli = []
     responses = []
     with torch.no_grad():
-        for _ in range(nrepeats):
-            x = np.random.randn(*envelope.shape) * envelope
+        for trial in range(nrepeats):
+            if load_stimuli == None:
+                x = random_from_envelope(envelope, repeat=fpf)
+            else:
+                x = load_stimuli[trial] - 1
+                x = np.expand_dims(x, axis=(-1,-2))
             stimuli.append(x.squeeze())
-            #x = (x - x.mean())/x.std()
-            x = scale * x + shift
+            x = scale * x
             if stim_type == 'full':
                 x = torch.from_numpy(stim.concat(x, nh=filt_depth)).to(device)
             elif stim_type == 'one_pixel':
@@ -100,6 +107,7 @@ def contrast_adaptation_LN(model, device, hs_mode='single', stim_type='full', I2
             response = np.pad(layer_outs['outputs'], ((filt_depth, 0), (0,0)), 'constant', constant_values=(0,0))
             responses.append(response)
     
+    stimuli = [(stim+1) for stim in stimuli]
     if cells == 'all':
         cells = range(model.n_units)
     for cell in cells:
@@ -114,21 +122,75 @@ def contrast_adaptation_LN(model, device, hs_mode='single', stim_type='full', I2
         #sta_le, x_le, nonlinear_le = LN_model_multi_trials_fourier(stimuli, responses, c0, cell, delay + duration, 
         #                                                      delay + duration + 500)
         #sta_ll, x_ll, nonlinear_ll = LN_model_multi_trials_fourier(stimuli, responses, c0, cell, nsamples - 600, nsamples)
-        plt.plot(x_he, nonlinear_he, 'r', label='high early')
-        plt.plot(x_hl, nonlinear_hl, 'b', label='high late')
-        plt.plot(x_le, nonlinear_le, 'k', label='low early')
-        plt.plot(x_ll, nonlinear_ll, 'g', label='low late')
-        plt.legend()
+        fig, axes = plt.subplots(1, 2, figsize=(8, 3))
+        
+        axes[0].plot(np.linspace(0, 0.5, 50), sta_he[:50], 'r', label=r'$H_{early}$')
+        axes[0].plot(np.linspace(0, 0.5, 50), sta_hl[:50], 'b', label=r'$H_{late}$')
+        axes[0].plot(np.linspace(0, 0.5, 50), sta_le[:50], 'k', label=r'$L_{early}$')
+        axes[0].plot(np.linspace(0, 0.5, 50), sta_ll[:50], 'g', label=r'$L_{late}$')
+        axes[0].legend()
+        axes[0].set_xlabel('Delay (s)')
+        axes[0].set_ylabel(r'Filter ($s^{-1}$)')
+        axes[0].set_title('Filter')
+        
+        
+        axes[1].plot(x_he, nonlinear_he, 'r', label=r'$H_{early}$')
+        axes[1].plot(x_hl, nonlinear_hl, 'b', label=r'$H_{late}$')
+        axes[1].plot(x_le, nonlinear_le, 'k', label=r'$L_{early}$')
+        axes[1].plot(x_ll, nonlinear_ll, 'g', label=r'$L_{late}$')
+        axes[1].set_xlabel('Input')
+        axes[1].set_ylabel('Output (Hz)')
+        axes[1].set_title('Nonlinearity')
+        #axes[1].legend()
+        plt.savefig('/home/xhding/workspaces/torch-deep-retina/kinetic/notebook/figures/LN_'+str(cell)+'.png', dpi=300, bbox_inches = "tight")
         plt.show()
         
-        plt.plot(sta_he, 'r', label='high early')
-        plt.plot(sta_hl, 'b', label='high late')
-        plt.plot(sta_le, 'k', label='low early')
-        plt.plot(sta_ll, 'g', label='low late')
-        plt.legend()
-        plt.show()
+    return stimuli, responses
+
+def contrast_adaptation_statistics(model, device, hs_mode='single', stim_type='full', I20=None, cells='all', scale=4.46, fpf=3,
+                                   c0=0.05, c1=0.35, nsamples=2000, nrepeats=10, filt_depth=40, load_stimuli=None, **kwargs):
+    
+    envelope = np.ones((nsamples, 1, 1)) * c0
+    envelope[nsamples//2:] = c1
+    if stim_type == 'one_pixel':
+        envelope = envelope.squeeze()
+
+    stimuli = []
+    responses = []
+    with torch.no_grad():
+        for trial in range(nrepeats):
+            if load_stimuli == None:
+                x = random_from_envelope(envelope, repeat=fpf)
+            else:
+                x = load_stimuli[trial] - 1
+                x = np.expand_dims(x, axis=(-1,-2))
+            stimuli.append(x.squeeze())
+            x = scale * x
+            if stim_type == 'full':
+                x = torch.from_numpy(stim.concat(x, nh=filt_depth)).to(device)
+            elif stim_type == 'one_pixel':
+                x = torch.from_numpy(stim.rolling_window(x, filt_depth, time_axis=0)).to(device)
+            else:
+                raise Exception('Invalid stimulus type')
+
+            hs = get_hs(model, 1, device, I20, hs_mode)
+            layer_outs = inspect_rnn(model, x, hs)
+            response = np.pad(layer_outs['outputs'], ((filt_depth, 0), (0,0)), 'constant', constant_values=(0,0))
+            responses.append(response)
+    
+    stimuli = [(stim+1) for stim in stimuli]
+    if cells == 'all':
+        cells = range(model.n_units)
+    gains = {'he':[], 'hl':[]}
+    freqs = []
+    for cell in cells:
+        gain_he, _ = LN_statistics(stimuli, responses, c1, cell, nsamples//2, nsamples//2 + 500)
+        gain_hl, mean_freq = LN_statistics(stimuli, responses, c1, cell, nsamples - 600, nsamples)
+        gains['he'].append(gain_he)
+        gains['hl'].append(gain_hl)
+        freqs.append(mean_freq)
         
-    return responses
+    return gains, freqs
 
 def LN_model_multi_trials(stimuli, responses, contrast, cell, start_idx, end_idx, filter_len=100, sta_type='fourier', offset=10):
     sta = 0
@@ -156,10 +218,39 @@ def LN_model_multi_trials(stimuli, responses, contrast, cell, start_idx, end_idx
     nonlinearity = Sigmoid(peak=100.)
     nonlinearity.fit(filtered_stim[filter_len:], resp[filter_len:], maxfev=50000)
 
-    x = np.linspace(np.min(filtered_stim), np.max(filtered_stim), 10)
+    x = np.linspace(np.min(filtered_stim), np.max(filtered_stim), 50)
     nonlinear_prediction = nonlinearity.predict(x)
     
+    normed_sta = normed_sta / 0.01
+    
     return normed_sta, x, nonlinear_prediction
+
+def LN_statistics(stimuli, responses, contrast, cell, start_idx, end_idx, filter_len=100):
+    sta = 0
+    stimulus = []
+    resp = []
+    for trial in range(len(stimuli)):
+        stim_trial = stimuli[trial][start_idx:end_idx]
+        resp_trial = responses[trial][start_idx:end_idx, cell]
+        stimulus.append(stim_trial)
+        resp.append(resp_trial)
+        sta_trial, _ = pyret.filtertools.revcorr(stim_trial, resp_trial, 0, filter_len)
+        sta_trial = np.flip(sta_trial, axis=0)
+        sta += sta_trial
+    sta -= sta.mean()
+    stimulus = np.concatenate(stimulus)
+    resp = np.concatenate(resp)
+    normed_sta = normalize_filter2(sta, stimulus)
+    
+    filtered_stim = pyret.filtertools.linear_response(normed_sta, stimulus)
+    normed_sta = normed_sta / 0.01
+    gain = slope_statistic(filtered_stim[filter_len:], resp[filter_len:])
+    
+    amps = abs(np.fft.rfft(normed_sta))
+    fs = np.fft.rfftfreq(len(normed_sta), 0.01)
+    mean_freq = sum([fs * amps for fs,amps in zip(fs, amps)])/sum(amps)
+    
+    return gain, mean_freq
 
 def LN_model_multi_trials2(stimuli, responses, contrast, cell, start_idx, end_idx, filter_len=100, sta_type='fourier', offset=10):
     stimulus = []
@@ -559,6 +650,13 @@ def gradient_LN(model, device, cell = 0, c0 = 0.15, c1 = 0.35, scale=2.95, shift
     for key in nonlinear.keys():
         x, nonlinear_prediction = nonlinear[key]
         plt.plot(x, nonlinear_prediction, label=key)
+    plt.legend()
+    plt.show()
+    
+    for key in filters.keys():
+        sta = filters[key]
+        _, t_filter = decompose(sta)
+        plt.plot(t_filter, label=key)
     plt.legend()
     plt.show()
     
