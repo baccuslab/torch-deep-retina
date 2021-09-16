@@ -50,7 +50,7 @@ def train(cfg):
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         
     data_kwargs = dict(cfg.Data)
-    train_dataset = TrainDatasetBoth(**data_kwargs)
+    train_dataset = TrainDatasetBoth2(**data_kwargs)
     batch_sampler = BatchRnnSampler(length=len(train_dataset), batch_size=cfg.Data.batch_size,
                                     seq_len=cfg.Data.trunc_int)
     train_data = DataLoader(dataset=train_dataset, batch_sampler=batch_sampler)

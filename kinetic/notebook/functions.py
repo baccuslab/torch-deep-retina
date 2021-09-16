@@ -4,6 +4,7 @@ import scipy
 import h5py
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 from torch.utils.data.dataloader import DataLoader
 import pyret
 from kinetic.evaluation import *
@@ -18,74 +19,24 @@ from torchdeepretina.retinal_phenomena import normalize_filter
 from pyret.nonlinearities import Binterp, Sigmoid
 from pyret.filtertools import decompose
 
-def contrast_adaptation_kinetic(model, device, insp_keys, hs_mode='single', stim_type='full', I20=None, scale=3.99, fpf=1,
-                                c0=0.05, c1=0.35, duration=1000, delay=1000, nsamples=3000, nrepeats=10, filt_depth=40, load_stimuli=None, **kwargs):
+def contrast_adaptation(model, device, insp_keys, scale=4.46, fpf=3, c0=0.05, c1=0.35, duration=1000, nrepeats=10, channel=4,
+                        cells='all', filt_depth=40, load_stimuli=None, hs_mode='single', stim_type='full', I20=None, **kwargs):
     """Step change in contrast"""
 
     # the contrast envelope
     if stim_type == 'full':
-        envelope = stim.flash(duration, delay, nsamples, intensity=(c1 - c0))
+        envelope = stim.flash(duration, duration, 3 * duration, intensity=(c1 - c0))
     elif stim_type == 'one_pixel':
-        envelope = stim.flash(duration, delay, nsamples, intensity=(c1 - c0)).squeeze()
+        envelope = stim.flash(duration, duration, 3 * duration, intensity=(c1 - c0)).squeeze()
     else:
         raise Exception('Invalid hs type')
     envelope += c0
-    layer_outs_list = {key:[] for key in insp_keys}
-    layer_outs_list['outputs'] = []
-    with torch.no_grad():
-        for trial in range(nrepeats):
-            if load_stimuli == None:
-                x = random_from_envelope(envelope, repeat=fpf)
-            else:
-                x = load_stimuli[trial] - 1
-                x = np.expand_dims(x, axis=(-1,-2))
-            x = scale * x
-            if stim_type == 'full':
-                x = torch.from_numpy(stim.concat(x, nh=filt_depth)).to(device)
-            elif stim_type == 'one_pixel':
-                x = torch.from_numpy(stim.rolling_window(x, filt_depth, time_axis=0)).to(device)
-            else:
-                raise Exception('Invalid stimulus type')
-                
-            hs = get_hs(model, 1, device, I20, hs_mode)
-            layer_outs = inspect_rnn(model, x, hs, insp_keys)
-            for key in layer_outs_list.keys():
-                if key == 'kinetics':
-                    kinetics_history = [h[1].detach().cpu().numpy().mean(-1) for h in layer_outs['kinetics']]
-                    kinetics_history = np.concatenate(kinetics_history, axis=0)
-                    layer_outs_list[key].append(kinetics_history)
-                else:
-                    layer_outs_list[key].append(layer_outs[key])
-    for key in layer_outs_list.keys():
-        if isinstance(layer_outs_list[key][0], np.ndarray):
-            layer_outs[key] = np.array(layer_outs_list[key]).mean(0)
-        else:
-            layer_outs[key] = layer_outs_list[key]
     
-    response = layer_outs['outputs']
-    
-    if stim_type == 'full':
-        figs = viz.response1D(envelope[filt_depth:, 0, 0], response)
-    elif stim_type == 'one_pixel':
-        figs = viz.response1D(envelope[filt_depth:], response)
-    else:
-        raise Exception('Invalid hs type')
-    (fig, (ax0,ax1)) = figs
-
-    return (fig, (ax0,ax1)), layer_outs
-
-def contrast_adaptation_LN(model, device, hs_mode='single', stim_type='full', I20=None, cells='all', scale=4.46, fpf=1,
-                           c0=0.05, c1=0.35, duration=1000, delay=1000, nsamples=3000, nrepeats=10, filt_depth=40, load_stimuli=None, **kwargs):
-    if stim_type == 'full':
-        envelope = stim.flash(duration, delay, nsamples, intensity=(c1 - c0))
-    elif stim_type == 'one_pixel':
-        envelope = stim.flash(duration, delay, nsamples, intensity=(c1 - c0)).squeeze()
-    else:
-        raise Exception('Invalid hs type')
-    envelope += c0
-
     stimuli = []
     responses = []
+    
+    layer_outs_list = {key:[] for key in insp_keys}
+    layer_outs_list['outputs'] = []
     with torch.no_grad():
         for trial in range(nrepeats):
             if load_stimuli == None:
@@ -101,51 +52,112 @@ def contrast_adaptation_LN(model, device, hs_mode='single', stim_type='full', I2
                 x = torch.from_numpy(stim.rolling_window(x, filt_depth, time_axis=0)).to(device)
             else:
                 raise Exception('Invalid stimulus type')
-
+                
             hs = get_hs(model, 1, device, I20, hs_mode)
-            layer_outs = inspect_rnn(model, x, hs)
+            layer_outs = inspect_rnn(model, x, hs, insp_keys)
             response = np.pad(layer_outs['outputs'], ((filt_depth, 0), (0,0)), 'constant', constant_values=(0,0))
             responses.append(response)
+            
+            for key in layer_outs_list.keys():
+                if key == 'kinetics':
+                    kinetics_history = [h[1].detach().cpu().numpy().mean(-1) for h in layer_outs['kinetics']]
+                    kinetics_history = np.concatenate(kinetics_history, axis=0)
+                    layer_outs_list[key].append(kinetics_history)
+                else:
+                    layer_outs_list[key].append(layer_outs[key])
+    for key in layer_outs_list.keys():
+        if isinstance(layer_outs_list[key][0], np.ndarray):
+            layer_outs[key] = np.array(layer_outs_list[key]).mean(0)
+        else:
+            layer_outs[key] = layer_outs_list[key]
     
     stimuli = [(stim+1) for stim in stimuli]
     if cells == 'all':
         cells = range(model.n_units)
     for cell in cells:
-        sta_he, x_he, nonlinear_he = LN_model_multi_trials(stimuli, responses, c1, cell, delay, delay + 500, sta_type='revcor')
-        sta_hl, x_hl, nonlinear_hl = LN_model_multi_trials(stimuli, responses, c1, cell, delay + duration - 600, delay + duration, sta_type='revcor')
-        sta_le, x_le, nonlinear_le = LN_model_multi_trials(stimuli, responses, c0, cell, delay + duration, 
-                                                         delay + duration + 500, sta_type='revcor')
-        sta_ll, x_ll, nonlinear_ll = LN_model_multi_trials(stimuli, responses, c0, cell, nsamples - 600, nsamples, sta_type='revcor')
+        ln_he = LN_model(stimuli, responses, c1, cell, duration, duration + 500, sta_type='revcor')
+        ln_hl = LN_model(stimuli, responses, c1, cell, 2 * duration - 600, 2 * duration, sta_type='revcor')
+        ln_le = LN_model(stimuli, responses, c0, cell, 2 * duration, 2 * duration + 500, sta_type='revcor')
+        ln_ll = LN_model(stimuli, responses, c0, cell, 3 * duration - 600, 3 * duration, sta_type='revcor')
         
-        #sta_he, x_he, nonlinear_he = LN_model_multi_trials_fourier(stimuli, responses, c1, cell, delay, delay + 500)
-        #sta_hl, x_hl, nonlinear_hl = LN_model_multi_trials_fourier(stimuli, responses, c1, cell, delay + duration - 600, delay + duration)
-        #sta_le, x_le, nonlinear_le = LN_model_multi_trials_fourier(stimuli, responses, c0, cell, delay + duration, 
-        #                                                      delay + duration + 500)
-        #sta_ll, x_ll, nonlinear_ll = LN_model_multi_trials_fourier(stimuli, responses, c0, cell, nsamples - 600, nsamples)
-        fig, axes = plt.subplots(1, 2, figsize=(8, 3))
+        LN_plot(ln_he, ln_hl, ln_le, ln_ll, save='LN_'+str(cell))
         
-        axes[0].plot(np.linspace(0, 0.5, 50), sta_he[:50], 'r', label=r'$H_{early}$')
-        axes[0].plot(np.linspace(0, 0.5, 50), sta_hl[:50], 'b', label=r'$H_{late}$')
-        axes[0].plot(np.linspace(0, 0.5, 50), sta_le[:50], 'k', label=r'$L_{early}$')
-        axes[0].plot(np.linspace(0, 0.5, 50), sta_ll[:50], 'g', label=r'$L_{late}$')
-        axes[0].legend()
-        axes[0].set_xlabel('Delay (s)')
-        axes[0].set_ylabel(r'Filter ($s^{-1}$)')
-        axes[0].set_title('Filter')
+    responses_plot(stimuli, responses, layer_outs, channel, save='response')
+
+    return layer_outs, stimuli, responses
+
+def LN_plot(ln_he, ln_hl, ln_le, ln_ll, save=None, filt_len=50, dpi=300):
+    
+    sta_he, x_he, nonlinear_he = ln_he
+    sta_hl, x_hl, nonlinear_hl = ln_hl
+    sta_le, x_le, nonlinear_le = ln_le
+    sta_ll, x_ll, nonlinear_ll = ln_ll
+    
+    fig, axes = plt.subplots(1, 2, figsize=(8, 3))
+    
+    axes[0].plot(np.linspace(0, filt_len/100., filt_len), sta_he[:filt_len], 'r', label=r'$H_{early}$')
+    axes[0].plot(np.linspace(0, filt_len/100., filt_len), sta_hl[:filt_len], 'b', label=r'$H_{late}$')
+    axes[0].plot(np.linspace(0, filt_len/100., filt_len), sta_le[:filt_len], 'k', label=r'$L_{early}$')
+    axes[0].plot(np.linspace(0, filt_len/100., filt_len), sta_ll[:filt_len], 'g', label=r'$L_{late}$')
+    axes[0].legend()
+    axes[0].set_xlabel('Delay (s)')
+    axes[0].set_ylabel(r'Filter ($s^{-1}$)')
+    axes[0].set_title('Filter')
         
         
-        axes[1].plot(x_he, nonlinear_he, 'r', label=r'$H_{early}$')
-        axes[1].plot(x_hl, nonlinear_hl, 'b', label=r'$H_{late}$')
-        axes[1].plot(x_le, nonlinear_le, 'k', label=r'$L_{early}$')
-        axes[1].plot(x_ll, nonlinear_ll, 'g', label=r'$L_{late}$')
-        axes[1].set_xlabel('Input')
-        axes[1].set_ylabel('Output (Hz)')
-        axes[1].set_title('Nonlinearity')
-        #axes[1].legend()
-        plt.savefig('/home/xhding/workspaces/torch-deep-retina/kinetic/notebook/figures/LN_'+str(cell)+'.png', dpi=300, bbox_inches = "tight")
-        plt.show()
-        
-    return stimuli, responses
+    axes[1].plot(x_he, nonlinear_he, 'r', label=r'$H_{early}$')
+    axes[1].plot(x_hl, nonlinear_hl, 'b', label=r'$H_{late}$')
+    axes[1].plot(x_le, nonlinear_le, 'k', label=r'$L_{early}$')
+    axes[1].plot(x_ll, nonlinear_ll, 'g', label=r'$L_{late}$')
+    axes[1].set_xlabel('Input')
+    axes[1].set_ylabel('Output (Hz)')
+    axes[1].set_title('Nonlinearity')
+    
+    if save != None:
+        plt.savefig('/home/xhding/workspaces/torch-deep-retina/kinetic/notebook/figures/'+save+'.png', dpi=dpi, bbox_inches = "tight")
+    plt.show()
+    
+    return
+
+def responses_plot(stimuli, responses, layer_outs, channel, cell=2, save=None, dpi=300, duration=1000, start=800, filt_len=40):
+    
+    fig, axes = plt.subplots(3,1, figsize=(7.5,9), sharex=True)
+    for trial in range(len(stimuli)):
+        stimuli[trial][stimuli[trial]>2.] = 2.
+        stimuli[trial][stimuli[trial]<0.] = 0.
+    axes[0].plot(np.linspace((start-duration)/100, 2*duration/100, (3*duration-start)), 127.5*stimuli[0][start:], color='gray', alpha=0.8)
+    axes[0].axvline(x=0, color='black', ls='--')
+    axes[0].axvline(x=duration//100, color='black', ls='--')
+    axes[0].set_ylabel('Intensity')
+    axes[0].set_title('Stimulus')
+    axes[0].set_ylim((-10, 310))
+    axes[0].add_patch(patches.Rectangle((1, 275), 4, 20, color='red'))
+    axes[0].add_patch(patches.Rectangle((duration//100-5, 275), 5, 20, color='blue'))
+    axes[0].add_patch(patches.Rectangle((1+duration//100, 275), 4, 20, color='black'))
+    axes[0].add_patch(patches.Rectangle((2*duration//100-5, 275), 5, 20, color='green'))
+
+    axes[1].plot(np.linspace((start-duration)/100, 2*duration/100, (3*duration-start)), np.array(responses).mean(0)[start:, cell], color='r', alpha=0.7)
+    axes[1].axvline(x=0, color='black', ls='--')
+    axes[1].axvline(x=duration//100, color='black', ls='--')
+    axes[1].set_ylabel('Response (Hz)')
+    axes[1].set_title('Response')
+
+    axes[2].plot(np.linspace((start-duration)/100, 2*duration/100, (3*duration-start)), layer_outs['kinetics'][start-filt_len:, 0, channel], label=r'$R$', alpha=0.8)
+    axes[2].plot(np.linspace((start-duration)/100, 2*duration/100, (3*duration-start)), layer_outs['kinetics'][start-filt_len:, 1, channel], label=r'$A$', alpha=0.8)
+    axes[2].plot(np.linspace((start-duration)/100, 2*duration/100, (3*duration-start)), layer_outs['kinetics'][start-filt_len:, 2, channel], label=r'$I_1$', alpha=0.8)
+    axes[2].plot(np.linspace((start-duration)/100, 2*duration/100, (3*duration-start)), layer_outs['kinetics'][start-filt_len:, 3, channel], label=r'$I_2$', alpha=0.8)
+    axes[2].legend()
+    axes[2].axvline(x=0, color='black', ls='--')
+    axes[2].axvline(x=duration//100, color='black', ls='--')
+    axes[2].set_xlabel('Time (s)')
+    axes[2].set_ylabel('Occupancy')
+    axes[2].set_title('Kinetic States')
+
+    if save != None:
+        plt.savefig('/home/xhding/workspaces/torch-deep-retina/kinetic/notebook/figures/'+save+'.png', dpi=dpi, bbox_inches = "tight")
+    plt.show()
+    
+    return
 
 def contrast_adaptation_statistics(model, device, hs_mode='single', stim_type='full', I20=None, cells='all', scale=4.46, fpf=3,
                                    c0=0.05, c1=0.35, nsamples=2000, nrepeats=10, filt_depth=40, load_stimuli=None, **kwargs):
@@ -192,7 +204,32 @@ def contrast_adaptation_statistics(model, device, hs_mode='single', stim_type='f
         
     return gains, freqs
 
-def LN_model_multi_trials(stimuli, responses, contrast, cell, start_idx, end_idx, filter_len=100, sta_type='fourier', offset=10):
+def LN_statistics_plot(data, contrasts_l, contrasts_nl, save=None, dpi=300):
+    
+    fig, axe = plt.subplots(2,1, figsize=(6,6))
+
+    axe[0].errorbar(contrasts_l, [np.mean(each_data[2]) for each_data in data if each_data[0] in contrasts_l], fmt='-o', 
+                    yerr=[sem(each_data[2]) for each_data in data if each_data[0] in contrasts_l], color='green', alpha=0.7)
+    axe[0].set_ylabel('Mean Frequency (Hz)')
+    axe[0].set_xticks(contrasts_l)
+
+    axe[1].plot(contrasts_nl, [np.mean(each_data[1]['he']) for each_data in data if each_data[0] in contrasts_nl], '-o', color='red', label=r'$H_{early}$')
+    axe[1].plot(contrasts_nl, [np.mean(each_data[1]['hl']) for each_data in data if each_data[0] in contrasts_nl], '-o', color='blue', label=r'$H_{late}$')
+    axe[1].legend()
+    axe[1].set_ylabel('Averaged Gain (Hz / Filtered input)')
+
+    axe[1].set_xlabel('Contrast')
+    axe[1].set_xticks(contrasts_nl)
+
+    fig.suptitle('Populational summary')
+
+    if save != None:
+        plt.savefig('/home/xhding/workspaces/torch-deep-retina/kinetic/notebook/figures/'+save+'.png', dpi=dpi, bbox_inches = "tight")
+    plt.show()
+    
+    return
+
+def LN_model(stimuli, responses, contrast, cell, start_idx, end_idx, filter_len=100, sta_type='revcor', offset=10):
     sta = 0
     stimulus = []
     resp = []
@@ -210,7 +247,6 @@ def LN_model_multi_trials(stimuli, responses, contrast, cell, start_idx, end_idx
     sta -= sta.mean()
     stimulus = np.concatenate(stimulus)
     resp = np.concatenate(resp)
-    #normed_sta, _, _= normalize_filter(sta, stimulus, contrast)
     normed_sta = normalize_filter2(sta, stimulus)
     
     filtered_stim = pyret.filtertools.linear_response(normed_sta, stimulus)
@@ -252,38 +288,7 @@ def LN_statistics(stimuli, responses, contrast, cell, start_idx, end_idx, filter
     
     return gain, mean_freq
 
-def LN_model_multi_trials2(stimuli, responses, contrast, cell, start_idx, end_idx, filter_len=100, sta_type='fourier', offset=10):
-    stimulus = []
-    resp = []
-    for trial in range(len(stimuli)):
-        stim_trial = stimuli[trial][start_idx:end_idx]
-        resp_trial = responses[trial][start_idx:end_idx, cell]
-        stimulus.append(stim_trial)
-        resp.append(resp_trial)
-    stimulus = np.concatenate(stimulus)
-    resp = np.concatenate(resp)
-    
-    if sta_type == 'revcor':
-        sta, _ = pyret.filtertools.revcorr(stimulus, scipy.stats.zscore(resp), 0, filter_len)
-        sta = np.flip(sta, axis=0)
-    elif sta_type == 'fourier':
-        sta = fourier_sta(stimulus, resp, filter_len, offset)
-    sta -= sta.mean()
-    
-    #normed_sta, _, _= normalize_filter(sta, stimulus, contrast)
-    normed_sta = normalize_filter2(sta, stimulus)
-    
-    filtered_stim = pyret.filtertools.linear_response(normed_sta, stimulus)
-    nonlinearity = Binterp(10)
-    #nonlinearity = Sigmoid(peak=100.)
-    nonlinearity.fit(filtered_stim[filter_len:], resp[filter_len:])
-
-    x = np.linspace(np.min(filtered_stim), np.max(filtered_stim), 10)
-    nonlinear_prediction = nonlinearity.predict(x)
-    
-    return normed_sta, x, nonlinear_prediction
-
-def LN_model_multi_trials_fourier(stimuli, responses, contrast, cell, start_idx, end_idx, filter_len=100, offset=10):
+def LN_model_fourier(stimuli, responses, contrast, cell, start_idx, end_idx, filter_len=100, offset=10):
     stimulus = []
     resp = []
     N = end_idx - start_idx
@@ -399,91 +404,66 @@ def fourier_sta(x, y, filter_len=100, offset=10):
 
     return normed_f
 
-def nonlinearity(stim, resp, normed_sta, nonlinearity_type, filter_len):
+def performance(model, device, cfg):
     
-    filtered_stim = pyret.filtertools.linear_response(normed_sta, stim)
-    if nonlinearity_type == 'bin':
-        nonlinearity = Binterp(10)
-    else:
-        nonlinearity = Sigmoid()
-    nonlinearity.fit(filtered_stim[filter_len:], resp[filter_len:])
+    n_units = cfg.Model.n_units
+    data_kwargs = dict(cfg.Data)
 
-    x = np.linspace(np.min(filtered_stim), np.max(filtered_stim), 10)
-    nonlinear_prediction = nonlinearity.predict(x)
-    
-    return x, nonlinear_prediction
+    data_kwargs['stim'] = 'fullfield_whitenoise'
+    cfg.Data.start_idx = 4000
 
-def LN_model_1d(stim, resp, filter_len=100, nonlinearity_type='bin', sta_method='fourier', offset=10):
-    
-    contrast = stim.std() / stim.mean()
-    stim = scipy.stats.zscore(stim) * contrast
-    
-    if sta_method == 'revcor':
-        normed_sta = rev_sta(stim, resp, filter_len)
-    elif sta_method == 'fourier':
-        normed_sta = fourier_sta(stim, resp, filter_len, offset)
+    train_dataset_noise = MyDataset(stim_sec='train', **data_kwargs)
+    test_data_noise =  DataLoader(dataset=MyDataset(stim_sec='test', stats=train_dataset_noise.stats, **data_kwargs))
+    test_pc_noise, error_noise = pearsonr_eval(model, test_data_noise, n_units, device, I20=cfg.Data.I20, start_idx=cfg.Data.start_idx, hs_mode=cfg.Data.hs_mode)
 
-    x, nonlinear_prediction = nonlinearity(stim, resp, normed_sta, nonlinearity_type, filter_len)
-    
-    return normed_sta, x, nonlinear_prediction
+    test_data_noise =  DataLoader(dataset=MyDataset(stim_sec='test', stats=train_dataset_noise.stats, **data_kwargs), shuffle=True)
+    test_pc_noise_shuffle, error_noise_shuffle = pearsonr_eval(model, test_data_noise, n_units, device, I20=cfg.Data.I20, start_idx=cfg.Data.start_idx, hs_mode=cfg.Data.hs_mode)
 
-def contrast_adaption_nonlinear(stimulus, resp, h_start, l_start, contrast_duration=2000, e_start=100, e_duration=400, 
-                                l_duration=500, nonlinearity_type='bin', filter_len=100, sta_method='fourier', offset=10):
+    cfg.Data.start_idx = 0
+    data_kwargs['stim'] = 'naturalscene'
+    train_dataset_natural = MyDataset(stim_sec='train', **data_kwargs)
+    test_data_natural =  DataLoader(dataset=MyDataset(stim_sec='test', stats=train_dataset_natural.stats, **data_kwargs))
+    test_pc_natural, error_natural = pearsonr_eval(model, test_data_natural, n_units, device,
+                                    I20=cfg.Data.I20, start_idx=cfg.Data.start_idx, hs_mode=cfg.Data.hs_mode)
 
-    stim_he = stimulus[h_start+e_start-filter_len:h_start+e_duration+e_start]
-    resp_he = resp[h_start+e_start-filter_len:h_start+e_duration+e_start]
-    stim_hl = stimulus[h_start+contrast_duration-l_duration-filter_len:h_start+contrast_duration]
-    resp_hl = resp[h_start+contrast_duration-l_duration-filter_len:h_start+contrast_duration]
-    stim_le = stimulus[l_start+e_start-filter_len:l_start+e_duration+e_start]
-    resp_le = resp[l_start+e_start-filter_len:l_start+e_duration+e_start]
-    stim_ll = stimulus[l_start+contrast_duration-l_duration-filter_len:l_start+contrast_duration]
-    resp_ll = resp[l_start+contrast_duration-l_duration-filter_len:l_start+contrast_duration]
-    _, x_he, nonlinear_he = LN_model_1d(stim_he, resp_he, filter_len, nonlinearity_type, sta_method, offset)
-    _, x_hl, nonlinear_hl = LN_model_1d(stim_hl, resp_hl, filter_len, nonlinearity_type, sta_method, offset)
-    _, x_le, nonlinear_le = LN_model_1d(stim_le, resp_le, filter_len, nonlinearity_type, sta_method, offset)
-    _, x_ll, nonlinear_ll = LN_model_1d(stim_ll, resp_ll, filter_len, nonlinearity_type, sta_method, offset)
+    test_data_natural =  DataLoader(dataset=MyDataset(stim_sec='test', stats=train_dataset_natural.stats, **data_kwargs), shuffle=True)
+    test_pc_natural_shuffle, error_natural_shuffle = pearsonr_eval(model, test_data_natural, n_units, device,
+                                    I20=cfg.Data.I20, start_idx=cfg.Data.start_idx, hs_mode=cfg.Data.hs_mode)
+
+    return (test_pc_noise, error_noise), (test_pc_noise_shuffle, error_noise_shuffle), (test_pc_natural, error_natural), (test_pc_natural_shuffle, error_natural_shuffle)
+
+def performance_plot(noise, noise_shuffle, natural, natural_shuffle, corr_natural, corr_noise, save=None, dpi=300):
     
-    plt.plot(x_he, nonlinear_he, 'r', label='high early')
-    plt.plot(x_hl, nonlinear_hl, 'b', label='high late')
-    plt.plot(x_le, nonlinear_le, 'k', label='low early')
-    plt.plot(x_ll, nonlinear_ll, 'g', label='low late')
-    plt.legend()
+    test_pc_noise, error_noise = noise
+    test_pc_noise_shuffle, error_noise_shuffle = noise_shuffle
+    test_pc_natural, error_natural = natural
+    test_pc_natural_shuffle, error_natural_shuffle = natural_shuffle
+    
+    fig, axes = plt.subplots(1,2, figsize=(5,5))
+
+    rects1 = axes[0].bar(['full', 'shuffled'], [test_pc_natural, test_pc_natural_shuffle], capsize=5,
+                         yerr=[error_natural, error_natural_shuffle], color=['blue', 'green'], alpha=0.7)
+
+    axes[0].axhline(y=corr_natural.mean(), linestyle='--', color='black')
+    axes[0].axhspan(ymin=corr_natural.mean()-sem(corr_natural), ymax=corr_natural.mean()+sem(corr_natural), color='gray', alpha=0.5)
+
+    axes[0].text(0, 0.82, 'retinal reliability')
+    axes[0].set_ylabel('Pearson Correlation Coefficient')
+    axes[0].set_ylim([0, 1])
+    axes[0].set_title('natural scene')
+
+    rects1 = axes[1].bar(['full', 'shuffled'], [test_pc_noise, test_pc_noise_shuffle], capsize=5,
+                         yerr=[error_noise, error_noise_shuffle], color=['blue', 'green'], alpha=0.7)
+    axes[1].axhline(y=corr_noise.mean(), linestyle='--', color='black')
+    axes[1].axhspan(ymin=corr_noise.mean()-sem(corr_natural), ymax=corr_noise.mean()+sem(corr_natural), color='gray', alpha=0.5)
+    axes[1].set_ylim([0, 1])
+    axes[1].set_title('white noise')
+
+    if save != None:
+        plt.savefig('/home/xhding/workspaces/torch-deep-retina/kinetic/notebook/figures/'+save+'.png', dpi=dpi, bbox_inches = "tight")
     plt.show()
-
-    return (x_he, nonlinear_he), (x_hl, nonlinear_hl), (x_le, nonlinear_le), (x_ll, nonlinear_ll)
-
-def contrast_adaption_nonlinear2(stimulus, resp, h_start, l_start, contrast_duration=2000, e_start=100, e_duration=400, 
-                                l_duration=500, nonlinearity_type='bin', filter_len=100, sta_method='fourier', offset=10):
-
-    stim_h = stimulus[h_start:h_start+contrast_duration]
-    resp_h = resp[h_start:h_start+contrast_duration]
-    stim_l = stimulus[l_start:l_start+contrast_duration]
-    resp_l = resp[l_start:l_start+contrast_duration]
-    filter_h, _, _ = LN_model_1d(stim_h, resp_h, filter_len, nonlinearity_type, sta_method, offset)
-    filter_l, _, _ = LN_model_1d(stim_h, resp_h, filter_len, nonlinearity_type, sta_method, offset)
     
-    stim_he = stimulus[h_start+e_start-filter_len:h_start+e_duration+e_start]
-    resp_he = resp[h_start+e_start-filter_len:h_start+e_duration+e_start]
-    stim_hl = stimulus[h_start+contrast_duration-l_duration-filter_len:h_start+contrast_duration]
-    resp_hl = resp[h_start+contrast_duration-l_duration-filter_len:h_start+contrast_duration]
-    stim_le = stimulus[l_start+e_start-filter_len:l_start+e_duration+e_start]
-    resp_le = resp[l_start+e_start-filter_len:l_start+e_duration+e_start]
-    stim_ll = stimulus[l_start+contrast_duration-l_duration-filter_len:l_start+contrast_duration]
-    resp_ll = resp[l_start+contrast_duration-l_duration-filter_len:l_start+contrast_duration]
-    
-    x_he, nonlinear_he = nonlinearity(stim_he, resp_he, filter_h, nonlinearity_type, filter_len)
-    x_hl, nonlinear_hl = nonlinearity(stim_hl, resp_hl, filter_h, nonlinearity_type, filter_len)
-    x_le, nonlinear_le = nonlinearity(stim_le, resp_le, filter_l, nonlinearity_type, filter_len)
-    x_ll, nonlinear_ll = nonlinearity(stim_ll, resp_ll, filter_l, nonlinearity_type, filter_len)
-    
-    plt.plot(x_he, nonlinear_he, 'r', label='high early')
-    plt.plot(x_hl, nonlinear_hl, 'b', label='high late')
-    plt.plot(x_le, nonlinear_le, 'k', label='low early')
-    plt.plot(x_ll, nonlinear_ll, 'g', label='low late')
-    plt.legend()
-    plt.show()
-
-    return (x_he, nonlinear_he), (x_hl, nonlinear_hl), (x_le, nonlinear_le), (x_ll, nonlinear_ll)
+    return
 
 def analyze_one_pixel(cfg_name, checkpoint_path, stimulus, device, n_units=3, channel=0, cell=0, h_start=2000, l_start=4000):
     
@@ -520,8 +500,7 @@ def analyze_one_pixel(cfg_name, checkpoint_path, stimulus, device, n_units=3, ch
     
     return layer_outs
 
-def analyze(cfg_name, checkpoint_path, checkpoint_path_one_pixel, stimulus, device, c0=0.05, c1=0.35,
-            nrepeats=10, n_units=3, channel=0, cell=0, h_start=2000, l_start=4000):
+def analyze(cfg_name, checkpoint_path, checkpoint_path_one_pixel, device, c0=0.05, c1=0.35, nrepeats=10):
     
     cfg = get_custom_cfg(cfg_name)
     checkpoint = torch.load(checkpoint_path, map_location=device)
@@ -540,39 +519,24 @@ def analyze(cfg_name, checkpoint_path, checkpoint_path_one_pixel, stimulus, devi
             pass
     model.eval()
     
-    filter_len = model.img_shape[0]
-    
     data_kwargs = dict(cfg.Data)
-    _, layer_outs = contrast_adaptation_kinetic(model, device, insp_keys=['kinetics'], nrepeats=nrepeats, c0=c0, c1=c1, **data_kwargs)
-
-    plt.plot(np.arange(3000 - filter_len),layer_outs['kinetics'][:, 0, channel], label='R')
-    plt.plot(np.arange(3000 - filter_len),layer_outs['kinetics'][:, 1, channel], label='A')
-    plt.plot(np.arange(3000 - filter_len),layer_outs['kinetics'][:, 2, channel], label='I1')
-    plt.plot(np.arange(3000 - filter_len),layer_outs['kinetics'][:, 3, channel], label='I2')
-    plt.legend()
-    plt.show()
+    _, _, _ = contrast_adaptation(model, device, insp_keys=['kinetics'], nrepeats=nrepeats, c0=c0, c1=c1, **data_kwargs)
     
-    contrast_adaptation_LN(model, device, c0=c0, c1=c1, nrepeats=nrepeats, **data_kwargs)
+    data = []
+    contrasts = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    for c1 in contrasts:
+        gains, freqs = contrast_adaptation_statistics(model, device, c1=c1, nrepeats=nrepeats)
+        data.append((c1, gains, freqs))
+    contrasts_l = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35]
+    contrasts_nl = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    LN_statistics_plot(data, contrasts_l, contrasts_nl, save='population')
     
-    data_kwargs['stim'] = 'fullfield_whitenoise'
-    train_dataset_noise = MyDataset(stim_sec='train', **data_kwargs)
-    test_data_noise =  DataLoader(dataset=MyDataset(stim_sec='test', stats=train_dataset_noise.stats, **data_kwargs))
-    test_pc_noise, pred_noise, _ = pearsonr_eval(model, test_data_noise, n_units, device, with_responses=True,
-                                                 I20=cfg.Data.I20, start_idx=cfg.Data.start_idx, hs_mode=cfg.Data.hs_mode)
-    pred_noise = np.pad(pred_noise, ((filter_len, 0), (0,0)), 'constant', constant_values=(0,0))
-
-    he, hl, le, ll = contrast_adaption_nonlinear2(stimulus, pred_noise[:, cell], h_start=h_start, l_start=l_start)
+    corr_natural = np.array([0.7118, 0.8057, 0.7835, 0.7989])
+    corr_noise = np.array([0.7134, 0.6254, 0.7281, 0.7501])
+    noise, noise_shuffle, natural, natural_shuffle = performance(model, device, cfg)
+    performance_plot(noise, noise_shuffle, natural, natural_shuffle, corr_natural, corr_noise, save='pearson')
     
-    data_kwargs['stim'] = 'naturalscene'
-    train_dataset_natural = MyDataset(stim_sec='train', **data_kwargs)
-    test_data_natural =  DataLoader(dataset=MyDataset(stim_sec='test', stats=train_dataset_natural.stats, **data_kwargs))
-    test_pc_natural = pearsonr_eval(model, test_data_natural, n_units, device,
-                                    I20=cfg.Data.I20, start_idx=cfg.Data.start_idx, hs_mode=cfg.Data.hs_mode)
-    
-    print('white noise prediction correlation :{:.4f}'.format(test_pc_noise))
-    print('natural scene prediction correlation: {:.4f}'.format(test_pc_natural))
-    
-    return test_pc_noise, test_pc_natural, layer_outs
+    return
 
 def contrast_adaptation_fullfield_multi(model, device):
     
@@ -595,14 +559,10 @@ def contrast_adaptation_fullfield_multi(model, device):
     plt.show()
     
     for cell in [0,1,2,3]:
-        #_, x_he, nonlinear_he = LN_model_multi_trials(stimuli, responses, 0.35, cell, 0, 500, sta_type='revcor')
-        #_, x_hl, nonlinear_hl = LN_model_multi_trials(stimuli, responses, 0.35, cell, 1400, 2000, sta_type='revcor')
-        #_, x_le, nonlinear_le = LN_model_multi_trials(stimuli, responses, 0.05, cell, 2000, 2500, sta_type='revcor')
-        #_, x_ll, nonlinear_ll = LN_model_multi_trials(stimuli, responses, 0.05, cell, 3400, 4000, sta_type='revcor')
-        _, x_he, nonlinear_he = LN_model_multi_trials_fourier(stimuli, responses, 0.35, cell, 0, 500)
-        _, x_hl, nonlinear_hl = LN_model_multi_trials_fourier(stimuli, responses, 0.35, cell, 1400, 2000)
-        _, x_le, nonlinear_le = LN_model_multi_trials_fourier(stimuli, responses, 0.05, cell, 2000, 2500)
-        _, x_ll, nonlinear_ll = LN_model_multi_trials_fourier(stimuli, responses, 0.05, cell, 3400, 4000)
+        _, x_he, nonlinear_he = LN_model(stimuli, responses, 0.35, cell, 0, 500)
+        _, x_hl, nonlinear_hl = LN_model(stimuli, responses, 0.35, cell, 1400, 2000)
+        _, x_le, nonlinear_le = LN_model(stimuli, responses, 0.05, cell, 2000, 2500)
+        _, x_ll, nonlinear_ll = LN_model(stimuli, responses, 0.05, cell, 3400, 4000)
         plt.plot(x_he, nonlinear_he, 'r', label='high early')
         plt.plot(x_hl, nonlinear_hl, 'b', label='high late')
         plt.plot(x_le, nonlinear_le, 'k', label='low early')
