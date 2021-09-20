@@ -93,25 +93,38 @@ def LN_plot(ln_he, ln_hl, ln_le, ln_ll, save=None, filt_len=50, dpi=300):
     sta_le, x_le, nonlinear_le = ln_le
     sta_ll, x_ll, nonlinear_ll = ln_ll
     
-    fig, axes = plt.subplots(1, 2, figsize=(8, 3))
+    fig, axes = plt.subplots(1, 2, figsize=(4.9, 2.1),  constrained_layout=True)
     
     axes[0].plot(np.linspace(0, filt_len/100., filt_len), sta_he[:filt_len], 'r', label=r'$H_{early}$')
     axes[0].plot(np.linspace(0, filt_len/100., filt_len), sta_hl[:filt_len], 'b', label=r'$H_{late}$')
     axes[0].plot(np.linspace(0, filt_len/100., filt_len), sta_le[:filt_len], 'k', label=r'$L_{early}$')
     axes[0].plot(np.linspace(0, filt_len/100., filt_len), sta_ll[:filt_len], 'g', label=r'$L_{late}$')
-    axes[0].legend()
-    axes[0].set_xlabel('Delay (s)')
-    axes[0].set_ylabel(r'Filter ($s^{-1}$)')
-    axes[0].set_title('Filter')
+    axes[0].legend(fontsize=13, loc='best', ncol=2, labelcolor='linecolor', frameon=False, handlelength=0, columnspacing=0.2, labelspacing=0.2, handletextpad=0)
+    '''
+    axes[0].text(0.18, -13, r'$H_{early}$', color='r', fontsize=13)
+    axes[0].text(0.18, -20, r'$H_{late}$', color='b', fontsize=13)
+    axes[0].text(0.35, -13, r'$L_{early}$', color='k', fontsize=13)
+    axes[0].text(0.35, -20, r'$L_{late}$', color='g', fontsize=13)
+    '''
+    axes[0].set_xlabel('Delay (s)', fontsize=13)
+    axes[0].set_ylabel(r'Filter ($s^{-1}$)', fontsize=13)
+    axes[0].set_title('Filter', fontsize=15)
+    axes[0].spines['right'].set_visible(False)
+    axes[0].spines['top'].set_visible(False)
+    axes[0].tick_params(axis='both', which='major', labelsize=10)
         
         
     axes[1].plot(x_he, nonlinear_he, 'r', label=r'$H_{early}$')
     axes[1].plot(x_hl, nonlinear_hl, 'b', label=r'$H_{late}$')
     axes[1].plot(x_le, nonlinear_le, 'k', label=r'$L_{early}$')
     axes[1].plot(x_ll, nonlinear_ll, 'g', label=r'$L_{late}$')
-    axes[1].set_xlabel('Input')
-    axes[1].set_ylabel('Output (Hz)')
-    axes[1].set_title('Nonlinearity')
+    axes[1].set_xlim((-1, 1))
+    axes[1].set_xlabel('Input', fontsize=13)
+    axes[1].set_ylabel('Output (Hz)', fontsize=13)
+    axes[1].set_title('Nonlinearity', fontsize=15)
+    axes[1].spines['right'].set_visible(False)
+    axes[1].spines['top'].set_visible(False)
+    axes[1].tick_params(axis='both', which='major', labelsize=10)
     
     if save != None:
         plt.savefig('/home/xhding/workspaces/torch-deep-retina/kinetic/notebook/figures/'+save+'.png', dpi=dpi, bbox_inches = "tight")
@@ -121,37 +134,46 @@ def LN_plot(ln_he, ln_hl, ln_le, ln_ll, save=None, filt_len=50, dpi=300):
 
 def responses_plot(stimuli, responses, layer_outs, channel, cell=2, save=None, dpi=300, duration=1000, start=800, filt_len=40):
     
-    fig, axes = plt.subplots(3,1, figsize=(7.5,9), sharex=True)
+    fig, axes = plt.subplots(3,1, figsize=(5, 6), sharex=True, constrained_layout=True)
     for trial in range(len(stimuli)):
         stimuli[trial][stimuli[trial]>2.] = 2.
         stimuli[trial][stimuli[trial]<0.] = 0.
     axes[0].plot(np.linspace((start-duration)/100, 2*duration/100, (3*duration-start)), 127.5*stimuli[0][start:], color='gray', alpha=0.8)
     axes[0].axvline(x=0, color='black', ls='--')
     axes[0].axvline(x=duration//100, color='black', ls='--')
-    axes[0].set_ylabel('Intensity')
-    axes[0].set_title('Stimulus')
+    axes[0].set_ylabel('Intensity', fontsize=13)
+    axes[0].set_title('Stimulus', fontsize=15)
     axes[0].set_ylim((-10, 310))
     axes[0].add_patch(patches.Rectangle((1, 275), 4, 20, color='red'))
     axes[0].add_patch(patches.Rectangle((duration//100-5, 275), 5, 20, color='blue'))
     axes[0].add_patch(patches.Rectangle((1+duration//100, 275), 4, 20, color='black'))
     axes[0].add_patch(patches.Rectangle((2*duration//100-5, 275), 5, 20, color='green'))
+    axes[0].spines['right'].set_visible(False)
+    axes[0].spines['top'].set_visible(False)
+    axes[0].tick_params(axis='both', which='major', labelsize=10)
 
     axes[1].plot(np.linspace((start-duration)/100, 2*duration/100, (3*duration-start)), np.array(responses).mean(0)[start:, cell], color='r', alpha=0.7)
     axes[1].axvline(x=0, color='black', ls='--')
     axes[1].axvline(x=duration//100, color='black', ls='--')
-    axes[1].set_ylabel('Response (Hz)')
-    axes[1].set_title('Response')
+    axes[1].set_ylabel('Response (Hz)', fontsize=13)
+    axes[1].set_title('Response', fontsize=15)
+    axes[1].spines['right'].set_visible(False)
+    axes[1].spines['top'].set_visible(False)
+    axes[1].tick_params(axis='both', which='major', labelsize=10)
 
     axes[2].plot(np.linspace((start-duration)/100, 2*duration/100, (3*duration-start)), layer_outs['kinetics'][start-filt_len:, 0, channel], label=r'$R$', alpha=0.8)
     axes[2].plot(np.linspace((start-duration)/100, 2*duration/100, (3*duration-start)), layer_outs['kinetics'][start-filt_len:, 1, channel], label=r'$A$', alpha=0.8)
     axes[2].plot(np.linspace((start-duration)/100, 2*duration/100, (3*duration-start)), layer_outs['kinetics'][start-filt_len:, 2, channel], label=r'$I_1$', alpha=0.8)
     axes[2].plot(np.linspace((start-duration)/100, 2*duration/100, (3*duration-start)), layer_outs['kinetics'][start-filt_len:, 3, channel], label=r'$I_2$', alpha=0.8)
-    axes[2].legend()
+    axes[2].legend(fontsize=13, loc='right', ncol=2, labelcolor='linecolor', frameon=False, handlelength=0, columnspacing=0.5, labelspacing=0.5, handletextpad=0)
     axes[2].axvline(x=0, color='black', ls='--')
     axes[2].axvline(x=duration//100, color='black', ls='--')
-    axes[2].set_xlabel('Time (s)')
-    axes[2].set_ylabel('Occupancy')
-    axes[2].set_title('Kinetic States')
+    axes[2].set_xlabel('Time (s)', fontsize=13)
+    axes[2].set_ylabel('Occupancy', fontsize=13)
+    axes[2].set_title('Kinetic States', fontsize=15)
+    axes[2].spines['right'].set_visible(False)
+    axes[2].spines['top'].set_visible(False)
+    axes[2].tick_params(axis='both', which='major', labelsize=10)
 
     if save != None:
         plt.savefig('/home/xhding/workspaces/torch-deep-retina/kinetic/notebook/figures/'+save+'.png', dpi=dpi, bbox_inches = "tight")
@@ -206,25 +228,36 @@ def contrast_adaptation_statistics(model, device, hs_mode='single', stim_type='f
 
 def LN_statistics_plot(data, contrasts_l, contrasts_nl, save=None, dpi=300):
     
-    fig, axe = plt.subplots(2,1, figsize=(6,6))
+    fig, axe = plt.subplots(2,1, figsize=(3.5,6), constrained_layout=True)
 
     axe[0].errorbar(contrasts_l, [np.mean(each_data[2]) for each_data in data if each_data[0] in contrasts_l], fmt='-o', 
-                    yerr=[sem(each_data[2]) for each_data in data if each_data[0] in contrasts_l], color='green', alpha=0.7)
-    axe[0].set_ylabel('Mean Frequency (Hz)')
-    axe[0].set_xticks(contrasts_l)
+                    yerr=[sem(each_data[2]) for each_data in data if each_data[0] in contrasts_l], color='darkviolet', alpha=0.7)
+    axe[0].set_ylabel('Mean Frequency (Hz)', fontsize=13)
+    axe[0].set_xticks(contrasts_l, minor=True)
+    axe[0].set_xticks(contrasts_l[::2])
+    axe[0].spines['right'].set_visible(False)
+    axe[0].spines['top'].set_visible(False)
+    axe[0].tick_params(axis='both', which='major', labelsize=10)
+    axe[0].yaxis.set_major_locator(plt.MaxNLocator(4))
+    
+    axe[1].errorbar(contrasts_nl, [np.mean(each_data[1]['he']) for each_data in data if each_data[0] in contrasts_nl], fmt='-o', 
+                    yerr=[sem(each_data[1]['he']) for each_data in data if each_data[0] in contrasts_nl], color='red', alpha=0.7, label=r'$H_{early}$')
+    axe[1].errorbar(contrasts_nl, [np.mean(each_data[1]['hl']) for each_data in data if each_data[0] in contrasts_nl], fmt='-o', 
+                    yerr=[sem(each_data[1]['hl']) for each_data in data if each_data[0] in contrasts_nl], color='blue', alpha=0.7, label=r'$H_{late}$')
+    axe[1].legend(fontsize=13, frameon=False)
+    axe[1].set_ylabel('Averaged Gain (Hz / Filtered input)', fontsize=13)
 
-    axe[1].plot(contrasts_nl, [np.mean(each_data[1]['he']) for each_data in data if each_data[0] in contrasts_nl], '-o', color='red', label=r'$H_{early}$')
-    axe[1].plot(contrasts_nl, [np.mean(each_data[1]['hl']) for each_data in data if each_data[0] in contrasts_nl], '-o', color='blue', label=r'$H_{late}$')
-    axe[1].legend()
-    axe[1].set_ylabel('Averaged Gain (Hz / Filtered input)')
-
-    axe[1].set_xlabel('Contrast')
-    axe[1].set_xticks(contrasts_nl)
-
-    fig.suptitle('Populational summary')
+    axe[1].set_xlabel('Contrast', fontsize=13)
+    axe[1].set_xticks(contrasts_nl, minor=True)
+    axe[1].set_xticks(contrasts_nl[::2])
+    axe[1].spines['right'].set_visible(False)
+    axe[1].spines['top'].set_visible(False)
+    axe[1].tick_params(axis='both', which='major', labelsize=10)
+    axe[1].yaxis.set_major_locator(plt.MaxNLocator(4))
 
     if save != None:
         plt.savefig('/home/xhding/workspaces/torch-deep-retina/kinetic/notebook/figures/'+save+'.png', dpi=dpi, bbox_inches = "tight")
+        
     plt.show()
     
     return
