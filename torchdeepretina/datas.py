@@ -7,10 +7,12 @@ import h5py
 import numpy as np
 from os.path import join, expanduser
 from scipy.stats import zscore
+import pyret
 import pyret.filtertools as ft
 import torch
 import torchdeepretina.stimuli as tdrstimuli
 import torchdeepretina.intracellular as tdrintra
+from torchdeepretina.pyret_func import estfr
 
 NUM_BLOCKS = {
     '15-10-07': 6,
@@ -45,6 +47,10 @@ CENTERS = {
     '21-03-15': None
 }
 
+SIGMAS = {
+    '21-03-15':[0.0112, 0.013, 0.0078, 0.0078, 0.0132, 0.0122]
+}
+
 Exptdata = namedtuple('Exptdata', ['X','y','spkhist','stats',"cells","centers"])
 __all__ = ['loadexpt','stimcut','CELLS',"CENTERS","DataContainer","DataObj","DataDistributor"]
 
@@ -55,7 +61,8 @@ class DataContainer():
         self.X = (data.X - self.stats['mean']) / self.stats['std']
         self.y = data.y
 
-def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, cutout_width=None,                          norm_stats=None, data_path="/home/salamander/experiments/data"):
+def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, cutout_width=None,                          
+             norm_stats=None, data_path="/home/salamander/experiments/data", sigmas=None):
     """Loads an experiment from an h5 file on disk
 
     Parameters
@@ -130,13 +137,25 @@ def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, cutout_widt
         stim_reshaped = rolling_window(stim[valid_indices], history, time_axis=0)
 
         # get the response for this cell (nsamples, ncells)
-        resp = np.array(f[train_or_test]['response/firing_rate_10ms'][cells]).T[valid_indices]
-        resp = resp[history:]
-
+        #resp = np.array(f[train_or_test]['response/firing_rate_10ms'][cells]).T[valid_indices]
+        #resp = np.array(f[train_or_test]['response/binned'][cells]).T[valid_indices]
+        
         # get the spike history counts for this cell (nsamples, ncells)
         binned = np.array(f[train_or_test]['response/binned'][cells]).T[valid_indices]
         spk_hist = rolling_window(binned, history, time_axis=0)
-
+        
+        time_upsample = np.linspace(0, 0.01*(binned.shape[0]-1), binned.shape[0])
+        if type(sigmas) == float:
+            sigmas = [sigmas for i in range(len(cells))]
+        else:
+            sigmas = SIGMAS[expt]
+        response = []
+        for cell in range(binned.shape[1]):
+            rate = estfr(binned[:, cell], time_upsample, sigma=sigmas[cell])
+            response.append(rate)
+        resp = np.array(response).T
+        resp = resp[history:]
+        
         # get the ganglion cell receptive field centers
         centers = np.asarray(CENTERS[expt])
 

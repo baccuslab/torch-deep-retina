@@ -3,8 +3,9 @@ img_shape: [40,50,50]
 Model:
     name: 'BN_CNN_Stack'
     ksizes: (15, 11)
-    checkpoint: '/home/xhding/saved_model/BN_CNN_Stack/epoch_045_loss_67.19_pearson_0.6992.pth'
+    checkpoint: '/home/xhding/saved_model/BN_CNN_Stack/epoch_045_loss_63.03_pearson_0.7145.pth'
     n_units: 6
+    linear_bias: True
 Data:
     date: '21-03-15'
     batch_size: 512

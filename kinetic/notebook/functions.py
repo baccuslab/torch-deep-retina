@@ -217,18 +217,21 @@ def contrast_adaptation_statistics(model, device, hs_mode='single', stim_type='f
         cells = range(model.n_units)
     gains = {'he':[], 'hl':[]}
     freqs = []
+    offsets = {'he':[], 'hl':[]}
     for cell in cells:
-        gain_he, _ = LN_statistics(stimuli, responses, c1, cell, nsamples//2, nsamples//2 + 500)
-        gain_hl, mean_freq = LN_statistics(stimuli, responses, c1, cell, nsamples - 600, nsamples)
+        gain_he, _, offset_he = LN_statistics(stimuli, responses, c1, cell, nsamples//2, nsamples//2 + 500)
+        gain_hl, mean_freq, offset_hl = LN_statistics(stimuli, responses, c1, cell, nsamples - 600, nsamples)
         gains['he'].append(gain_he)
         gains['hl'].append(gain_hl)
         freqs.append(mean_freq)
+        offsets['he'].append(offset_he)
+        offsets['hl'].append(offset_hl)
         
-    return gains, freqs
+    return gains, freqs, offsets
 
 def LN_statistics_plot(data, contrasts_l, contrasts_nl, save=None, dpi=300):
     
-    fig, axe = plt.subplots(2,1, figsize=(3.5,6), constrained_layout=True)
+    fig, axe = plt.subplots(3,1, figsize=(3.5,8), constrained_layout=True)
 
     axe[0].errorbar(contrasts_l, [np.mean(each_data[2]) for each_data in data if each_data[0] in contrasts_l], fmt='-o', 
                     yerr=[sem(each_data[2]) for each_data in data if each_data[0] in contrasts_l], color='darkviolet', alpha=0.7)
@@ -247,13 +250,27 @@ def LN_statistics_plot(data, contrasts_l, contrasts_nl, save=None, dpi=300):
     axe[1].legend(fontsize=13, frameon=False)
     axe[1].set_ylabel('Averaged Gain (Hz / Filtered input)', fontsize=13)
 
-    axe[1].set_xlabel('Contrast', fontsize=13)
     axe[1].set_xticks(contrasts_nl, minor=True)
     axe[1].set_xticks(contrasts_nl[::2])
     axe[1].spines['right'].set_visible(False)
     axe[1].spines['top'].set_visible(False)
     axe[1].tick_params(axis='both', which='major', labelsize=10)
     axe[1].yaxis.set_major_locator(plt.MaxNLocator(4))
+    
+    axe[2].errorbar(contrasts_nl, [np.mean(each_data[3]['he']) for each_data in data if each_data[0] in contrasts_nl], fmt='-o', 
+                    yerr=[sem(each_data[3]['he']) for each_data in data if each_data[0] in contrasts_nl], color='red', alpha=0.7, label=r'$H_{early}$')
+    axe[2].errorbar(contrasts_nl, [np.mean(each_data[3]['hl']) for each_data in data if each_data[0] in contrasts_nl], fmt='-o', 
+                    yerr=[sem(each_data[3]['hl']) for each_data in data if each_data[0] in contrasts_nl], color='blue', alpha=0.7, label=r'$H_{late}$')
+    axe[2].legend(fontsize=13, frameon=False)
+    axe[2].set_ylabel('Offset (Hz)', fontsize=13)
+
+    axe[2].set_xlabel('Contrast', fontsize=13)
+    axe[2].set_xticks(contrasts_nl, minor=True)
+    axe[2].set_xticks(contrasts_nl[::2])
+    axe[2].spines['right'].set_visible(False)
+    axe[2].spines['top'].set_visible(False)
+    axe[2].tick_params(axis='both', which='major', labelsize=10)
+    axe[2].yaxis.set_major_locator(plt.MaxNLocator(4))
 
     if save != None:
         plt.savefig('/home/xhding/workspaces/torch-deep-retina/kinetic/notebook/figures/'+save+'.png', dpi=dpi, bbox_inches = "tight")
@@ -315,11 +332,17 @@ def LN_statistics(stimuli, responses, contrast, cell, start_idx, end_idx, filter
     normed_sta = normed_sta / 0.01
     gain = slope_statistic(filtered_stim[filter_len:], resp[filter_len:])
     
+    nonlinearity = Sigmoid(peak=100.)
+    nonlinearity.fit(filtered_stim[filter_len:], resp[filter_len:], maxfev=50000)
+    x = np.linspace(np.min(filtered_stim), np.max(filtered_stim), 50)
+    nonlinear_prediction = nonlinearity.predict(x)
+    offset = nonlinear_prediction.mean()
+    
     amps = abs(np.fft.rfft(normed_sta))
     fs = np.fft.rfftfreq(len(normed_sta), 0.01)
     mean_freq = sum([fs * amps for fs,amps in zip(fs, amps)])/sum(amps)
     
-    return gain, mean_freq
+    return gain, mean_freq, offset
 
 def LN_model_fourier(stimuli, responses, contrast, cell, start_idx, end_idx, filter_len=100, offset=10):
     stimulus = []
@@ -480,17 +503,25 @@ def performance_plot(noise, noise_shuffle, natural, natural_shuffle, corr_natura
     axes[0].axhline(y=corr_natural.mean(), linestyle='--', color='black')
     axes[0].axhspan(ymin=corr_natural.mean()-sem(corr_natural), ymax=corr_natural.mean()+sem(corr_natural), color='gray', alpha=0.5)
 
-    axes[0].text(0, 0.82, 'retinal reliability')
-    axes[0].set_ylabel('Pearson Correlation Coefficient')
-    axes[0].set_ylim([0, 1])
-    axes[0].set_title('natural scene')
+    axes[0].text(-0.3, 0.82, 'retinal reliability', fontsize=13)
+    axes[0].set_ylabel('Pearson Correlation Coefficient', fontsize=13)
+    axes[0].set_ylim([0, 1.])
+    axes[0].set_title('natural scene', fontsize=15)
+    axes[0].spines['right'].set_visible(False)
+    axes[0].spines['top'].set_visible(False)
+    axes[0].set_xticklabels(['full', 'shuffled'], fontsize=13)
+    axes[0].tick_params(axis='y', which='major', labelsize=10)
 
     rects1 = axes[1].bar(['full', 'shuffled'], [test_pc_noise, test_pc_noise_shuffle], capsize=5,
                          yerr=[error_noise, error_noise_shuffle], color=['blue', 'green'], alpha=0.7)
     axes[1].axhline(y=corr_noise.mean(), linestyle='--', color='black')
     axes[1].axhspan(ymin=corr_noise.mean()-sem(corr_natural), ymax=corr_noise.mean()+sem(corr_natural), color='gray', alpha=0.5)
-    axes[1].set_ylim([0, 1])
-    axes[1].set_title('white noise')
+    axes[1].set_ylim([0, 1.])
+    axes[1].set_title('white noise', fontsize=15)
+    axes[1].spines['right'].set_visible(False)
+    axes[1].spines['top'].set_visible(False)
+    axes[1].set_xticklabels(['full', 'shuffled'], fontsize=13)
+    axes[1].tick_params(axis='y', which='major', labelsize=10)
 
     if save != None:
         plt.savefig('/home/xhding/workspaces/torch-deep-retina/kinetic/notebook/figures/'+save+'.png', dpi=dpi, bbox_inches = "tight")

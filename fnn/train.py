@@ -32,8 +32,8 @@ def train(cfg):
         
     start_epoch = 0
     
-    loss_fn = nn.PoissonNLLLoss(log_input=False).to(device)
-    #loss_fn = nn.MSELoss().to(device)
+    #loss_fn = nn.PoissonNLLLoss(log_input=False).to(device)
+    loss_fn = nn.MSELoss().to(device)
     #loss_fn = nn.L1Loss().to(device)
     
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.Optimize.lr, 
