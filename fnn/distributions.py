@@ -24,7 +24,7 @@ class distribution:
 
     def inverse_sigmoid_para(self, x, a, b, c):
         if x == 0:
-            return inverse_sigmoid_para(0.001, a, b, c)
+            return self.inverse_sigmoid_para(0.001, a, b, c)
         else:
             return b - c * np.log(a/x-1)
 
