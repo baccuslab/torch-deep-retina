@@ -231,7 +231,8 @@ def contrast_adaptation_statistics(model, device, hs_mode='single', stim_type='f
 
 def LN_statistics_plot(data, contrasts_l, contrasts_nl, save=None, dpi=300):
     
-    fig, axe = plt.subplots(3,1, figsize=(3.5,8), constrained_layout=True)
+    fig, axe = plt.subplots(3,1, figsize=(3.5,9.7), constrained_layout=True)
+    #fig.subplots_adjust(hspace=0.5)
 
     axe[0].errorbar(contrasts_l, [np.mean(each_data[2]) for each_data in data if each_data[0] in contrasts_l], fmt='-o', 
                     yerr=[sem(each_data[2]) for each_data in data if each_data[0] in contrasts_l], color='darkviolet', alpha=0.7)

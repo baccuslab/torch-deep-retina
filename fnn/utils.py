@@ -23,6 +23,10 @@ def select_model(cfg, device):
         model = BN_CNN_Stack(n_units=cfg.Model.n_units, noise=cfg.Model.noise, chans=cfg.Model.chans, 
                        bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
                        img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
+    if cfg.Model.name == 'BN_CNN_Stack_poly':
+        model = BN_CNN_Stack_poly(n_units=cfg.Model.n_units, noise=cfg.Model.noise, chans=cfg.Model.chans, 
+                       bn_moment=cfg.Model.bn_moment, softplus=cfg.Model.softplus, 
+                       img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)
     if cfg.Model.name == 'BN_CNN_Stack_NoNorm':
         model = BN_CNN_Stack_NoNorm(n_units=cfg.Model.n_units, noise=cfg.Model.noise, chans=cfg.Model.chans, 
                        softplus=cfg.Model.softplus, img_shape=cfg.img_shape, ksizes=cfg.Model.ksizes).to(device)

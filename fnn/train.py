@@ -63,7 +63,7 @@ def train(cfg):
             y = y.double().to(device)
             out = model(x)
             loss += loss_fn(out.double(), y)
-            loss += cfg.Optimize.l1 * torch.norm(y, 1).float().mean()
+            loss += cfg.Optimize.l1 * torch.norm(out, 1).float().mean()
             if idx%cfg.Optimize.trunc_intvl == 0:
                 optimizer.zero_grad()
                 loss.backward()

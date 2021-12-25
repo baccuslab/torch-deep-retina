@@ -1,8 +1,8 @@
-exp_id: 'BN_CNN_Stack'
+exp_id: 'BN_CNN_Stack_Poly'
 img_shape: [40,50,50]
 epoch: 100
 Model:
-    name: 'BN_CNN_Stack'
+    name: 'BN_CNN_Stack_poly'
     ksizes: (15, 11)
     checkpoint: ''
     n_units: 6

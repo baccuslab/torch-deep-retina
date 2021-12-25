@@ -58,6 +58,7 @@ class distribution:
 
     def binomial_scale(self, n, p, k):
         M = self.t - 1
+        #n = min(n, M)
         summation = np.sum([factorial(k*M)/factorial(k*i)/factorial(k*M-k*i)*p**(k*i)*(1-p)**(k*M-k*i) for i in range(M+1)])
         pr = factorial(k*M)/factorial(k*n)/factorial(k*M-k*n)*p**(k*n)*(1-p)**(k*M-k*n) / summation
         return pr
@@ -158,7 +159,9 @@ class distribution:
         kls = []
         mean_rate = recording.single_trial_bin.mean(0) * 100
         for rate in range(max_rate):
-            mean, _, em_dist = recording.stats_rate(mean_rate, cell=cell, rate=rate)
+            if rate > self.t - 1:
+                continue
+            mean, _, em_dist, weight = recording.stats_rate(mean_rate, cell=cell, rate=rate)
             if np.isnan(mean):
                 continue
             p_dist = em_dist[:self.t]
@@ -187,7 +190,8 @@ class recording_stats:
         
         p = self.single_trial_bin[:, (est_rates[:,cell]>=rate-intv)*(est_rates[:,cell]<=rate+intv), cell].flatten()
         em_dist = np.array([(p == n).sum()/p.shape[0] for n in range(5)])
-        return p.mean(), p.var(), em_dist
+        weight = p.shape[0]
+        return p.mean(), p.var(), em_dist, weight
 
     def smooth_single_trial(self, sigma):
 
