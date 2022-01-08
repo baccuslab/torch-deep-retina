@@ -57,6 +57,8 @@ class distribution:
             return poisson_func(n, r, k)/summation
 
     def binomial_scale(self, n, p, k):
+        if n >= self.t:
+            return 0
         M = self.t - 1
         #n = min(n, M)
         summation = np.sum([factorial(k*M)/factorial(k*i)/factorial(k*M-k*i)*p**(k*i)*(1-p)**(k*M-k*i) for i in range(M+1)])
@@ -93,14 +95,14 @@ class distribution:
 
         return r
     
-    def log_likelihood(self, dist_name, k, single_trial_bin, cell, n_samples=100, **kwargs):
+    def log_likelihood(self, dist_name, k, single_trial_bin, cell, n_samples=500, **kwargs):
         
         dist_func = getattr(self, dist_name)
 
         if 'gaussian' in dist_name:
             r_list = np.linspace(-self.t, 2*self.t, n_samples)
         elif 'poisson' in dist_name:
-            r_list = np.linspace(0, 2*self.t, n_samples)
+            r_list = np.linspace(0, 10*self.t, n_samples)
         elif 'binomial' in dist_name:
             r_list = np.linspace(0, 1, n_samples)
             
@@ -108,7 +110,7 @@ class distribution:
         if 'gaussian' in dist_name:
             a,b,c = curve_fit(self.sigmoid_para, r_list, mean_list)[0]
         else:
-            f = interp1d(mean_list, r_list)
+            f = interp1d(mean_list, r_list, fill_value='extrapolate')
 
         ll = 0
         for time in range(single_trial_bin.shape[1]):
@@ -119,7 +121,9 @@ class distribution:
                 r = max(f(rate), 0)
             for trial in range(single_trial_bin.shape[0]):
                 n = single_trial_bin[trial,time,cell]
-                ll += np.log(dist_func(n, r, k, **kwargs))
+                prob = dist_func(n, r, k, **kwargs)
+                if prob > 0:
+                    ll += np.log(prob)
         return ll
     
     def optimize_k(self, dist_name, single_trial_bin, cell, a=1, b=10, **kwargs):
@@ -139,14 +143,14 @@ class distribution:
                 a = c
         return a
     
-    def KL(self, dist_name, k, recording, cell, n_samples=100, max_rate=300, **kwargs):
+    def KL(self, dist_name, k, recording, cell, n_samples=500, max_rate=300, **kwargs):
         
         dist_func = getattr(self, dist_name)
 
         if 'gaussian' in dist_name:
             r_list = np.linspace(-self.t, 2*self.t, n_samples)
         elif 'poisson' in dist_name:
-            r_list = np.linspace(0, 2*self.t, n_samples)
+            r_list = np.linspace(0, 10*self.t, n_samples)
         elif 'binomial' in dist_name:
             r_list = np.linspace(0, 1, n_samples)
             
@@ -154,12 +158,12 @@ class distribution:
         if 'gaussian' in dist_name:
             a,b,c = curve_fit(self.sigmoid_para, r_list, mean_list)[0]
         else:
-            f = interp1d(mean_list, r_list)
+            f = interp1d(mean_list, r_list, fill_value='extrapolate')
         
         kls = []
         mean_rate = recording.single_trial_bin.mean(0) * 100
         for rate in range(max_rate):
-            if rate > self.t - 1:
+            if rate > 100*(self.t - 1):
                 continue
             mean, _, em_dist, weight = recording.stats_rate(mean_rate, cell=cell, rate=rate)
             if np.isnan(mean):
@@ -168,7 +172,11 @@ class distribution:
             if 'gaussian' in dist_name:
                 r = self.inverse_sigmoid_para(rate/100, a, b, c)
             else:
-                r = max(f(rate/100), 0)
+                try:
+                    r = max(f(rate/100), 0)
+                except:
+                    print(rate/100, dist_name, cell, kwargs)
+                    print(max(mean_list))
             q_dist = np.array([dist_func(i, r, k, **kwargs) for i in range(self.t)])
             kl = np.sum([p_dist[i]*np.log(p_dist[i]/q_dist[i]) for i in range(self.t) if p_dist[i]>0])
             kls.append(kl)
@@ -179,12 +187,16 @@ class distribution:
     
 class recording_stats:
     
-    def __init__(self, file_path, cells, filter_len=40):
+    def __init__(self, file_path, cells, filter_len=40, truncate=False, t_list=None):
         
         with h5py.File(file_path, 'r') as f:
             single_trial_bin = np.array(f['test']['repeats/binned'])
         self.single_trial_bin = np.swapaxes(single_trial_bin,1,2)[:, filter_len:, cells]
         self.n_cells = len(cells)
+        
+        if truncate:
+            for cell in range(self.n_cells):
+                self.single_trial_bin[:,:,cell][self.single_trial_bin[:,:,cell]>(t_list[cell]-1)] = t_list[cell]-1
     
     def stats_rate(self, est_rates, cell, rate, intv=1):
         

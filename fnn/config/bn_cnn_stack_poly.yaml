@@ -4,7 +4,7 @@ epoch: 100
 Model:
     name: 'BN_CNN_Stack_poly'
     ksizes: (15, 11)
-    checkpoint: ''
+    checkpoint: '/home/xhding/saved_model/BN_CNN_Stack_Poly/epoch_085_loss_58.05_pearson_0.7305.pth'
     n_units: 6
     linear_bias: True
 Data:
