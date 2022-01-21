@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 from scipy.stats import pearsonr
+from scipy.optimize import curve_fit
 import torchdeepretina.stimuli as stim
 from fnn.distributions import *
 
@@ -90,6 +91,22 @@ def model_single_trial_pre(model, data, device, n_repeats=15, gaussian=[0, 0, 0,
     return pred_single_trial
 
 def poly_para_fit(recording, pred_single_trial_pre, t_list):
+    def poly(x,a,b,c,d):
+        return a*x**4+b*x**3+c*x**2+d*x
+    poly_paras = []
+    num_cells = pred_single_trial_pre.shape[-1]
+    for cell in range(num_cells):
+        means = []
+        rates = []
+        for rate in range((t_list[cell]-1)*100):
+            mean, var, _, _ = recording.stats_rate(pred_single_trial_pre.mean(0), cell=cell, rate=rate)
+            means.append(mean)
+            rates.append(rate/100)
+        para = curve_fit(poly, np.array(rates)[~np.isnan(means)], np.array(means)[~np.isnan(means)])[0]
+        poly_paras.append(np.append(para, 0.))
+    return poly_paras
+
+def poly_para_fit2(recording, pred_single_trial_pre, t_list):
     poly_paras = []
     num_cells = pred_single_trial_pre.shape[-1]
     for cell in range(num_cells):
@@ -132,6 +149,7 @@ def model_single_trial_post(pred_single_trial_pre, binomial_para, t_list, poly_p
         pred_single_trial[:, :, cell][indices] = spikes
 
     pred_single_trial[:, pred<thre] = 0
+    pred_single_trial = pred_single_trial.astype(np.int8)
     return pred_single_trial
 
 def model_single_trial(model, data, device, t_list, binomial_para, pred, recording,
@@ -139,6 +157,40 @@ def model_single_trial(model, data, device, t_list, binomial_para, pred, recordi
     pred_single_trial_pre = model_single_trial_pre(model, data, device, n_repeats, gaussian, seed1)
     poly_paras = poly_para_fit(recording, pred_single_trial_pre, t_list)
     pred_single_trial = model_single_trial_post(pred_single_trial_pre, binomial_para, t_list, poly_paras, pred, thre, seed2)
+    return pred_single_trial
+
+def model_single_trial_post_multi(pred_single_trial_pre, binomial_para, t_list, poly_paras, pred, n_repeats=5, thre=3, seed=None):
+    
+    if seed != None:
+        np.random.seed(seed)
+        
+    pred_single_trial = np.zeros((n_repeats, *pred_single_trial_pre.shape))
+    num_cells = pred_single_trial_pre.shape[-1]
+    for cell in range(num_cells):
+        dist = distribution(t_list[cell])
+        pred_scale = np.polyval(poly_paras[cell], pred_single_trial_pre[:, :, cell]/100)*100
+        for rate in range((t_list[cell]-1)*100):
+            indices = np.where((pred_scale>=rate-0.5)*(pred_scale<rate+0.5))
+            num = indices[0].shape[0]
+            if num == 0:
+                continue
+            r = dist.rate2para('binomial_scale', binomial_para[cell], rate)
+            p = [dist.binomial_scale(i, r, binomial_para[cell]) for i in range(t_list[cell])]
+            spikes = np.random.choice(t_list[cell], num*n_repeats, p=p).reshape((n_repeats, num))
+            for n in range(n_repeats):
+                pred_single_trial[n, :, :, cell][indices] = spikes[n]
+        indices = np.where(pred_scale>=(t_list[cell]-1)*100-0.5)
+        num = indices[0].shape[0]
+        if num == 0:
+            continue
+        r = dist.rate2para('binomial_scale', binomial_para[cell], (t_list[cell]-1)*100)
+        p = [dist.binomial_scale(i, r, binomial_para[cell]) for i in range(t_list[cell])]
+        spikes = np.random.choice(t_list[cell], num*n_repeats, p=p).reshape((n_repeats, num))
+        for n in range(n_repeats):
+            pred_single_trial[n, :, :, cell][indices] = spikes[n]
+
+    pred_single_trial[:, :, pred<thre] = 0
+    pred_single_trial = pred_single_trial.astype(np.int8)
     return pred_single_trial
 
 def variance_plot(single_trial, pred_single_trial):
@@ -172,10 +224,11 @@ def variance_plot(single_trial, pred_single_trial):
     plt.legend()
     plt.show()
     
-def correlation_plot(single_trial, pred_single_trial):
+def correlation_plot(single_trial, pred_single_trial, ignore_idxs=[]):
     
     num_cells = single_trial.shape[-1]
     diagonal_idxs = list(range(0, num_cells*num_cells, num_cells+1))
+    noise_idxs = diagonal_idxs + ignore_idxs
     
     recorded_corr = single_trial_corr_matrix(single_trial)
     pred_corr = single_trial_corr_matrix(pred_single_trial)
@@ -194,8 +247,8 @@ def correlation_plot(single_trial, pred_single_trial):
     pred_trial_corr = pred_stim_corr.flatten()[diagonal_idxs]
     recorded_stim_corr = np.delete(recorded_stim_corr.flatten(), diagonal_idxs)
     pred_stim_corr = np.delete(pred_stim_corr.flatten(), diagonal_idxs)
-    recorded_noise_corr = np.delete(recorded_noise_corr.flatten(), diagonal_idxs)
-    pred_noise_corr = np.delete(pred_noise_corr.flatten(), diagonal_idxs)
+    recorded_noise_corr = np.delete(recorded_noise_corr.flatten(), noise_idxs)
+    pred_noise_corr = np.delete(pred_noise_corr.flatten(), noise_idxs)
     ave_corr = np.delete(ave_corr.flatten(), diagonal_idxs)
     pred_ave_corr = np.delete(pred_ave_corr.flatten(), diagonal_idxs)
     recorded_fano = np.nanmean(np.var(single_trial, axis=0)/np.mean(single_trial, axis=0), axis=0)
@@ -323,27 +376,46 @@ def fano_contrast(model, device, contrast, n_repeats=5, poisson=[None, None, Non
     
     return fano
 
-def error(single_trial, pred_single_trial):
+def error_corr(single_trial, pred_single_trial, ignore_idxs=[]):
     
     n_cells = single_trial.shape[-1]
     diagonal_idxs = list(range(0, n_cells*n_cells, n_cells+1))
+    noise_idxs = diagonal_idxs + ignore_idxs
+    
     pred_corr = single_trial_corr_matrix(pred_single_trial)
     pred_stim_corr = stim_corr(pred_single_trial)
     pred_noise_corr = pred_corr - pred_stim_corr
     pred_corr = np.delete(pred_corr.flatten(), diagonal_idxs)
-    pred_noise_corr = np.delete(pred_noise_corr.flatten(), diagonal_idxs)
+    pred_noise_corr = np.delete(pred_noise_corr.flatten(), noise_idxs)
         
     recorded_corr = single_trial_corr_matrix(single_trial)
     recorded_stim_corr = stim_corr(single_trial)
     recorded_noise_corr = recorded_corr - recorded_stim_corr
     recorded_corr = np.delete(recorded_corr.flatten(), diagonal_idxs)
-    recorded_noise_corr = np.delete(recorded_noise_corr.flatten(), diagonal_idxs)
+    recorded_noise_corr = np.delete(recorded_noise_corr.flatten(), noise_idxs)
         
     error_corr = np.abs(pred_corr - recorded_corr).sum() / recorded_corr.sum()
     error_noise = np.abs(pred_noise_corr - recorded_noise_corr).sum() / np.abs(recorded_noise_corr).sum()
-    error = error_corr + error_noise
+    error_noise_l2 = ((pred_noise_corr - recorded_noise_corr)**2).sum()
     
-    return error, error_noise, error_corr
+    return error_noise_l2, error_noise, error_corr
+
+def error_corr2(single_trial, pred_single_trial, ignore_idxs=[]):
+    
+    n_cells = single_trial.shape[-1]
+    diagonal_idxs = list(range(0, n_cells*n_cells, n_cells+1))
+    noise_idxs = diagonal_idxs + ignore_idxs
+    
+    pred_noise_corr= noise_corr2(pred_single_trial)
+    pred_noise_corr = np.delete(pred_noise_corr.flatten(), noise_idxs)
+        
+    recorded_noise_corr = noise_corr2(single_trial)
+    recorded_noise_corr = np.delete(recorded_noise_corr.flatten(), noise_idxs)
+        
+    error_noise_l2 = ((pred_noise_corr - recorded_noise_corr)**2).sum()
+    
+    return error_noise_l2
+
 
 def log_likelihood(recording, t_list, optimum_para):
     
