@@ -20,8 +20,8 @@ opt = parser.parse_args()
 
 def noise_para_search():
     
-    f = open('./errors.txt', 'w')
-    f.close()
+    #f = open('./errors.txt', 'w')
+    #f.close()
     
     file_path = '/home/xhding/tem_stim/21-03-15/naturalscene.h5'
     cells = [0,1,2,3,4,6]
@@ -36,15 +36,21 @@ def noise_para_search():
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
-    test_data = DataLoader(TestDataset(cfg), batch_size=10000)
+    test_data = DataLoader(TestDataset(cfg), batch_size=500)
     test_pc, _, pred, targ = pearsonr_batch_eval(model, test_data, 6, device, cfg)
     
     g0_range = np.linspace(0.,1.4, 11)
     g1_range = np.linspace(0.,0.2, 11)
-    g2_range = np.linspace(0.,0.3, 11)
+    g2_range = np.linspace(0.33,0.39, 3)
     
+    start = False
     for g0, g1, g2 in itertools.product(g0_range, g1_range, g2_range):
         
+        if (round(g0,2), round(g1,2), round(g2,2)) == (0.56, 0.16, 0.39):
+            start = True
+        if not start:
+            continue
+            
         binomial_para = [2.17, 2.85, 2.5, 2.5, 1.0, 0.47]
         error_stats_post = []
         pred_single_trial_pre = model_single_trial_pre(model, test_data, device, 15, [g0, g1, g2, 0])

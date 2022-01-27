@@ -8,16 +8,13 @@ def pearsonr_batch_eval(model, data, n_units, device, cfg):
     model_status = model.training
     model = model.to(device)
     model.eval()
-    loss_fn = nn.PoissonNLLLoss(log_input=False).to(device)
     with torch.no_grad():
         pearsons = []
         val_pred = []
         val_targ = []
-        loss = 0
         for x,y in data:
             x = x.to(device)
             out = model(x)
-            loss += loss_fn(out.double(), y.double().to(device), )
             val_pred.append(out.detach().cpu().numpy())
             val_targ.append(y.detach().numpy())
         val_pred = np.concatenate(val_pred, axis=0)
@@ -25,8 +22,7 @@ def pearsonr_batch_eval(model, data, n_units, device, cfg):
         for cell in range(n_units):
             pearsons.append(pearsonr(val_pred[:,cell],val_targ[:,cell])[0])
         model.train(model_status)
-        loss = loss / cfg.Data.val_size * cfg.Data.batch_size
-        return np.array(pearsons).mean(), loss.item(), val_pred, val_targ
+        return np.array(pearsons).mean(), val_pred, val_targ
     
 def pearsonr_batch_eval_cut_tail(model, data, n_units, device):
     model = model.to(device)

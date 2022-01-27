@@ -90,6 +90,22 @@ def model_single_trial_pre(model, data, device, n_repeats=15, gaussian=[0, 0, 0,
     pred_single_trial = pred_single_trial.detach().cpu().numpy()
     return pred_single_trial
 
+def model_single_trial_pre2(model, data, device, n_repeats=15, gaussian=[0, 0, 0, 0], seed=None):
+    
+    if seed != None:
+        torch.manual_seed(seed)
+    model = model.to(device)
+    with torch.no_grad():
+        val_pred = []
+        for x, _ in data:
+            x = x.to(device).repeat(n_repeats,1,1,1)
+            out = noise_model_pre(x, model, device, gaussian)
+            out = out.reshape(n_repeats,-1,out.shape[-1])
+            val_pred.append(out)
+        val_pred = torch.cat(val_pred, dim=1)
+    pred_single_trial = val_pred.detach().cpu().numpy()
+    return pred_single_trial
+
 def poly_para_fit(recording, pred_single_trial_pre, t_list):
     def poly(x,a,b,c,d):
         return a*x**4+b*x**3+c*x**2+d*x
@@ -154,7 +170,7 @@ def model_single_trial_post(pred_single_trial_pre, binomial_para, t_list, poly_p
 
 def model_single_trial(model, data, device, t_list, binomial_para, pred, recording,
                        n_repeats=15, gaussian=[0, 0, 0, 0], thre=3, seed1=None, seed2=None):
-    pred_single_trial_pre = model_single_trial_pre(model, data, device, n_repeats, gaussian, seed1)
+    pred_single_trial_pre = model_single_trial_pre2(model, data, device, n_repeats, gaussian, seed1)
     poly_paras = poly_para_fit(recording, pred_single_trial_pre, t_list)
     pred_single_trial = model_single_trial_post(pred_single_trial_pre, binomial_para, t_list, poly_paras, pred, thre, seed2)
     return pred_single_trial
