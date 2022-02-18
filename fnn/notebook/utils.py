@@ -71,6 +71,58 @@ def noise_model_pre(x, model, device, gaussian=[0, 0, 0, 0]):
         out = model.ganglion[2:](out)
     return out
 
+def stim_noise(std, shape, history=40):
+    noise = std * np.random.randn(shape[0]+history, shape[-2], shape[-1])
+    noise = stim.rolling_window(noise, history, 0)
+    return noise
+
+def correlated_noise(std, shape, p, phi, sigma):
+    noise = std * np.random.randn(*shape)
+    out = np.zeros((shape[0]+p, *shape[1:]))
+    for i in range(shape[0]):
+        out[p+i] = phi.dot(out[i:p+i]) + sigma * noise[i]
+    out = out[p:]
+    return out
+
+def noise_model_pre2(x, model, device, gaussian=[0, 0, 0, 0]):
+    with torch.no_grad():
+        noise = stim_noise(gaussian[0], x.shape)
+        noise = torch.from_numpy(noise).float().to(device)
+        out = x + noise
+        out = model.bipolar[:3](out)
+        noise = gaussian[1] * torch.randn(out.size()).to(device)
+        out = out + noise
+        out = model.bipolar[3:](out)
+        out = model.amacrine[:4](out)
+        noise = gaussian[2] * torch.randn(out.size()).to(device)
+        out = out + noise
+        out = model.amacrine[4:](out)
+        out = model.ganglion[:2](out)
+        noise = gaussian[3] * torch.randn(out.size()).to(device)
+        out = out + noise
+        out = model.ganglion[2:](out)
+    return out
+
+def noise_model_pre3(x, model, device, p, phi, sigma, gaussian=[0, 0, 0, 0]):
+    with torch.no_grad():
+        noise = stim_noise(gaussian[0], x.shape)
+        noise = torch.from_numpy(noise).float().to(device)
+        out = x + noise
+        out = model.bipolar[:3](out)
+        noise = gaussian[1] * torch.randn(out.size()).to(device)
+        out = out + noise
+        out = model.bipolar[3:](out)
+        out = model.amacrine[:4](out)
+        noise = correlated_noise(gaussian[2], out.shape, p, phi, sigma)
+        noise = torch.from_numpy(noise).float().to(device)
+        out = out + noise
+        out = model.amacrine[4:](out)
+        out = model.ganglion[:2](out)
+        noise = gaussian[3] * torch.randn(out.size()).to(device)
+        out = out + noise
+        out = model.ganglion[2:](out)
+    return out
+
 def model_single_trial_pre(model, data, device, n_repeats=15, gaussian=[0, 0, 0, 0], seed=None):
     
     if seed != None:
@@ -104,6 +156,25 @@ def model_single_trial_pre2(model, data, device, n_repeats=15, gaussian=[0, 0, 0
             val_pred.append(out)
         val_pred = torch.cat(val_pred, dim=1)
     pred_single_trial = val_pred.detach().cpu().numpy()
+    return pred_single_trial
+
+def model_single_trial_pre_try(model, data, device, p, phi, sigma, n_repeats=15, gaussian=[0, 0, 0, 0], seed=None):
+    
+    if seed != None:
+        torch.manual_seed(seed)
+    model = model.to(device)
+    with torch.no_grad():
+        pred_single_trial = []
+        for n in range(n_repeats):
+            val_pred = []
+            for x, _ in data:
+                x = x.to(device)
+                out = noise_model_pre3(x, model, device, p, phi, sigma, gaussian)
+                val_pred.append(out)
+            val_pred = torch.cat(val_pred, dim=0)
+            pred_single_trial.append(val_pred)
+        pred_single_trial = torch.stack(pred_single_trial)
+    pred_single_trial = pred_single_trial.detach().cpu().numpy()
     return pred_single_trial
 
 def poly_para_fit(recording, pred_single_trial_pre, t_list):
@@ -170,7 +241,7 @@ def model_single_trial_post(pred_single_trial_pre, binomial_para, t_list, poly_p
 
 def model_single_trial(model, data, device, t_list, binomial_para, pred, recording,
                        n_repeats=15, gaussian=[0, 0, 0, 0], thre=3, seed1=None, seed2=None):
-    pred_single_trial_pre = model_single_trial_pre2(model, data, device, n_repeats, gaussian, seed1)
+    pred_single_trial_pre = model_single_trial_pre(model, data, device, n_repeats, gaussian, seed1)
     poly_paras = poly_para_fit(recording, pred_single_trial_pre, t_list)
     pred_single_trial = model_single_trial_post(pred_single_trial_pre, binomial_para, t_list, poly_paras, pred, thre, seed2)
     return pred_single_trial
@@ -197,15 +268,16 @@ def model_single_trial_post_multi(pred_single_trial_pre, binomial_para, t_list, 
                 pred_single_trial[n, :, :, cell][indices] = spikes[n]
         indices = np.where(pred_scale>=(t_list[cell]-1)*100-0.5)
         num = indices[0].shape[0]
-        if num == 0:
-            continue
-        r = dist.rate2para('binomial_scale', binomial_para[cell], (t_list[cell]-1)*100)
-        p = [dist.binomial_scale(i, r, binomial_para[cell]) for i in range(t_list[cell])]
-        spikes = np.random.choice(t_list[cell], num*n_repeats, p=p).reshape((n_repeats, num))
-        for n in range(n_repeats):
-            pred_single_trial[n, :, :, cell][indices] = spikes[n]
+        if num != 0:
+            r = dist.rate2para('binomial_scale', binomial_para[cell], (t_list[cell]-1)*100)
+            p = [dist.binomial_scale(i, r, binomial_para[cell]) for i in range(t_list[cell])]
+            spikes = np.random.choice(t_list[cell], num*n_repeats, p=p).reshape((n_repeats, num))
+            for n in range(n_repeats):
+                pred_single_trial[n, :, :, cell][indices] = spikes[n]
+        #pred_single_trial[:, :, pred_scale.mean(0)<thre, cell] = 0
 
     pred_single_trial[:, :, pred<thre] = 0
+    #pred_single_trial[:, :, pred_single_trial.mean((0,1))<thre/100] = 0
     pred_single_trial = pred_single_trial.astype(np.int8)
     return pred_single_trial
 
@@ -321,50 +393,94 @@ def correlation_plot_2(single_trial, pred_single_trial):
     num_cells = single_trial.shape[-1]
     diagonal_idxs = list(range(0, num_cells*num_cells, num_cells+1))
     
-    corr = single_trial_corr_matrix(single_trial)
+    recorded_corr = single_trial_corr_matrix(single_trial)
     pred_corr = single_trial_corr_matrix(pred_single_trial)
     
-    stim_corr = stim_corr2(single_trial)
-    noise_corr = noise_corr2(single_trial)
+    recorded_stim_corr = stim_corr2(single_trial)
+    recorded_trial_corr = recorded_stim_corr.flatten()[diagonal_idxs]
+    recorded_noise_corr = noise_corr2(single_trial)
     pred_stim_corr = stim_corr2(pred_single_trial)
+    pred_trial_corr = pred_stim_corr.flatten()[diagonal_idxs]
     pred_noise_corr = noise_corr2(pred_single_trial)
     
-    ave_corr = corr_matrix(single_trial.mean(0))
+    recorded_ave_corr = corr_matrix(single_trial.mean(0))
     pred_ave_corr = corr_matrix(pred_single_trial.mean(0))
     
-    corr = np.delete(corr.flatten(), diagonal_idxs)
+    recorded_corr = np.delete(recorded_corr.flatten(), diagonal_idxs)
     pred_corr = np.delete(pred_corr.flatten(), diagonal_idxs)
-    stim_corr = np.delete(stim_corr.flatten(), diagonal_idxs)
+    recorded_stim_corr = np.delete(recorded_stim_corr.flatten(), diagonal_idxs)
     pred_stim_corr = np.delete(pred_stim_corr.flatten(), diagonal_idxs)
-    noise_corr = np.delete(noise_corr.flatten(), diagonal_idxs)
+    recorded_noise_corr = np.delete(recorded_noise_corr.flatten(), diagonal_idxs)
     pred_noise_corr = np.delete(pred_noise_corr.flatten(), diagonal_idxs)
-    ave_corr = np.delete(ave_corr.flatten(), diagonal_idxs)
+    recorded_ave_corr = np.delete(recorded_ave_corr.flatten(), diagonal_idxs)
     pred_ave_corr = np.delete(pred_ave_corr.flatten(), diagonal_idxs)
     
-    plt.plot(corr, pred_corr, 'bo')
-    plt.plot(corr, corr, 'r-')
+    recorded_fano = np.nanmean(np.var(single_trial, axis=0)/np.mean(single_trial, axis=0), axis=0)
+    pred_fano = np.nanmean(np.var(pred_single_trial, axis=0)/np.mean(pred_single_trial, axis=0), axis=0)
+    
+    plt.plot(recorded_corr, pred_corr, 'bo')
+    plt.plot(recorded_corr, recorded_corr, 'r-')
     plt.xlabel('data')
     plt.ylabel('model')
     plt.title('pairwise correlation')
     plt.show()
-    plt.plot(stim_corr, pred_stim_corr, 'bo')
-    plt.plot(stim_corr, stim_corr, 'r-')
+    plt.plot(recorded_stim_corr, pred_stim_corr, 'bo')
+    plt.plot(recorded_stim_corr, recorded_stim_corr, 'r-')
     plt.xlabel('data')
     plt.ylabel('model')
     plt.title('stimulus correlation')
     plt.show()
-    plt.plot(noise_corr, pred_noise_corr, 'bo')
-    plt.plot(noise_corr, noise_corr, 'r-')
+    plt.plot(recorded_noise_corr, pred_noise_corr, 'bo')
+    plt.plot(recorded_noise_corr, recorded_noise_corr, 'r-')
     plt.xlabel('data')
     plt.ylabel('model')
     plt.title('noise correlation')
     plt.show()
-    plt.plot(ave_corr, pred_ave_corr, 'bo')
-    plt.plot(ave_corr, ave_corr, 'r-')
+    plt.plot(recorded_ave_corr, pred_ave_corr, 'bo')
+    plt.plot(recorded_ave_corr, recorded_ave_corr, 'r-')
     plt.xlabel('data')
     plt.ylabel('model')
     plt.title('trial-averaged correlation')
     plt.show()
+    x = np.arange(num_cells)
+    width = 0.35
+    fig, ax = plt.subplots()
+    rects1 = ax.bar(x - width/2, recorded_trial_corr, width, label='data')
+    rects2 = ax.bar(x + width/2, pred_trial_corr, width, label='model')
+    ax.set_ylabel('correlation')
+    ax.set_xlabel('cells')
+    ax.set_title('trial-to-trial correlation')
+    ax.set_xticks(x)
+    ax.legend()
+    plt.show()
+    x = np.arange(num_cells)
+    width = 0.35
+    fig, ax = plt.subplots()
+    rects1 = ax.bar(x - width/2, recorded_fano, width, label='data')
+    rects2 = ax.bar(x + width/2, pred_fano, width, label='model')
+    ax.set_ylabel('Fano Factor')
+    ax.set_xlabel('cells')
+    ax.set_xticks(x)
+    ax.legend()
+    plt.show()
+    
+def variability_error(single_trial, pred_single_trial):
+    
+    num_cells = single_trial.shape[-1]
+    diagonal_idxs = list(range(0, num_cells*num_cells, num_cells+1))
+    
+    recorded_stim_corr = stim_corr2(single_trial)
+    recorded_trial_corr = recorded_stim_corr.flatten()[diagonal_idxs]
+    pred_stim_corr = stim_corr2(pred_single_trial)
+    pred_trial_corr = pred_stim_corr.flatten()[diagonal_idxs]
+    
+    recorded_fano = np.nanmean(np.var(single_trial, axis=0)/np.mean(single_trial, axis=0), axis=0)
+    pred_fano = np.nanmean(np.var(pred_single_trial, axis=0)/np.mean(pred_single_trial, axis=0), axis=0)
+    
+    error = (np.abs(recorded_trial_corr - pred_trial_corr)/np.abs(recorded_trial_corr)).sum()
+    error += (np.abs(recorded_fano - pred_fano)/np.abs(recorded_fano)).sum()
+    return error
+    
     
 def fano_contrast(model, device, contrast, n_repeats=5, poisson=[None, None, None], 
                   gaussian=[0, 0, 0, 0], thre=0, stim_type='fullfield', length=3000):
