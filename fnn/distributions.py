@@ -65,6 +65,17 @@ class distribution:
         pr = factorial(k*M)/factorial(k*n)/factorial(k*M-k*n)*p**(k*n)*(1-p)**(k*M-k*n) / summation
         return pr
     
+    def second(self, n, r, f):
+        if n >= self.t:
+            return 0
+        return np.exp(r*n-(f-f*f)*n*n-f*f/2*n**3)/factorial(n)
+    
+    def second_norm(self, n, r, f):
+        summation = 0
+        for i in range(self.t):
+            summation += self.second(i, r, f)
+        return self.second(n, r, f)/summation
+    
     def mean(self, dist_name, r, k, **kwargs):
         dist_func = getattr(self, dist_name)
         return np.sum([dist_func(i, r, k, **kwargs)*i for i in range(self.t)])
@@ -80,7 +91,7 @@ class distribution:
 
         if 'gaussian' in dist_name:
             r_list = np.linspace(-self.t, 2*self.t, n_samples)
-        elif 'poisson' in dist_name:
+        elif 'poisson' in dist_name or 'second' in dist_name:
             r_list = np.linspace(0, 2*self.t, n_samples)
         elif 'binomial' in dist_name:
             r_list = np.linspace(0, 1, n_samples)
@@ -105,6 +116,8 @@ class distribution:
             r_list = np.linspace(0, 10*self.t, n_samples)
         elif 'binomial' in dist_name:
             r_list = np.linspace(0, 1, n_samples)
+        elif 'second' in dist_name:
+            r_list = np.linspace(0, 2*self.t, n_samples)
             
         mean_list = [self.mean(dist_name, r, k, **kwargs) for r in r_list]
         if 'gaussian' in dist_name:
@@ -153,6 +166,8 @@ class distribution:
             r_list = np.linspace(0, 10*self.t, n_samples)
         elif 'binomial' in dist_name:
             r_list = np.linspace(0, 1, n_samples)
+        elif 'second' in dist_name:
+            r_list = np.linspace(0, 2*self.t, n_samples)
             
         mean_list = [self.mean(dist_name, r, k, **kwargs) for r in r_list]
         if 'gaussian' in dist_name:

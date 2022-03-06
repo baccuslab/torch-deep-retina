@@ -654,10 +654,10 @@ def kullback_leibler_plot(kls, mean=False):
             ax[i//3, i%3].set_title('KL divergence of cell {}'.format(i), fontsize=16)
         plt.show()
     
-def variance_mean_plot(recording, t_list, optimum_para):
+def variance_mean(recording, t_list, optimum_para):
     
     num_cells = len(t_list)
-    fig, ax = plt.subplots(2, 3, figsize=(20,10))
+    stats = []
     for cell in range(num_cells):
         dist = distribution(t_list[cell])
         means = []
@@ -678,14 +678,116 @@ def variance_mean_plot(recording, t_list, optimum_para):
                 vars_dis.append(var)
             except:
                 pass
-        p = ax[cell//3, cell%3].scatter(means, variances, c=weights, marker='x', cmap='cool', vmax=150, label='empirical')
-        ax[cell//3, cell%3].plot(means_dis, vars_dis, 'g-', label='binomial')
-        ax[cell//3, cell%3].plot([0, 1], [0, 1], 'b')
-        ax[cell//3, cell%3].legend()
-        ax[cell//3, cell%3].set_xlabel('mean', fontsize=13)
-        ax[cell//3, cell%3].set_ylabel('variance', fontsize=13)
-        ax[cell//3, cell%3].set_title('cell {}'.format(cell), fontsize=16)
-        fig.colorbar(p, ax=ax[cell//3, cell%3])
+        stats.append({'means':means, 'variances':variances, 'weights':weights, 'means_dis':means_dis, 'vars_dis':vars_dis})
+    return stats
+        
+    
+def variance_mean_plot(stats, save=None, dpi=300):
+    fig, ax = plt.subplots(2, 3, figsize=(16.67,10))
+    num_cells = 6
+    for cell in range(num_cells):
+        ax[cell//3, cell%3].xaxis.set_major_locator(plt.MaxNLocator(4))
+        ax[cell//3, cell%3].yaxis.set_major_locator(plt.MaxNLocator(4))
+        p = ax[cell//3, cell%3].scatter(stats[cell]['means'], stats[cell]['variances'], c=stats[cell]['weights'], marker='x', cmap='cool', vmax=150, label='empirical')
+        ax[cell//3, cell%3].plot(stats[cell]['means_dis'], stats[cell]['vars_dis'], '-', color='#2E8B57', label='binomial')
+        ax[cell//3, cell%3].plot([0, 1], [0, 1], 'k')
+        if cell == 0:
+            ax[cell//3, cell%3].legend(fontsize=15, loc='best', frameon=False)
+        if cell%3 == 0:
+            ax[cell//3, cell%3].set_ylabel('variance', fontsize=15)
+        if cell//3 == 1:
+            ax[cell//3, cell%3].set_xlabel('mean', fontsize=15)
+        ax[cell//3, cell%3].set_title('cell {}'.format(cell), fontsize=18)
+        ax[cell//3, cell%3].spines['right'].set_visible(False)
+        ax[cell//3, cell%3].spines['top'].set_visible(False)
+        ax[cell//3, cell%3].set_xlim([0, max(stats[cell]['means'])+0.1])
+        ax[cell//3, cell%3].tick_params(axis='both', which='major', labelsize=13)
+    fig.subplots_adjust(hspace=0.3)
+    fig.colorbar(p, ax=ax)
+    if save != None:
+        plt.savefig('/home/xhding/workspaces/torch-deep-retina/fnn/notebook/figs/'+save+'.png', dpi=dpi, bbox_inches = "tight")
     plt.show()
     
+def second_stats_plot(single_trial, pred_single_trial, save=None, dpi=300):
     
+    num_cells = single_trial.shape[-1]
+    diagonal_idxs = list(range(0, num_cells*num_cells, num_cells+1))
+    
+    recorded_corr = single_trial_corr_matrix(single_trial)
+    pred_corr = single_trial_corr_matrix(pred_single_trial)
+    
+    recorded_stim_corr = stim_corr2(single_trial)
+    recorded_trial_corr = recorded_stim_corr.flatten()[diagonal_idxs]
+    recorded_noise_corr = noise_corr2(single_trial)
+    pred_stim_corr = stim_corr2(pred_single_trial)
+    pred_trial_corr = pred_stim_corr.flatten()[diagonal_idxs]
+    pred_noise_corr = noise_corr2(pred_single_trial)
+    
+    recorded_ave_corr = corr_matrix(single_trial.mean(0))
+    pred_ave_corr = corr_matrix(pred_single_trial.mean(0))
+    
+    recorded_corr = np.delete(recorded_corr.flatten(), diagonal_idxs)
+    pred_corr = np.delete(pred_corr.flatten(), diagonal_idxs)
+    recorded_stim_corr = np.delete(recorded_stim_corr.flatten(), diagonal_idxs)
+    pred_stim_corr = np.delete(pred_stim_corr.flatten(), diagonal_idxs)
+    recorded_noise_corr = np.delete(recorded_noise_corr.flatten(), diagonal_idxs)
+    pred_noise_corr = np.delete(pred_noise_corr.flatten(), diagonal_idxs)
+    recorded_ave_corr = np.delete(recorded_ave_corr.flatten(), diagonal_idxs)
+    pred_ave_corr = np.delete(pred_ave_corr.flatten(), diagonal_idxs)
+    
+    recorded_fano = np.nanmean(np.var(single_trial, axis=0)/np.mean(single_trial, axis=0), axis=0)
+    pred_fano = np.nanmean(np.var(pred_single_trial, axis=0)/np.mean(pred_single_trial, axis=0), axis=0)
+    
+    fig, ax = plt.subplots(1, 3, figsize=(18, 5))
+    
+    ax[0].plot(recorded_corr, pred_corr, 'bo', alpha=0.7)
+    ax[0].plot(recorded_corr, recorded_corr, 'r-', alpha=0.7)
+    ax[0].set_xlabel('data', fontsize=16)
+    ax[0].set_ylabel('model', fontsize=16)
+    ax[0].set_title('total correlation', fontsize=18)
+    ax[1].plot(recorded_stim_corr, pred_stim_corr, 'bo', alpha=0.7)
+    ax[1].plot(recorded_stim_corr, recorded_stim_corr, 'r-', alpha=0.7)
+    ax[1].set_xlabel('data', fontsize=16)
+    #ax[1].set_ylabel('model', fontsize=13)
+    ax[1].set_title('stimulus correlation', fontsize=18)
+    ax[2].plot(recorded_noise_corr, pred_noise_corr, 'bo', alpha=0.7)
+    ax[2].plot(recorded_noise_corr, recorded_noise_corr, 'r-', alpha=0.7)
+    ax[2].set_xlabel('data', fontsize=16)
+    #ax[2].set_ylabel('model', fontsize=13)
+    ax[2].set_title('noise correlation', fontsize=18)
+    for i in range(3):
+        ax[i].spines['right'].set_visible(False)
+        ax[i].spines['top'].set_visible(False)
+        ax[i].xaxis.set_major_locator(plt.MaxNLocator(4))
+        ax[i].yaxis.set_major_locator(plt.MaxNLocator(4))
+        ax[i].tick_params(axis='both', which='major', labelsize=13)
+    if save != None:
+        plt.savefig('/home/xhding/workspaces/torch-deep-retina/fnn/notebook/figs/'+save[0]+'.png', dpi=dpi, bbox_inches = "tight")
+    plt.show()
+    
+    fig, ax = plt.subplots(1, 2, figsize=(12, 5))
+    x = np.arange(num_cells)
+    width = 0.35
+    rects1 = ax[0].bar(x - width/2, recorded_trial_corr, width, label='data', color='#66A9C9')
+    rects2 = ax[0].bar(x + width/2, pred_trial_corr, width, label='model', color='#c06f98')
+    ax[0].set_ylabel('trial-to-trial correlation', fontsize=16)
+    ax[0].set_xlabel('cells', fontsize=16)
+    ax[0].set_xticks(x)
+    #ax[0].legend(fontsize=16, loc='upper left', frameon=False)
+
+    x = np.arange(num_cells)
+    width = 0.35
+    rects1 = ax[1].bar(x - width/2, recorded_fano, width, label='data', color='#66A9C9')
+    rects2 = ax[1].bar(x + width/2, pred_fano, width, label='model', color='#c06f98')
+    ax[1].set_ylabel('Fano factor', fontsize=16)
+    ax[1].set_xlabel('cells', fontsize=16)
+    ax[1].set_xticks(x)
+    ax[1].legend(fontsize=13, loc='upper center', ncol=2, frameon=False)
+    for i in range(2):
+        ax[i].spines['right'].set_visible(False)
+        ax[i].spines['top'].set_visible(False)
+        ax[i].yaxis.set_major_locator(plt.MaxNLocator(4))
+        ax[i].tick_params(axis='both', which='major', labelsize=13)
+    if save != None:
+        plt.savefig('/home/xhding/workspaces/torch-deep-retina/fnn/notebook/figs/'+save[1]+'.png', dpi=dpi, bbox_inches = "tight")
+    plt.show()
