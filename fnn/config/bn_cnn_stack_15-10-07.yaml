@@ -1,12 +1,15 @@
-exp_id: 'BN_CNN_Stack_NoNorm'
+exp_id: 'BN_CNN_Stack'
 img_shape: [40,50,50]
 Model:
-    name: 'BN_CNN_Stack_NoNorm'
+    name: 'BN_CNN_Stack_Old'
     ksizes: (15, 11)
     checkpoint: ''
     linear_bias: True
+    n_units: 5
 Data:
-    batch_size: 500
+    batch_size: 512
+    data_path: '/home/TRAIN_DATA'
+    date: '15-10-07'
 Optimize:
     trunc_intvl: 1
     l2: 1e-3

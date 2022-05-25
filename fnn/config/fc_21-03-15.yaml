@@ -1,0 +1,22 @@
+exp_id: 'BN_CNN_Stack_FC'
+img_shape: [40,50,50]
+epoch: 100
+Model:
+    name: 'BN_CNN_Stack_FC'
+    ksizes: (15, 11, 9)
+    #checkpoint: '/home/xhding/saved_model/BN_CNN_Stack_FC/epoch_095_loss_33.17_pearson_0.6391.pth'
+    checkpoint: ''
+    linear_bias: True
+    n_units: 6
+Data:
+    date: '21-03-15'
+    batch_size: 5000
+    data_path: '/home/xhding/tem_stim'
+    stim: 'naturalscene'
+    val_size: 10000
+Optimize:
+    trunc_intvl: 1
+    l2: 1e-3
+    l1: 1e-4
+    lr: 1e-2
+    oh_loss_scale: 7.

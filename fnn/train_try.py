@@ -51,10 +51,12 @@ def train(cfg):
     
     model.train()
     
+    test_dataset = TestDataset(cfg)
+    train_data = DataLoader(dataset=test_dataset, batch_size=cfg.Data.batch_size, shuffle=True)
+    
     train_dataset = TrainValidDataset(cfg, 'train', True)
     perm = train_dataset.perm
     validation_dataset = TrainValidDataset(cfg, 'validation', True, perm)
-    train_data = DataLoader(dataset=train_dataset, batch_size=cfg.Data.batch_size, shuffle=True)
     validation_data = DataLoader(dataset=validation_dataset, batch_size=cfg.Data.batch_size)
     
     for epoch in range(cfg.epoch):
@@ -72,22 +74,21 @@ def train(cfg):
                 optimizer.step()
                 epoch_loss += loss.detach().cpu().numpy()
                 loss = 0
-                
-        epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size
         
-        pearson, _,_ = pearsonr_batch_eval(model, validation_data, cfg.Model.n_units, device, cfg)
+        pearson, _,_ = pearsonr_batch_eval(model, train_data, cfg.Model.n_units, device, cfg)
         #pearsons = pearsonr_eval_cell(model, data_distr.val_sample(500), cfg.Model.n_units, device)
         scheduler.step(pearson)
         
-        print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}'.format(epoch, epoch_loss, pearson))
+        pc, _,_ = pearsonr_batch_eval(model, validation_data, cfg.Model.n_units, device, cfg)
+        
+        print('epoch: {:03d}, pearson correlation: {:.4f}, validation pc: {:.4f}'.format(epoch, pearson, pc))
         #print(epoch, epoch_loss, pearsons)
         
-        update_eval_history(cfg, epoch, pearson, epoch_loss)
         
         if epoch % cfg.save_intvl == 0:
             save_path = os.path.join(cfg.save_path, cfg.exp_id, 
-                                     'epoch_{:03d}_loss_{:.2f}_pearson_{:.4f}'
-                                     .format(epoch, epoch_loss, pearson)+'.pth')
+                                     'epoch_{:03d}_pearson_{:.4f}'
+                                     .format(epoch, pearson)+'.pth')
             
             torch.save({'epoch': epoch,
                         'model_state_dict': model.state_dict(),

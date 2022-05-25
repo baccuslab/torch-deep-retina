@@ -43,11 +43,21 @@ def train(cfg):
     
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.2, patience=3)
     
-    if cfg.Model.checkpoint != '':
-        checkpoint = torch.load(cfg.Model.checkpoint, map_location=device)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        start_epoch = checkpoint['epoch'] + 1
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    assert cfg.Model.checkpoint != ''
+    checkpoint = torch.load(cfg.Model.checkpoint, map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+        
+    w = checkpoint['model_state_dict']['ganglion.6.w'].data
+    positive = w - torch.min(w,1)[0][:,None]
+    normed = positive.permute(1,0) / positive.sum(-1)
+    prob = normed.permute(1,0).cpu().numpy()
+    loc_ganglion = [np.where(prob[i] == prob[i].max())[0][0] for i in range(prob.shape[0])]
+    
+    num_locations = (model.image_shape[-1] - model.ksizes[0] - model.ksizes[1] - model.ksizes[2] + 3)**2
+    w = np.zeros((model.n_units, num_locations))
+    w[range(model.n_units), loc_ganglion] = 1.
+    model.ganglion[-1].w.data = torch.from_numpy(w).to(device)
+    model.ganglion[-1].w.requires_grad = False
     
     model.train()
     

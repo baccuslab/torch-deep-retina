@@ -53,22 +53,22 @@ def stim_corr2(single_trial):
     stim_corr = cov_stim / np.sqrt(np.expand_dims(V, -1) * np.expand_dims(V, -2))
     return stim_corr
 
-def noise_model_pre(x, model, device, gaussian=[0, 0, 0, 0]):
+def noise_model_pre(x, model, device, gaussian=[0, 0, 0, 0], noise_locs=[3, 4, 2]):
     with torch.no_grad():
         noise = gaussian[0] * torch.randn(x.size()).to(device)
         out = x + noise
-        out = model.bipolar[:3](out)
+        out = model.bipolar[:noise_locs[0]](out)
         noise = gaussian[1] * torch.randn(out.size()).to(device)
         out = out + noise
-        out = model.bipolar[3:](out)
-        out = model.amacrine[:4](out)
+        out = model.bipolar[noise_locs[0]:](out)
+        out = model.amacrine[:noise_locs[1]](out)
         noise = gaussian[2] * torch.randn(out.size()).to(device)
         out = out + noise
-        out = model.amacrine[4:](out)
-        out = model.ganglion[:2](out)
+        out = model.amacrine[noise_locs[1]:](out)
+        out = model.ganglion[:noise_locs[2]](out)
         noise = gaussian[3] * torch.randn(out.size()).to(device)
         out = out + noise
-        out = model.ganglion[2:](out)
+        out = model.ganglion[noise_locs[2]:](out)
     return out
 
 def stim_noise(std, shape, history=40):
@@ -123,7 +123,7 @@ def noise_model_pre3(x, model, device, p, phi, sigma, gaussian=[0, 0, 0, 0]):
         out = model.ganglion[2:](out)
     return out
 
-def model_single_trial_pre(model, data, device, n_repeats=15, gaussian=[0, 0, 0, 0], seed=None):
+def model_single_trial_pre(model, data, device, n_repeats=15, gaussian=[0, 0, 0, 0], seed=None, noise_locs=[3, 4, 2]):
     
     if seed != None:
         torch.manual_seed(seed)
@@ -134,7 +134,7 @@ def model_single_trial_pre(model, data, device, n_repeats=15, gaussian=[0, 0, 0,
             val_pred = []
             for x, _ in data:
                 x = x.to(device)
-                out = noise_model_pre(x, model, device, gaussian)
+                out = noise_model_pre(x, model, device, gaussian, noise_locs)
                 val_pred.append(out)
             val_pred = torch.cat(val_pred, dim=0)
             pred_single_trial.append(val_pred)
@@ -177,7 +177,44 @@ def model_single_trial_pre_try(model, data, device, p, phi, sigma, n_repeats=15,
     pred_single_trial = pred_single_trial.detach().cpu().numpy()
     return pred_single_trial
 
-def poly_para_fit(recording, pred_single_trial_pre, t_list):
+def poly_para_fit(recording, pred_single_trial_pre, pred, thre=1, threshold=0.4, intv=0.5, sigma=True):
+    def poly(x,b,c):
+        return b*x**2+c*x
+    poly_paras = []
+    num_cells = pred_single_trial_pre.shape[-1]
+    pred_single_trial_pre[:, pred<thre] = 0
+    for cell in range(num_cells):
+        means = []
+        rates = []
+        sigmas = []
+        for rate in np.linspace(intv+0.1, pred_single_trial_pre.mean(0)[:, cell].max(), 100):
+            mean, var, _, w = recording.stats_rate(pred_single_trial_pre.mean(0), cell=cell, rate=rate, intv=intv)
+            if var > 0:
+                sigmas.append(np.sqrt(var/(w-1)))
+                means.append(mean)
+                rates.append(rate/100)
+        sigmas = np.array(sigmas)[~np.isnan(means)]
+        rates = np.array(rates)[~np.isnan(means)]
+        means = np.array(means)[~np.isnan(means)]
+
+        max_idx = np.where(means >= 0.8 * means.max())[0][-1]
+        min_idx = np.where(rates == rates.min())[0][0]
+        slope = (means[max_idx] -  means[min_idx]) / (rates[max_idx] -  rates[min_idx])
+        means_res = means - (rates - rates[min_idx]) * slope - means[min_idx]
+        valid_idx = np.where(np.abs(means_res/means[max_idx]) < threshold)
+
+        rates = rates[valid_idx]
+        means = means[valid_idx]
+        sigmas = sigmas[valid_idx]
+        
+        if sigma:
+            para = curve_fit(poly, rates, means, sigma=sigmas)[0]
+        else:
+            para = curve_fit(poly, rates, means)[0]
+        poly_paras.append(np.append(para, 0.))
+    return poly_paras
+
+def poly_para_fit_old(recording, pred_single_trial_pre, t_list):
     def poly(x,a,b,c,d):
         return a*x**4+b*x**3+c*x**2+d*x
     poly_paras = []
@@ -191,20 +228,6 @@ def poly_para_fit(recording, pred_single_trial_pre, t_list):
             rates.append(rate/100)
         para = curve_fit(poly, np.array(rates)[~np.isnan(means)], np.array(means)[~np.isnan(means)])[0]
         poly_paras.append(np.append(para, 0.))
-    return poly_paras
-
-def poly_para_fit2(recording, pred_single_trial_pre, t_list):
-    poly_paras = []
-    num_cells = pred_single_trial_pre.shape[-1]
-    for cell in range(num_cells):
-        means = []
-        rates = []
-        for rate in range((t_list[cell]-1)*100):
-            mean, var, _, _ = recording.stats_rate(pred_single_trial_pre.mean(0), cell=cell, rate=rate)
-            means.append(mean)
-            rates.append(rate/100)
-        poly_para = np.polyfit(np.array(rates)[~np.isnan(means)], np.array(means)[~np.isnan(means)], 4, full=True)[0]
-        poly_paras.append(poly_para)
     return poly_paras
 
 def model_single_trial_post(pred_single_trial_pre, binomial_para, t_list, poly_paras, pred, thre=3, seed=None):
@@ -246,7 +269,7 @@ def model_single_trial(model, data, device, t_list, binomial_para, pred, recordi
     pred_single_trial = model_single_trial_post(pred_single_trial_pre, binomial_para, t_list, poly_paras, pred, thre, seed2)
     return pred_single_trial
 
-def model_single_trial_post_multi(pred_single_trial_pre, binomial_para, t_list, poly_paras, pred, n_repeats=5, thre=3, seed=None):
+def model_single_trial_post_multi(pred_single_trial_pre, binomial_para, t_list, poly_paras, pred, n_repeats=5, thre=1, seed=None):
     
     if seed != None:
         np.random.seed(seed)
@@ -418,29 +441,35 @@ def correlation_plot_2(single_trial, pred_single_trial):
     recorded_fano = np.nanmean(np.var(single_trial, axis=0)/np.mean(single_trial, axis=0), axis=0)
     pred_fano = np.nanmean(np.var(pred_single_trial, axis=0)/np.mean(pred_single_trial, axis=0), axis=0)
     
-    plt.plot(recorded_corr, pred_corr, 'bo')
+    plt.plot(recorded_corr, pred_corr, 'bo', markersize=2)
     plt.plot(recorded_corr, recorded_corr, 'r-')
     plt.xlabel('data')
     plt.ylabel('model')
+    
+    plt.xlim([-0.05, 0.65])
+    plt.ylim([-0.05, 0.65])
+    
     plt.title('pairwise correlation')
     plt.show()
-    plt.plot(recorded_stim_corr, pred_stim_corr, 'bo')
+    plt.plot(recorded_stim_corr, pred_stim_corr, 'bo', markersize=2)
     plt.plot(recorded_stim_corr, recorded_stim_corr, 'r-')
+    
+    plt.xlim([-0.05, 0.6])
+    plt.ylim([-0.05, 0.6])
+    
     plt.xlabel('data')
     plt.ylabel('model')
     plt.title('stimulus correlation')
     plt.show()
-    plt.plot(recorded_noise_corr, pred_noise_corr, 'bo')
+    plt.plot(recorded_noise_corr, pred_noise_corr, 'bo', markersize=2)
     plt.plot(recorded_noise_corr, recorded_noise_corr, 'r-')
+    
+    plt.xlim([-0.025, 0.1])
+    plt.ylim([-0.025, 0.1])
+    
     plt.xlabel('data')
     plt.ylabel('model')
     plt.title('noise correlation')
-    plt.show()
-    plt.plot(recorded_ave_corr, pred_ave_corr, 'bo')
-    plt.plot(recorded_ave_corr, recorded_ave_corr, 'r-')
-    plt.xlabel('data')
-    plt.ylabel('model')
-    plt.title('trial-averaged correlation')
     plt.show()
     x = np.arange(num_cells)
     width = 0.35
@@ -547,6 +576,28 @@ def error_corr2(single_trial, pred_single_trial, ignore_idxs=[]):
     error_noise_l2 = ((pred_noise_corr - recorded_noise_corr)**2).sum()
     
     return error_noise_l2
+
+def error_corr3(single_trial, pred_single_trial, weight=0, ignore_idxs=[]):
+    
+    n_cells = single_trial.shape[-1]
+    diagonal_idxs = list(range(0, n_cells*n_cells, n_cells+1))
+    noise_idxs = diagonal_idxs + ignore_idxs
+    
+    pred_noise_corr= noise_corr2(pred_single_trial)
+    pred_noise_corr = np.delete(pred_noise_corr.flatten(), noise_idxs)
+    pred_stim_corr = stim_corr2(pred_single_trial)
+    pred_stim_corr = np.delete(pred_stim_corr.flatten(), noise_idxs)
+    
+    recorded_noise_corr = noise_corr2(single_trial)
+    recorded_noise_corr = np.delete(recorded_noise_corr.flatten(), noise_idxs)
+    recorded_stim_corr = stim_corr2(single_trial)
+    recorded_stim_corr = np.delete(recorded_stim_corr.flatten(), noise_idxs)
+        
+    error_noise_l2 = ((pred_noise_corr - recorded_noise_corr)**2).sum()
+    error_stim_l2 = ((pred_stim_corr - recorded_stim_corr)**2).sum()
+    error = error_noise_l2 + error_stim_l2 * weight
+    
+    return error, error_stim_l2, error_noise_l2
 
 
 def log_likelihood(recording, t_list, optimum_para):
@@ -697,13 +748,44 @@ def variance_mean_plot(stats, save=None, dpi=300):
             ax[cell//3, cell%3].set_ylabel('variance', fontsize=15)
         if cell//3 == 1:
             ax[cell//3, cell%3].set_xlabel('mean', fontsize=15)
-        ax[cell//3, cell%3].set_title('cell {}'.format(cell), fontsize=18)
+        ax[cell//3, cell%3].set_title('cell {}'.format(cell+1), fontsize=18)
         ax[cell//3, cell%3].spines['right'].set_visible(False)
         ax[cell//3, cell%3].spines['top'].set_visible(False)
         ax[cell//3, cell%3].set_xlim([0, max(stats[cell]['means'])+0.1])
         ax[cell//3, cell%3].tick_params(axis='both', which='major', labelsize=13)
     fig.subplots_adjust(hspace=0.3)
-    fig.colorbar(p, ax=ax)
+    cbar = fig.colorbar(p, ax=ax)
+    cbar.ax.tick_params(labelsize=13) 
+    if save != None:
+        plt.savefig('/home/xhding/workspaces/torch-deep-retina/fnn/notebook/figs/'+save+'.png', dpi=dpi, bbox_inches = "tight")
+    plt.show()
+    
+def variance_mean_plot2(stats, save=None, dpi=300):
+    fig, ax = plt.subplots(2, 3, figsize=(16.67,10))
+    num_cells = 6
+    for cell in range(num_cells):
+        ax[cell//3, cell%3].xaxis.set_major_locator(plt.MaxNLocator(4))
+        ax[cell//3, cell%3].yaxis.set_major_locator(plt.MaxNLocator(4))
+        errors = np.array(stats[cell]['variances']) * np.sqrt(2/(np.array(stats[cell]['weights'])-1))
+        p = ax[cell//3, cell%3].scatter(stats[cell]['means'], stats[cell]['variances'], c=stats[cell]['weights'], marker='x', cmap='cool', vmax=150, label='empirical')
+        ax[cell//3, cell%3].errorbar(stats[cell]['means'], stats[cell]['variances'], yerr=errors, ecolor='blue', capsize=5,
+                                         ls='none')
+        ax[cell//3, cell%3].plot(stats[cell]['means_dis'], stats[cell]['vars_dis'], '-', color='#2E8B57', label='binomial')
+        ax[cell//3, cell%3].plot([0, 1], [0, 1], 'k')
+        if cell == 0:
+            ax[cell//3, cell%3].legend(fontsize=15, loc='best', frameon=False)
+        if cell%3 == 0:
+            ax[cell//3, cell%3].set_ylabel('variance', fontsize=15)
+        if cell//3 == 1:
+            ax[cell//3, cell%3].set_xlabel('mean', fontsize=15)
+        ax[cell//3, cell%3].set_title('cell {}'.format(cell+1), fontsize=18)
+        ax[cell//3, cell%3].spines['right'].set_visible(False)
+        ax[cell//3, cell%3].spines['top'].set_visible(False)
+        ax[cell//3, cell%3].set_xlim([0, max(stats[cell]['means'])+0.1])
+        ax[cell//3, cell%3].tick_params(axis='both', which='major', labelsize=13)
+    fig.subplots_adjust(hspace=0.3)
+    cbar = fig.colorbar(p, ax=ax)
+    cbar.ax.tick_params(labelsize=13) 
     if save != None:
         plt.savefig('/home/xhding/workspaces/torch-deep-retina/fnn/notebook/figs/'+save+'.png', dpi=dpi, bbox_inches = "tight")
     plt.show()
@@ -773,6 +855,7 @@ def second_stats_plot(single_trial, pred_single_trial, save=None, dpi=300):
     ax[0].set_ylabel('trial-to-trial correlation', fontsize=16)
     ax[0].set_xlabel('cells', fontsize=16)
     ax[0].set_xticks(x)
+    ax[0].set_xticklabels(x+1)
     #ax[0].legend(fontsize=16, loc='upper left', frameon=False)
 
     x = np.arange(num_cells)
@@ -782,6 +865,7 @@ def second_stats_plot(single_trial, pred_single_trial, save=None, dpi=300):
     ax[1].set_ylabel('Fano factor', fontsize=16)
     ax[1].set_xlabel('cells', fontsize=16)
     ax[1].set_xticks(x)
+    ax[1].set_xticklabels(x+1)
     ax[1].legend(fontsize=13, loc='upper center', ncol=2, frameon=False)
     for i in range(2):
         ax[i].spines['right'].set_visible(False)

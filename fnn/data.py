@@ -87,7 +87,6 @@ class TestDataset(Dataset):
         super().__init__()
         data = loadexpt(cfg.Data.date, 'all', cfg.Data.stim, 'test',
                         cfg.img_shape[0], 0, data_path=cfg.Data.data_path)
-        val_size = cfg.Data.val_size
         self.X = data.X
         self.y = data.y
         self.centers = data.centers

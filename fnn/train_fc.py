@@ -41,7 +41,7 @@ def train(cfg):
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.Optimize.lr, 
                                  weight_decay=cfg.Optimize.l2)
     
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.2, patience=3)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.2, patience=3)
     
     if cfg.Model.checkpoint != '':
         checkpoint = torch.load(cfg.Model.checkpoint, map_location=device)
@@ -66,6 +66,9 @@ def train(cfg):
             out = model(x)
             loss += loss_fn(out.double(), y)
             loss += cfg.Optimize.l1 * torch.norm(out, 1).float().mean()
+            one_hot = model.ganglion[-1]
+            one_hot_loss = semantic_loss(one_hot.prob) * cfg.Optimize.oh_loss_scale
+            loss += one_hot_loss
             if idx%cfg.Optimize.trunc_intvl == 0:
                 optimizer.zero_grad()
                 loss.backward()
@@ -77,7 +80,7 @@ def train(cfg):
         
         pearson, _,_ = pearsonr_batch_eval(model, validation_data, cfg.Model.n_units, device, cfg)
         #pearsons = pearsonr_eval_cell(model, data_distr.val_sample(500), cfg.Model.n_units, device)
-        scheduler.step(pearson)
+        scheduler.step(epoch_loss)
         
         print('epoch: {:03d}, loss: {:.2f}, pearson correlation: {:.4f}'.format(epoch, epoch_loss, pearson))
         #print(epoch, epoch_loss, pearsons)

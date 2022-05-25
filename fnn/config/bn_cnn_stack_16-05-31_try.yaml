@@ -1,0 +1,17 @@
+exp_id: 'BN_CNN_Stack'
+img_shape: [40,50,50]
+Model:
+    name: 'BN_CNN_Stack'
+    ksizes: (15, 11)
+    checkpoint: '/home/xhding/saved_model/BN_CNN_Stack/epoch_045_loss_-4.19_pearson_0.5765.pth'
+    linear_bias: True
+    n_units: 8
+Data:
+    batch_size: 512
+    data_path: '/home/xhding/tem_stim'
+    date: '16-05-31'
+Optimize:
+    trunc_intvl: 1
+    l2: 1e-3
+    l1: 1e-4
+    lr: 1e-4

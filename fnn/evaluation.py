@@ -4,7 +4,7 @@ import numpy as np
 from scipy.stats import pearsonr
 from fnn.utils import *
 
-def pearsonr_batch_eval(model, data, n_units, device, cfg):
+def pearsonr_batch_eval(model, data, n_units, device):
     model_status = model.training
     model = model.to(device)
     model.eval()

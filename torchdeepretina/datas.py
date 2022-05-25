@@ -24,10 +24,10 @@ NUM_BLOCKS = {
 CELLS = {
     '15-10-07': [0, 1, 2, 3, 4],
     '15-11-21a': [6, 10, 12, 13],
-    '15-11-21b': [0, 1, 3, 5, 8, 9, 13, 14, 16, 17, 18, 20, 21, 22, 23, 24, 25],
+    '15-11-21b': [0, 1, 9, 13, 14, 16, 18, 20, 21, 23, 25],
     '16-01-07': [0, 2, 7, 10, 11, 12, 31],
     '16-01-08': [0, 3, 7, 9, 11],
-    '16-05-31': [2, 3, 4, 14, 16, 18, 20, 25, 27],
+    '16-05-31': [2, 3, 14, 16, 18, 20, 25, 27],
     '20-09-15': [0, 1, 2],
     '20-12-02': [1, 2, 3],
     '21-01-26': [0, 1, 2, 3],
@@ -41,6 +41,7 @@ CENTERS = {
             [27,11], [26,13], [24,10]],
     '16-01-07': None,
     '16-01-08': None,
+    '16-05-31': None,
     '20-09-15': None,
     '20-12-02': None,
     '21-01-26': None,
@@ -62,7 +63,7 @@ class DataContainer():
         self.y = data.y
 
 def loadexpt(expt, cells, filename, train_or_test, history, nskip=0, cutout_width=None,                          
-             norm_stats=None, data_path="/home/salamander/experiments/data", sigmas=None):
+             norm_stats=None, data_path="/home/salamander/experiments/data", sigmas=0.01):
     """Loads an experiment from an h5 file on disk
 
     Parameters

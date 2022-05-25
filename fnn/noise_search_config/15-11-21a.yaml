@@ -1,0 +1,20 @@
+save_path: './notebook/errors_15-11-21a.txt'
+
+Model:
+    name: 'BN_CNN_Stack'
+    t_list: [4, 4, 3, 3]
+    checkpoint: '/home/xhding/saved_model/BN_CNN_Stack/epoch_045_loss_-11.37_pearson_0.7318.pth'
+    binomial_para: [1.14, 1.45, 2.40, 1.06]
+    intv: 0.3
+    thre: 1.2
+    curve_thre: 0.3
+    n_units: 4
+Data:
+    repeats_path: '/home/xhding/tem_stim/15-11-21a/naturalscene_test.h5'
+    date: '15-11-21a'
+    cells: [0, 1, 2, 3]
+    num_trials: 6
+Eval:
+    range: [0., 1.5, 0., 0.2, 0., 0.2]
+    weight: 0.06667
+    num_repeats: 300
