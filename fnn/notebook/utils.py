@@ -46,6 +46,11 @@ def noise_corr2(single_trial):
     noise_corr = cov_noise / np.sqrt(np.expand_dims(V, -1) * np.expand_dims(V, -2))
     return noise_corr
 
+def noise_cov(single_trial):
+    noise = single_trial - single_trial.mean(0)
+    cov_noise = (np.expand_dims(noise, -1) * np.expand_dims(noise, -2)).mean((0,1))
+    return cov_noise
+
 def stim_corr2(single_trial):
     mean_resp = single_trial.mean(0) - single_trial.mean((0,1))
     cov_stim = (np.expand_dims(mean_resp, -1) * np.expand_dims(mean_resp, -2)).mean(0)
@@ -411,10 +416,11 @@ def correlation_plot(single_trial, pred_single_trial, ignore_idxs=[]):
     ax.legend()
     plt.show()
     
-def correlation_plot_2(single_trial, pred_single_trial):
+def correlation_plot_2(single_trial, pred_single_trial, ignore_idxs=[]):
     
     num_cells = single_trial.shape[-1]
     diagonal_idxs = list(range(0, num_cells*num_cells, num_cells+1))
+    noise_idxs = diagonal_idxs + ignore_idxs
     
     recorded_corr = single_trial_corr_matrix(single_trial)
     pred_corr = single_trial_corr_matrix(pred_single_trial)
@@ -429,14 +435,12 @@ def correlation_plot_2(single_trial, pred_single_trial):
     recorded_ave_corr = corr_matrix(single_trial.mean(0))
     pred_ave_corr = corr_matrix(pred_single_trial.mean(0))
     
-    recorded_corr = np.delete(recorded_corr.flatten(), diagonal_idxs)
-    pred_corr = np.delete(pred_corr.flatten(), diagonal_idxs)
-    recorded_stim_corr = np.delete(recorded_stim_corr.flatten(), diagonal_idxs)
-    pred_stim_corr = np.delete(pred_stim_corr.flatten(), diagonal_idxs)
-    recorded_noise_corr = np.delete(recorded_noise_corr.flatten(), diagonal_idxs)
-    pred_noise_corr = np.delete(pred_noise_corr.flatten(), diagonal_idxs)
-    recorded_ave_corr = np.delete(recorded_ave_corr.flatten(), diagonal_idxs)
-    pred_ave_corr = np.delete(pred_ave_corr.flatten(), diagonal_idxs)
+    recorded_corr = np.delete(recorded_corr.flatten(), noise_idxs)
+    pred_corr = np.delete(pred_corr.flatten(), noise_idxs)
+    recorded_stim_corr = np.delete(recorded_stim_corr.flatten(), noise_idxs)
+    pred_stim_corr = np.delete(pred_stim_corr.flatten(), noise_idxs)
+    recorded_noise_corr = np.delete(recorded_noise_corr.flatten(), noise_idxs)
+    pred_noise_corr = np.delete(pred_noise_corr.flatten(), noise_idxs)
     
     recorded_fano = np.nanmean(np.var(single_trial, axis=0)/np.mean(single_trial, axis=0), axis=0)
     pred_fano = np.nanmean(np.var(pred_single_trial, axis=0)/np.mean(pred_single_trial, axis=0), axis=0)
@@ -491,6 +495,28 @@ def correlation_plot_2(single_trial, pred_single_trial):
     ax.set_xlabel('cells')
     ax.set_xticks(x)
     ax.legend()
+    plt.show()
+    
+def covariance_plot(single_trial, pred_single_trial):
+    
+    num_cells = single_trial.shape[-1]
+    diagonal_idxs = list(range(0, num_cells*num_cells, num_cells+1))
+    
+    recorded_noise_cov = noise_cov(single_trial)
+    pred_noise_cov = noise_cov(pred_single_trial)
+    
+    #recorded_noise_cov = np.delete(recorded_noise_cov.flatten(), diagonal_idxs)
+    #pred_noise_cov = np.delete(pred_noise_cov.flatten(), diagonal_idxs)
+    
+    plt.plot(recorded_noise_cov, pred_noise_cov, 'bo', markersize=2)
+    plt.plot(recorded_noise_cov, recorded_noise_cov, 'r-')
+    
+    #plt.xlim([-0.025, 0.1])
+    #plt.ylim([-0.025, 0.1])
+    
+    plt.xlabel('data')
+    plt.ylabel('model')
+    plt.title('noise covariance')
     plt.show()
     
 def variability_error(single_trial, pred_single_trial):

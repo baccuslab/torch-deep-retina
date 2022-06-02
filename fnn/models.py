@@ -232,7 +232,6 @@ class BN_CNN_Stack_FC(nn.Module):
         out = self.bipolar(x)
         out = self.amacrine(out)
         out = self.ganglion(out)
-        #out = torch.exp(out)
         return out
     
 class BN_CNN_Stack_NoNorm_FC(nn.Module):

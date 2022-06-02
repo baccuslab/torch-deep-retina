@@ -46,27 +46,29 @@ def noise_para_search(cfg):
     for count, (g0, g1, g2) in enumerate(itertools.product(g0_range, g1_range, g2_range)):
         
         print(count)
-        
-        binomial_para = cfg.Model.binomial_para
-        pred_single_trial_pre = model_single_trial_pre(model, test_data, device, cfg.Data.num_trials, [g0, g1, g2, 0], noise_locs=cfg.Model.noise_locs)
-        poly_paras = poly_para_fit(recording, pred_single_trial_pre, pred, thre=cfg.Model.thre, threshold=cfg.Model.curve_thre, intv=cfg.Model.intv, sigma=cfg.Model.sigma)
-        pred_single_trial_multi = model_single_trial_post_multi(pred_single_trial_pre, binomial_para, t_list, poly_paras, pred, n_repeats=cfg.Eval.num_repeats, thre=cfg.Model.thre)
+        try:
+            binomial_para = cfg.Model.binomial_para
+            pred_single_trial_pre = model_single_trial_pre(model, test_data, device, cfg.Data.num_trials, [g0, g1, g2, 0], noise_locs=cfg.Model.noise_locs)
+            poly_paras = poly_para_fit(recording, pred_single_trial_pre, pred, thre=cfg.Model.thre, threshold=cfg.Model.curve_thre, intv=cfg.Model.intv, sigma=cfg.Model.sigma)
+            pred_single_trial_multi = model_single_trial_post_multi(pred_single_trial_pre, binomial_para, t_list, poly_paras, pred, n_repeats=cfg.Eval.num_repeats, thre=cfg.Model.thre)
 
-        min_error = 10
+            min_error = 10
 
-        for i in range(cfg.Eval.num_repeats):
-            pred_single_trial = pred_single_trial_multi[i]
-            error, stim_error, noise_error = error_corr3(single_trial_bin, pred_single_trial, weight=cfg.Eval.weight, ignore_idxs=cfg.Eval.ignore_idxs)
-            if error < min_error:
-                min_error = error
-                min_error_stim = stim_error
-                min_error_noise = noise_error
-                pred_single_trial_try = pred_single_trial
-        val_error = variability_error(single_trial_bin, pred_single_trial_try)
-        
-        f = open(cfg.save_path, 'a')
-        f.write(str((g0,g1,g2))+' '+str(min_error_stim)+' '+str(min_error_noise)+' '+str(val_error)+'\n')
-        f.close()
+            for i in range(cfg.Eval.num_repeats):
+                pred_single_trial = pred_single_trial_multi[i]
+                error, stim_error, noise_error = error_corr3(single_trial_bin, pred_single_trial, weight=cfg.Eval.weight, ignore_idxs=cfg.Eval.ignore_idxs)
+                if error < min_error:
+                    min_error = error
+                    min_error_stim = stim_error
+                    min_error_noise = noise_error
+                    pred_single_trial_try = pred_single_trial
+            val_error = variability_error(single_trial_bin, pred_single_trial_try)
+
+            f = open(cfg.save_path, 'a')
+            f.write(str((g0,g1,g2))+' '+str(min_error_stim)+' '+str(min_error_noise)+' '+str(val_error)+'\n')
+            f.close()
+        except:
+            print("Something is wrong")
 
 if __name__ == "__main__":
     cfg = get_custom_cfg(opt.hyper)

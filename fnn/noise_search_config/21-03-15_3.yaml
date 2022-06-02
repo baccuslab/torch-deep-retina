@@ -1,4 +1,4 @@
-save_path: './notebook/errors_21-03-15.txt'
+save_path: './notebook/errors_21-03-15_3.txt'
 
 Model:
     name: 'BN_CNN_Stack_Old'
@@ -15,5 +15,6 @@ Data:
     cells: [0, 1, 2, 3, 4, 6]
     num_trials: 15
 Eval:
-    range: [0., 2., 0., 0.6, 0., 0.7]
+    range: [0.13333333, 1.93333333, 0.04, 0.58, 0.0466666667, 0.67666667]
     num_repeats: 300
+    num_points: [10, 10, 10]

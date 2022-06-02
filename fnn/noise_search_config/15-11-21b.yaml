@@ -7,7 +7,7 @@ Model:
     checkpoint: '/home/xhding/saved_model/BN_CNN_Stack_FC_2/epoch_015_loss_-8.56_pearson_0.6841.pth'
     binomial_para: [1.75, 1.62, 1.53, 1.48, 1.62, 1.41, 1.65, 1.23, 1.50, 1.38, 1.69]
     intv: 0.5
-    thre: 1.5
+    thre: 6.
     curve_thre: 0.3
     n_units: 11
     noise_locs: [3, 4, 5]
@@ -18,5 +18,5 @@ Data:
     cells: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     num_trials: 6
 Eval:
-    range: [0., 1.2, 0., 0.08, 0., 0.15]
+    range: [0., 1.7, 0., 0.1, 0., 0.25]
     num_repeats: 300

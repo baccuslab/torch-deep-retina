@@ -17,6 +17,6 @@ Data:
     cells: [0, 1, 2, 3, 4]
     num_trials: 5
 Eval:
-    range: [0., 2.5, 0., 0.5, 0., 0.6]
+    range: [0., 2.5, 0., 0.5, 0., 0.5]
     weight: 0.06667
     num_repeats: 300

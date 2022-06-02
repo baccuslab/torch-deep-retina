@@ -85,7 +85,7 @@ def train(cfg):
                 
         epoch_loss = epoch_loss / len(train_dataset) * cfg.Data.batch_size
         
-        pearson, _,_ = pearsonr_batch_eval(model, validation_data, cfg.Model.n_units, device, cfg)
+        pearson, _,_ = pearsonr_batch_eval(model, validation_data, cfg.Model.n_units, device)
         #pearsons = pearsonr_eval_cell(model, data_distr.val_sample(500), cfg.Model.n_units, device)
         scheduler.step(pearson)
         
