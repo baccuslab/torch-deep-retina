@@ -3,6 +3,10 @@ import json
 import random
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.pylab as pl
+from matplotlib.colors import ListedColormap
+from matplotlib import cm, colors
+from matplotlib.ticker import FormatStrFormatter
 import torch
 from scipy.stats import pearsonr
 from scipy.optimize import curve_fit
@@ -900,4 +904,129 @@ def second_stats_plot(single_trial, pred_single_trial, save=None, dpi=300):
         ax[i].tick_params(axis='both', which='major', labelsize=13)
     if save != None:
         plt.savefig('/home/xhding/workspaces/torch-deep-retina/fnn/notebook/figs/'+save[1]+'.png', dpi=dpi, bbox_inches = "tight")
+    plt.show()
+    
+def read_search_result(file_path):
+    
+    g0s = []
+    g1s = []
+    g2s = []
+    stim_errors = []
+    noise_errors = []
+    var_errors = []
+    f = open(file_path, 'r')
+    for line in f.readlines():
+        g0 = round(float(line.split()[0][1:-1]), 3)
+        g1 = round(float(line.split()[1][:-1]), 3)
+        g2 = round(float(line.split()[2][:-1]), 3)
+        stim_error = float(line.split()[3])
+        noise_error = float(line.split()[4])
+        var_error = float(line.split()[5])
+        g0s.append(g0)
+        g1s.append(g1)
+        g2s.append(g2)
+        stim_errors.append(stim_error)
+        noise_errors.append(noise_error)
+        var_errors.append(var_error)
+    g0s = np.array(g0s)
+    g1s = np.array(g1s)
+    g2s = np.array(g2s)
+    stim_errors = np.array(stim_errors)
+    noise_errors = np.array(noise_errors)
+    var_errors = np.array(var_errors)
+    
+    return g0s, g1s, g2s, stim_errors, noise_errors, var_errors
+
+def scatter_plot(g0s, g1s, g2s, stim_errors, noise_errors, var_errors, s0, s1, s2,
+                 noise_thre, stim_thre, var_thre, vmin, save=None, dpi=300):
+    
+    valid_idxs = np.where((stim_errors<stim_thre)*(var_errors<var_thre))
+
+    cmap = pl.cm.hot
+    my_cmap = cmap(np.arange(cmap.N))
+    my_cmap[:,-1] = np.linspace(1, 0, cmap.N)
+    my_cmap = ListedColormap(my_cmap)
+
+    fig = plt.figure(figsize=(15,5))
+    ax = fig.add_subplot(projection='3d')
+    p = ax.scatter(g0s[valid_idxs[0]]/s0, g1s[valid_idxs[0]]/s1, g2s[valid_idxs[0]]/s2, c=noise_errors[valid_idxs[0]],
+                   marker='o', cmap=my_cmap, vmax=noise_thre, vmin=vmin, depthshade=False)
+    ax.set_xlabel(r'$g_0/s_0$', fontsize=15)
+    ax.set_ylabel(r'$g_1/s_1$', fontsize=15)
+    ax.set_zlabel(r'$g_2/s_2$', fontsize=15)
+    ax.set_title('noise correlation error', fontsize=18)
+    cbar = fig.colorbar(p, ax=ax)
+    plt.locator_params(nbins=5)
+    ax.tick_params(axis='both', which='major', labelsize=13)
+    cbar.ax.tick_params(labelsize=13)
+    
+    ax.axes.set_xlim3d(left=g0s.min()/s0, right=g0s.max()/s0) 
+    ax.axes.set_ylim3d(bottom=g1s.min()/s1, top=g1s.max()/s1) 
+    ax.axes.set_zlim3d(bottom=g2s.min()/s2, top=g2s.max()/s2)
+    
+    if save:
+        plt.savefig('/home/xhding/workspaces/torch-deep-retina/fnn/notebook/figs/'+save+'.png', dpi=dpi, bbox_inches = "tight")
+    plt.show()
+    
+def color_seq(bins, gs, errors, cmap, vmax, vmin):
+    
+    colors = []
+    for i in range(bins.shape[0]-1):
+        indices = (gs>=bins[i]) * (gs<bins[i+1])
+        mean_error = errors[indices].mean()
+        if np.isnan(mean_error):
+            colors.append((1.0, 1.0, 1.0, 0.0))
+        else:
+            n = round((mean_error - vmin)/(vmax - vmin)*cmap.N)
+            colors.append(cmap(n))
+    return colors
+
+def marginal_histogram(g0s, g1s, g2s, stim_errors, noise_errors, var_errors, s0, s1, s2,
+                       noise_thre, stim_thre, var_thre, vmin, nbins=21, save=None, dpi=300):
+    
+    valid_idxs = np.where((stim_errors<stim_thre)*(var_errors<var_thre)*(noise_errors<noise_thre))
+    cmap = cm.winter
+
+    fig, ax = plt.subplots(3, 1, figsize=(8, 10.4))
+
+    bins = np.linspace(0, g0s.max()/s0, nbins)
+    color = color_seq(bins, g0s[valid_idxs]/s0, noise_errors[valid_idxs], cmap, vmax=noise_thre, vmin=vmin)
+    _, _, patches = ax[0].hist(g0s[valid_idxs]/s0, bins=bins)
+    for i in range(bins.shape[0]-1):
+        patches[i].set_facecolor(color[i])
+    ax[0].set_xlabel(r'$g_0/s_0$', fontsize=18)
+
+    bins = np.linspace(0, g1s.max()/s1, nbins)
+    color = color_seq(bins, g1s[valid_idxs]/s1, noise_errors[valid_idxs], cmap, vmax=noise_thre, vmin=vmin)
+    _, _, patches = ax[1].hist(g1s[valid_idxs]/s1, bins=bins)
+    for i in range(bins.shape[0]-1):
+        patches[i].set_facecolor(color[i])
+    ax[1].set_xlabel(r'$g_1/s_1$', fontsize=18)
+
+    bins = np.linspace(0, g2s.max()/s2, nbins)
+    color = color_seq(bins, g2s[valid_idxs]/s2, noise_errors[valid_idxs], cmap, vmax=noise_thre, vmin=vmin)
+    _, _, patches = ax[2].hist(g2s[valid_idxs]/s2, bins=bins)
+    for i in range(bins.shape[0]-1):
+        patches[i].set_facecolor(color[i])
+    ax[2].set_xlabel(r'$g_2/s_2$', fontsize=18)
+
+    for i in range(3):
+        ax[i].spines['right'].set_visible(False)
+        ax[i].spines['top'].set_visible(False)
+        ax[i].xaxis.set_major_locator(plt.MaxNLocator(4))
+        #ax[i].yaxis.set_major_locator(plt.MaxNLocator(4))
+        ax[i].tick_params(axis='both', which='major', labelsize=15)
+        ax[i].xaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+
+    fig.subplots_adjust(hspace=0.3)
+
+    norm = colors.Normalize(vmin=vmin, vmax=noise_thre)
+    mappable = cm.ScalarMappable(norm=norm, cmap=cmap)
+    cbar = fig.colorbar(mappable, ax=ax)
+    cbar.ax.tick_params(labelsize=15)
+    cbar.ax.locator_params(nbins=5)
+    
+    if save:
+        plt.savefig('/home/xhding/workspaces/torch-deep-retina/fnn/notebook/figs/'+save+'.png', dpi=dpi, bbox_inches = "tight")
+
     plt.show()

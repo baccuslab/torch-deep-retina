@@ -177,3 +177,44 @@ def mode_inst_RF(model, x, device, mode_vec):
     x.grad = None
     mode_out.backward()
     return x.grad.cpu().numpy()[0]
+
+def cosines(model, x, device, v, step=1e-3):
+    
+    n_units = model.n_units
+    
+    for p in model.parameters():
+        p.requires_grad = False
+
+    x.requires_grad = True
+
+    modules = []
+    modules.append(Flatten())
+    modules.append(nn.Linear(n_units*18*18, 1, bias=False))
+    mode = nn.Sequential(*modules)
+
+    out = model.bipolar(x)
+    out = model.amacrine(out)
+    out = model.ganglion[:-1](out)
+
+    cosines = []
+    for idx in range(n_units*18*18):
+        mode[1].weight.data[0, :] = torch.from_numpy(v[:, idx])
+        mode.to(device)
+        for p in mode.parameters():
+            p.requires_grad = False
+
+        mode_out = mode(out)[0, 0]
+
+        x.grad = None
+        mode_out.backward(retain_graph=True)
+        grad = x.grad.data
+        with torch.no_grad():
+            x_new = x + grad * step
+            out_new = model.bipolar(x_new)
+            out_new = model.amacrine(out_new)
+            out_new = model.ganglion[:-1](out_new)
+            dev = (out_new - out).data.cpu().numpy().flatten()
+        dev /= np.linalg.norm(dev, 2)
+        cosines.append(np.abs(v[:, idx].dot(dev)))
+    cosines = np.array(cosines)
+    return cosines
