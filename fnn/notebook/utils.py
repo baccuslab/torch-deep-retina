@@ -1030,3 +1030,72 @@ def marginal_histogram(g0s, g1s, g2s, stim_errors, noise_errors, var_errors, s0,
         plt.savefig('/home/xhding/workspaces/torch-deep-retina/fnn/notebook/figs/'+save+'.png', dpi=dpi, bbox_inches = "tight")
 
     plt.show()
+    
+def response_dict(path, date, single_trial_bin, pred_single_trial):
+    
+    if os.path.exists(path):
+        data = np.load(path, allow_pickle=True).item()
+    else:
+        data = dict()
+    
+    data[date] = dict()
+    data[date]['recorded'] = single_trial_bin
+    data[date]['predicted'] = pred_single_trial
+    
+    np.save(path, data)
+    
+    return data
+
+def scatter_projection(g0s, g2s, stim_errors, noise_errors, var_errors, s0, s2,
+                 noise_thre, stim_thre, var_thre, vmin, save=None, dpi=300):
+    
+    valid_idxs = np.where((stim_errors<stim_thre)*(var_errors<var_thre)*(noise_errors<noise_thre))
+    g0s_val = g0s[valid_idxs[0]]
+    g2s_val = g2s[valid_idxs[0]]
+    errors_val = noise_errors[valid_idxs[0]]
+    
+    for g0, g2 in set(zip(g0s_val, g2s_val)):
+        idxs = np.where((g0s_val == g0)*(g2s_val == g2))[0]
+        error = errors_val[idxs].min()
+        errors_val[idxs] = error
+
+    cmap = pl.cm.hot
+    my_cmap = cmap(np.arange(cmap.N))
+    my_cmap[:,-1] = np.linspace(1, 0, cmap.N)
+    my_cmap = ListedColormap(my_cmap)
+
+    fig, ax = plt.subplots(1, 1)
+    p = ax.scatter(g0s_val/s0, g2s_val/s2, c=errors_val, marker='o', cmap=my_cmap, vmax=noise_thre, vmin=vmin)
+    ax.set_xlabel(r'$g_0/s_0$', fontsize=15)
+    ax.set_ylabel(r'$g_2/s_2$', fontsize=15)
+    ax.set_title('noise correlation error', fontsize=18)
+    cbar = fig.colorbar(p, ax=ax)
+    plt.locator_params(nbins=5)
+    ax.tick_params(axis='both', which='major', labelsize=13)
+    cbar.ax.tick_params(labelsize=13)
+    
+    ax.axes.set_xlim(left=g0s.min()/s0, right=g0s.max()/s0) 
+    ax.axes.set_ylim(bottom=g2s.min()/s2, top=g2s.max()/s2) 
+    
+    if save:
+        plt.savefig('/home/xhding/workspaces/torch-deep-retina/fnn/notebook/figs/'+save+'.png', dpi=dpi, bbox_inches = "tight")
+    plt.show()
+    
+def mean_best_coordinates(top_num, g0s, g1s, g2s, stim_errors, noise_errors, var_errors, s0, s1, s2, stim_thre, var_thre):
+    
+    valid_idxs = np.where((stim_errors<stim_thre)*(var_errors<var_thre))
+    g0s_val = g0s[valid_idxs[0]]
+    g1s_val = g1s[valid_idxs[0]]
+    g2s_val = g2s[valid_idxs[0]]
+    errors_val = noise_errors[valid_idxs[0]]
+    
+    top_idxs = np.argpartition(errors_val, top_num)[:top_num]
+    g0 = g0s_val[top_idxs].mean() / s0
+    g1 = g1s_val[top_idxs].mean() / s1
+    g2 = g2s_val[top_idxs].mean() / s2
+    
+    ste0 = g0s_val[top_idxs].std() / np.sqrt(top_num-1) / s0
+    ste1 = g1s_val[top_idxs].std() / np.sqrt(top_num-1) / s1
+    ste2 = g2s_val[top_idxs].std() / np.sqrt(top_num-1) / s2
+    
+    return (g0, g1, g2), (ste0, ste1, ste2)

@@ -149,6 +149,40 @@ def compute_grad_norm(model, x, device, v):
     norm_grads = np.array(norm_grads)
     return norm_grads
 
+def compute_grads(model, x, device, v):
+    
+    n_units = model.n_units
+    
+    for p in model.parameters():
+        p.requires_grad = False
+
+    x.requires_grad = True
+
+    modules = []
+    modules.append(Flatten())
+    modules.append(nn.Linear(n_units*18*18, 1, bias=False))
+    mode = nn.Sequential(*modules)
+
+    out = model.bipolar(x)
+    out = model.amacrine(out)
+    out = model.ganglion[:-1](out)
+
+    grads = []
+    for idx in range(n_units*18*18):
+        mode[1].weight.data[0, :] = torch.from_numpy(v[:, idx])
+        mode.to(device)
+        for p in mode.parameters():
+            p.requires_grad = False
+
+        mode_out = mode(out)[0, 0]
+
+        x.grad = None
+        mode_out.backward(retain_graph=True)
+        grad = x.grad.data
+        grads.append(grad.cpu().numpy())
+    grads = np.array(grads).squeeze()
+    return grads
+
 def mode_inst_RF(model, x, device, mode_vec):
     
     n_units = model.n_units
@@ -218,3 +252,34 @@ def cosines(model, x, device, v, step=1e-3):
         cosines.append(np.abs(v[:, idx].dot(dev)))
     cosines = np.array(cosines)
     return cosines
+
+def ortho_component_norm(grads, top_num=25):
+    
+    num_modes = grads.shape[0]
+    grad_mat = np.swapaxes(grads.reshape(num_modes, -1), 0, 1)
+    grad_mat_top = grad_mat[:, -top_num:]
+    pure_grads = []
+    for mode_idx in range(grad_mat_top.shape[1]):
+        other_grads = np.delete(grad_mat_top, mode_idx, 1)
+        q = np.linalg.qr(other_grads)[0]
+        pure_grad = grad_mat_top[:, mode_idx].copy()
+        for idx in range(q.shape[1]):
+            pure_grad -= grad_mat_top[:, mode_idx].dot(q[:,-idx-1]) * q[:,-idx-1]
+
+        pure_grads.append(np.linalg.norm(pure_grad, 2))
+    pure_grads = np.array(pure_grads)
+    
+    return pure_grads
+
+def coses_grads(grads, top_num=10): 
+    coses = []
+    for i in range(top_num):
+        for j in range(i+1, top_num):
+            a = grads[-i-1].flatten()
+            b = grads[-j-1].flatten()
+            a /= np.linalg.norm(a, 2)
+            b /= np.linalg.norm(b, 2)
+            cos = a.dot(b)
+            coses.append(cos)
+    coses = np.array(coses)
+    return coses

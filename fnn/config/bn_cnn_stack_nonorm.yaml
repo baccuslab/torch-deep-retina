@@ -4,9 +4,12 @@ Model:
     name: 'BN_CNN_Stack_NoNorm'
     ksizes: (15, 11)
     checkpoint: ''
+    n_units: 6
     linear_bias: True
 Data:
-    batch_size: 500
+    date: '21-03-15'
+    batch_size: 512
+    data_path: '/home/xhding/tem_stim'
 Optimize:
     trunc_intvl: 1
     l2: 1e-3
