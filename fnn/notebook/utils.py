@@ -501,6 +501,98 @@ def correlation_plot_2(single_trial, pred_single_trial, ignore_idxs=[]):
     ax.legend()
     plt.show()
     
+def correlation_plot_3(single_trial, pred_single_trial, ignore_idxs=[], near_idxs=[]):
+    
+    num_cells = single_trial.shape[-1]
+    diagonal_idxs = list(range(0, num_cells*num_cells, num_cells+1))
+    noise_idxs = diagonal_idxs + ignore_idxs
+    
+    recorded_corr = single_trial_corr_matrix(single_trial)
+    pred_corr = single_trial_corr_matrix(pred_single_trial)
+    
+    recorded_stim_corr = stim_corr2(single_trial)
+    recorded_trial_corr = recorded_stim_corr.flatten()[diagonal_idxs]
+    recorded_noise_corr = noise_corr2(single_trial)
+    pred_stim_corr = stim_corr2(pred_single_trial)
+    pred_trial_corr = pred_stim_corr.flatten()[diagonal_idxs]
+    pred_noise_corr = noise_corr2(pred_single_trial)
+    
+    recorded_ave_corr = corr_matrix(single_trial.mean(0))
+    pred_ave_corr = corr_matrix(pred_single_trial.mean(0))
+    
+    recorded_corr_near = recorded_corr[near_idxs[0], near_idxs[1]]
+    pred_corr_near = pred_corr[near_idxs[0], near_idxs[1]]
+    recorded_stim_corr_near = recorded_stim_corr[near_idxs[0], near_idxs[1]]
+    pred_stim_corr_near = pred_stim_corr[near_idxs[0], near_idxs[1]]
+    recorded_noise_corr_near = recorded_noise_corr[near_idxs[0], near_idxs[1]]
+    pred_noise_corr_near = pred_noise_corr[near_idxs[0], near_idxs[1]]
+    
+    
+    recorded_corr = np.delete(recorded_corr.flatten(), noise_idxs)
+    pred_corr = np.delete(pred_corr.flatten(), noise_idxs)
+    recorded_stim_corr = np.delete(recorded_stim_corr.flatten(), noise_idxs)
+    pred_stim_corr = np.delete(pred_stim_corr.flatten(), noise_idxs)
+    recorded_noise_corr = np.delete(recorded_noise_corr.flatten(), noise_idxs)
+    pred_noise_corr = np.delete(pred_noise_corr.flatten(), noise_idxs)
+    
+    recorded_fano = np.nanmean(np.var(single_trial, axis=0)/np.mean(single_trial, axis=0), axis=0)
+    pred_fano = np.nanmean(np.var(pred_single_trial, axis=0)/np.mean(pred_single_trial, axis=0), axis=0)
+    
+    plt.plot(recorded_corr, pred_corr, 'bo', markersize=2)
+    plt.plot(recorded_corr, recorded_corr, 'r-')
+    plt.plot(recorded_corr_near, pred_corr_near, 'mo', markersize=2)
+    plt.xlabel('data')
+    plt.ylabel('model')
+    
+    plt.xlim([-0.05, 0.65])
+    plt.ylim([-0.05, 0.65])
+    
+    plt.title('pairwise correlation')
+    plt.show()
+    plt.plot(recorded_stim_corr, pred_stim_corr, 'bo', markersize=2)
+    plt.plot(recorded_stim_corr, recorded_stim_corr, 'r-')
+    plt.plot(recorded_stim_corr_near, pred_stim_corr_near, 'mo', markersize=2)
+    
+    plt.xlim([-0.05, 0.6])
+    plt.ylim([-0.05, 0.6])
+    
+    plt.xlabel('data')
+    plt.ylabel('model')
+    plt.title('stimulus correlation')
+    plt.show()
+    plt.plot(recorded_noise_corr, pred_noise_corr, 'bo', markersize=2)
+    plt.plot(recorded_noise_corr, recorded_noise_corr, 'r-')
+    plt.plot(recorded_noise_corr_near, pred_noise_corr_near, 'mo', markersize=2)
+    
+    plt.xlim([-0.025, 0.1])
+    plt.ylim([-0.025, 0.1])
+    
+    plt.xlabel('data')
+    plt.ylabel('model')
+    plt.title('noise correlation')
+    plt.show()
+    x = np.arange(num_cells)
+    width = 0.35
+    fig, ax = plt.subplots()
+    rects1 = ax.bar(x - width/2, recorded_trial_corr, width, label='data')
+    rects2 = ax.bar(x + width/2, pred_trial_corr, width, label='model')
+    ax.set_ylabel('correlation')
+    ax.set_xlabel('cells')
+    ax.set_title('trial-to-trial correlation')
+    ax.set_xticks(x)
+    ax.legend()
+    plt.show()
+    x = np.arange(num_cells)
+    width = 0.35
+    fig, ax = plt.subplots()
+    rects1 = ax.bar(x - width/2, recorded_fano, width, label='data')
+    rects2 = ax.bar(x + width/2, pred_fano, width, label='model')
+    ax.set_ylabel('Fano Factor')
+    ax.set_xlabel('cells')
+    ax.set_xticks(x)
+    ax.legend()
+    plt.show()
+    
 def covariance_plot(single_trial, pred_single_trial):
     
     num_cells = single_trial.shape[-1]
@@ -1099,3 +1191,44 @@ def mean_best_coordinates(top_num, g0s, g1s, g2s, stim_errors, noise_errors, var
     ste2 = g2s_val[top_idxs].std() / np.sqrt(top_num-1) / s2
     
     return (g0, g1, g2), (ste0, ste1, ste2)
+
+def dists_deviation(dists, deviation, noise_corr, mode='mean', top=5):
+    
+    num_cells = dists.shape[0]
+    diagonal_idxs = list(range(0, num_cells*num_cells, num_cells+1))
+    dists = np.delete(dists.flatten(), diagonal_idxs)
+    noise_corr = np.delete(noise_corr.flatten(), diagonal_idxs)
+    if mode == 'pairwise':
+        deviation = np.delete(np.sort(deviation, axis=0)[top].flatten(), diagonal_idxs)
+    elif mode == 'mean':
+        square = deviation ** 2
+        errors = square.sum((1,2)) - square[:, np.arange(num_cells), np.arange(num_cells)].sum(1)
+        idxs = np.argsort(errors)[:top]
+        deviation = np.delete(deviation[idxs].mean(0).flatten(), diagonal_idxs)
+    else:
+        raise TypeError("Invalid mode!")
+        
+    return dists, deviation, noise_corr
+
+def error_cell_pair_plot(dists, deviation, noise_corr, rng=[-0.02, 0.1], fig=None, ax=None, 
+                         xlabel=r'distance', ylabel=r'error', clabel='noise correlation'):
+    
+    if fig != None:
+        p = ax.scatter(dists, deviation, c = noise_corr, cmap='cool', vmin=rng[0], vmax=rng[1])
+    else:
+        fig, ax = plt.subplots()
+        p = ax.scatter(dists, deviation, c = noise_corr, cmap='cool', vmin=rng[0], vmax=rng[1])
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+        ax.xaxis.set_major_locator(plt.MaxNLocator(4))
+        ax.yaxis.set_major_locator(plt.MaxNLocator(4))
+        ax.tick_params(axis='both', which='major', labelsize=15)
+        ax.set_xlabel(xlabel, fontsize=18)
+        ax.set_ylabel(ylabel, fontsize=18)
+        cbar = fig.colorbar(p, ax=ax)
+        cbar.ax.tick_params(labelsize=13)
+        cbar.ax.locator_params(nbins=5)
+        cbar.ax.yaxis.set_ticks_position('left')
+        cbar.ax.set_ylabel(clabel, fontsize=15, labelpad=15, rotation=270)
+    
+    return fig, ax

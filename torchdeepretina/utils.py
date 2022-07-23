@@ -494,7 +494,7 @@ def compute_sta(model, contrast, layer, cell_index, layer_shape=None, verbose=Tr
     """
     # generate some white noise
     #X = stim.concat(white(1040, contrast=contrast)).copy()
-    x = contrast*np.random.randn(347,50,50)
+    x = contrast*np.random.randn(3000,50,50)
     x = np.repeat(x, 3, axis=0)
     #x = (x + 1) * 127.5
     #x = (x - 51.8)/53.9
