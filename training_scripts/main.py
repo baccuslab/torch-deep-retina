@@ -13,6 +13,10 @@ import time
 import numpy as np
 import torch
 import select
+import sys #new
+#sys.path.append('~/torch_baccus/torch-deep-retina/torchdeepretina' #new
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) #new
+sys.path.append(os.path.dirname(SCRIPT_DIR)) #new
 from torchdeepretina.training import hyper_search
 from torchdeepretina.utils import load_json
 from torchdeepretina.analysis import analysis_pipeline
