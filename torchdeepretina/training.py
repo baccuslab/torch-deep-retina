@@ -235,7 +235,9 @@ class Trainer:
                 model.eval()
                 with torch.no_grad():
                     # Miscellaneous Initializations
-                    step_size = 128 if hyps['self_attn'] else 500
+                    step_size = 500
+                    if utils.try_key(hyps,'self_attn',False):
+                        step_size = 128
                     n_loops = data_distr.val_shape[0]//step_size
                     if verbose:
                         print()

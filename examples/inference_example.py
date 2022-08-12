@@ -26,9 +26,9 @@ else:
     DEVICE = torch.device("cpu")
 
 if __name__=="__main__":
-    path_to_data = "~/experiments/data"
+    path_to_data = "/home/TRAIN_DATA/"
     # Name of the saved checkpoint
-    file_name = "15-10-07_naturalscene.pt"
+    file_name = "../models/15-11-21a_naturalscene.pt"
 
     checkpt = tdr.io.load_checkpoint(file_name)
 
@@ -55,6 +55,7 @@ if __name__=="__main__":
                                              norm_stats=norm_stats,
                                              data_path=path_to_data)
 
+    print("Test data shape:", test_data.X.shape)
     # Compute model responses and determine pearson correlation with
     # ganglion cell output
     bsize = 500
@@ -65,7 +66,7 @@ if __name__=="__main__":
     truth = test_data.y # Shape (N,M)
     pearsons = tdr.utils.pearsonr(preds,truth)
     avg_pearson = np.mean(pearsons)
-    print("Avg Ganlion Correlation:", avg_pearson)
+    print("Avg Ganglion Correlation:", avg_pearson)
     for i, cell in enumerate(test_data.cells):
         print("Cell {}: {}".format(cell, pearsons[i]))
 
