@@ -26,6 +26,7 @@
     "softplus":true,
     "chans":[8,8],
     "ksizes":[15,11,11],
+    "groups": 1,
     "img_shape":[40,50,50],
     "stackconvs":true,
     "finalstack":false,

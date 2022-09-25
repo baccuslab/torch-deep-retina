@@ -26,6 +26,7 @@ class TDRModel(nn.Module):
                                                 inference_exp=False,
                                                 img_shape=(40,50,50),
                                                 ksizes=(15,11,11),
+                                                groups=1,
                                                 recurrent=False,
                                                 kinetic=False,
                                                 convgc=False,
@@ -66,6 +67,9 @@ class TDRModel(nn.Module):
             the kernel sizes for each layer in the model. If using
             fully convolutional model, must include kernel size for
             final layer.
+        groups: int
+            the number of split pathways to use for each convolutional
+            layer after the first layer and preceding the final layer.
         recurrent: bool
             a switch to denote when a model is recurrent
         kinetic: bool
@@ -112,6 +116,7 @@ class TDRModel(nn.Module):
         self.bias = bias
         self.img_shape = img_shape 
         self.ksizes = ksizes 
+        self.groups = groups 
         self.gc_bias = gc_bias 
         self.noise = noise 
         self.bn_moment = bn_moment 
@@ -230,7 +235,8 @@ class BNCNN(TDRModel):
         shape = self.img_shape[1:]
         modules.append(nn.Conv2d(self.img_shape[0],self.chans[0],
                                       kernel_size=self.ksizes[0],
-                                      bias=self.bias))
+                                      bias=self.bias,
+                                      groups=1))
         shape = update_shape(shape, self.ksizes[0])
         self.shapes.append(tuple(shape))
         if self.bnaftrelu:
@@ -250,7 +256,8 @@ class BNCNN(TDRModel):
             modules.append(globals()[self.activ_fxn]())
         modules.append(nn.Conv2d(self.chans[0],self.chans[1],
                                   kernel_size=self.ksizes[1],
-                                  bias=self.bias))
+                                  bias=self.bias,
+                                  groups=self.groups))
         shape = update_shape(shape, self.ksizes[1])
         self.shapes.append(tuple(shape))
         if self.bnaftrelu:
@@ -382,7 +389,8 @@ class LinearStackedBNCNN(TDRModel):
                                     stack_chan=self.stack_chans[0],
                                     stack_ksize=self.stack_ksizes[0],
                                     drop_p=self.drop_p, 
-                                    padding=self.paddings[0])
+                                    padding=self.paddings[0],
+                                    groups=1)
         modules.append(conv)
         shape = update_shape(shape, self.ksizes[0],
                             padding=self.paddings[0])
@@ -422,7 +430,8 @@ class LinearStackedBNCNN(TDRModel):
                                     stack_chan=self.stack_chans[1],
                                     stack_ksize=self.stack_ksizes[1],
                                     padding=self.paddings[1],
-                                    drop_p=self.drop_p)
+                                    drop_p=self.drop_p,
+                                    groups=self.groups)
         modules.append(conv)
         shape = update_shape(shape, self.ksizes[1],
                             padding=self.paddings[1])
@@ -678,7 +687,8 @@ class VaryModel(TDRModel):
                 conv = nn.Conv2d(temp_chans[i],temp_chans[i+1],
                                     kernel_size=self.ksizes[i],
                                     padding=self.paddings[i],
-                                    bias=self.bias)
+                                    bias=self.bias,
+                                    groups=self.groups if i>0 else 1)
             else:
                 if self.one2one:
                     conv = OneToOneLinearStackedConv2d(temp_chans[i],
@@ -688,14 +698,15 @@ class VaryModel(TDRModel):
                                           bias=self.bias)
                 else:
                     conv = LinearStackedConv2d(temp_chans[i],
-                                         temp_chans[i+1],
-                                         kernel_size=self.ksizes[i],
-                                         abs_bnorm=False,
-                                         bias=self.bias,
-                                         stack_chan=stack_chans[i],
-                                         stack_ksize=stack_ksizes[i],
-                                         drop_p=self.drop_p,
-                                         padding=self.paddings[i])
+                                       temp_chans[i+1],
+                                       kernel_size=self.ksizes[i],
+                                       abs_bnorm=False,
+                                       bias=self.bias,
+                                       stack_chan=stack_chans[i],
+                                       stack_ksize=stack_ksizes[i],
+                                       drop_p=self.drop_p,
+                                       padding=self.paddings[i],
+                                       groups=self.groups if i>0 else 1)
             modules.append(conv)
             shape = update_shape(shape, self.ksizes[i],
                                         padding=self.paddings[i])
@@ -861,7 +872,8 @@ class RetinotopicModel(TDRModel):
                 conv = nn.Conv2d(temp_chans[i],temp_chans[i+1],
                                     kernel_size=self.ksizes[i],
                                     padding=self.paddings[i],
-                                    bias=self.bias)
+                                    bias=self.bias,
+                                    groups=self.groups if i>0 else 1)
             else:
                 conv = LinearStackedConv2d(temp_chans[i],
                                      temp_chans[i+1],
@@ -871,7 +883,8 @@ class RetinotopicModel(TDRModel):
                                      stack_chan=stack_chans[i],
                                      stack_ksize=stack_ksizes[i],
                                      drop_p=self.drop_p,
-                                     padding=self.paddings[i])
+                                     padding=self.paddings[i],
+                                     groups=self.groups if i>0 else 1)
 
             modules.append(conv)
             shape = update_shape(shape, self.ksizes[i],
