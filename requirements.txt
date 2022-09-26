@@ -2,15 +2,16 @@ numpy
 scipy
 matplotlib
 torch
-opencv-python
 tqdm
 tableprint
 scikit-learn
 scikit-image
+pandas
 h5py
 descent
 deepdish
 pyret
 moviepy
 psutil
+opencv-python
 -e git+git://github.com/nirum/jetpack.git@master#egg=jetpack

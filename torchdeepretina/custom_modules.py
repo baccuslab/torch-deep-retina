@@ -653,7 +653,8 @@ class LinearStackedConv2d(nn.Module):
                                    bias=True, conv_bias=False,
                                    stack_ksize=3, stack_chan=None,
                                    abs_bnorm=False, bnorm=False,
-                                   drop_p=0, padding=0, stride=(1,1)):
+                                   drop_p=0, padding=0, stride=(1,1),
+                                   groups=1):
         """
         in_channels: int
         out_channels: int
@@ -677,6 +678,7 @@ class LinearStackedConv2d(nn.Module):
             the amount of dropout used between stacked convolutions
         padding: int
         stride: int or tuple
+        groups: int
         """
         super(LinearStackedConv2d, self).__init__()
         assert kernel_size % 2 == 1 # kernel must be odd
@@ -688,6 +690,7 @@ class LinearStackedConv2d(nn.Module):
         self.conv_bias = conv_bias
         self.abs_bnorm = abs_bnorm
         self.padding = 0 if padding is None else padding
+        self.groups = groups
         self.drop_p = drop_p
         self.stack_chan = out_channels if stack_chan is None else stack_chan
 
@@ -708,7 +711,7 @@ class LinearStackedConv2d(nn.Module):
 
             convs = [nn.Conv2d(in_channels, self.stack_chan,
                             self.stack_ksize, bias=conv_bias,
-                            padding=pad)]
+                            padding=pad,groups=self.groups)]
             if abs_bnorm:
                 convs.append(AbsBatchNorm2d(self.stack_chan))
             if drop_p > 0:
@@ -719,7 +722,8 @@ class LinearStackedConv2d(nn.Module):
                     padding -= pad
                     convs.append(nn.Conv2d(self.stack_chan,
                                     self.stack_chan, self.stack_ksize,
-                                    bias=conv_bias, padding=pad))
+                                    bias=conv_bias, padding=pad,
+                                    groups=self.groups))
                     if abs_bnorm:
                         convs.append(AbsBatchNorm2d(self.stack_ksize))
                     elif bnorm:
@@ -732,11 +736,13 @@ class LinearStackedConv2d(nn.Module):
                     convs.append(nn.Conv2d(self.stack_chan,
                                         out_channels, self.last_ksize,
                                         bias=bias, padding=pad,
-                                        stride=stride))
+                                        stride=stride,
+                                        groups=self.groups))
         else:
             convs = [nn.Conv2d(in_channels, out_channels,
                                 self.stack_ksize, bias=bias,
-                                padding=padding)]
+                                padding=padding,
+                                groups=self.groups)]
         self.convs = nn.Sequential(*convs)
 
     def forward(self, x):
