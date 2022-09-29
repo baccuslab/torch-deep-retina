@@ -227,8 +227,17 @@ def get_hyps(folder):
         path to the folder that contains checkpts and a hyps json file
     """
     folder = os.path.expanduser(folder)
-    hyps_json = os.path.join(folder, "hyperparams.json")
-    hyps = utils.load_json(hyps_json)
+    try:
+        hyps_json = os.path.join(folder, "hyperparams.json")
+        hyps = utils.load_json(hyps_json)
+    except:
+        hyps_file = os.path.join(folder, "hyperparams.txt")
+        hyps = dict()
+        with open(hyps_file, "r") as f:
+            for l in f.readlines():
+                if l.strip() == l and ":" in l:
+                    splt = l.split(": ")
+                    hyps[splt[0]] = splt[1]
     return hyps
 
 def get_next_exp_num(exp_name):
