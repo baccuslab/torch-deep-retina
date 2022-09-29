@@ -4,6 +4,7 @@ matplotlib
 torch
 tqdm
 tableprint
+scikit-build
 scikit-learn
 scikit-image
 pandas

@@ -751,35 +751,6 @@ def get_layer_idx(model, layer, delimeters=[nn.ReLU, nn.Tanh,
         return i
     return -1
 
-def get_hook(layer_dict, key, to_numpy=True, to_cpu=False):
-    """
-    Returns a hook function that can be used to collect gradients
-    or activations in the backward or forward pass respectively of
-    a torch Module.
-
-    layer_dict: dict
-        Can be empty
-
-        keys: str
-            names of model layers of interest
-        vals: NA
-    key: str
-        name of layer of interest
-    to_numpy: bool
-        if true, the gradients/activations are returned as ndarrays.
-        otherwise they are returned as torch tensors
-    """
-    if to_numpy:
-        def hook(module, inp, out):
-            layer_dict[key] = out.detach().cpu().numpy()
-    elif to_cpu:
-        def hook(module, inp, out):
-            layer_dict[key] = out.cpu()
-    else:
-        def hook(module, inp, out):
-            layer_dict[key] = out
-    return hook
-
 def linear_response(filt, stim, batch_size=1000, to_numpy=True):
     """
     Runs a filter as a convolution over the stimulus.
@@ -817,6 +788,35 @@ def linear_response(filt, stim, batch_size=1000, to_numpy=True):
     if to_numpy:
         resp = resp.detach().numpy()
     return resp
+
+def get_hook(layer_dict, key, to_numpy=True, to_cpu=False):
+    """
+    Returns a hook function that can be used to collect gradients
+    or activations in the backward or forward pass respectively of
+    a torch Module.
+
+    layer_dict: dict
+        Can be empty
+
+        keys: str
+            names of model layers of interest
+        vals: NA
+    key: str
+        name of layer of interest
+    to_numpy: bool
+        if true, the gradients/activations are returned as ndarrays.
+        otherwise they are returned as torch tensors
+    """
+    if to_numpy:
+        def hook(module, inp, out):
+            layer_dict[key] = out.detach().cpu().numpy()
+    elif to_cpu:
+        def hook(module, inp, out):
+            layer_dict[key] = out.cpu()
+    else:
+        def hook(module, inp, out):
+            layer_dict[key] = out
+    return hook
 
 def inspect(model, X, insp_keys=set(), batch_size=500, to_numpy=True,
                                                       to_cpu=True,
