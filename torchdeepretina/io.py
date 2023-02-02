@@ -110,21 +110,23 @@ def foldersort(x):
 
     x: str
     """
-    splt = x.split("/")[-1].split("_")
-    for i,s in enumerate(splt[1:]):
+    splt = ("./"+x).split("/")[-1].split("_")
+    for s in reversed(splt[1:]):
         try:
             return int(s)
         except:
             pass
     assert False
 
-def get_model_folders(main_folder):
+def get_model_folders(main_folder, incl_ext=False):
     """
     Returns a list of paths to the model folders contained within the
     argued main_folder
 
     main_folder - str
         path to main folder
+    incl_ext: bool
+        if true, includes full extension
 
     Returns:
         list of folders without full extension
@@ -137,6 +139,8 @@ def get_model_folders(main_folder):
             for content in contents:
                 if ".pt" in content or "hyperparams.txt" == content:
                     folders.append(sub_d.strip())
+                    if incl_ext: 
+                        folders[-1] = os.path.join(d, sub_d.strip())
                     break
     return sorted(folders, key=foldersort)
 
@@ -156,7 +160,7 @@ def load_checkpoint(path):
     data = torch.load(path, map_location=torch.device("cpu"))
     return data
 
-def load_model(path,verbose=True):
+def load_model(path,verbose=True, ret_hyps=False):
     """
     Loads the model architecture and state dict from a .pt or .pth
     file. Or from a training save folder. Defaults to the last check
@@ -165,6 +169,8 @@ def load_model(path,verbose=True):
     path: str
         either .pt,.p, or .pth checkpoint file; or path to save folder
         that contains multiple checkpoints
+    ret_hyps: bool
+        if true, also returns hyperparameters dict
     """
     path = os.path.expanduser(path)
     hyps = None
@@ -172,16 +178,30 @@ def load_model(path,verbose=True):
         checkpts = get_checkpoints(path)
         hyps = get_hyps(path)
         path = checkpts[-1]
+
     data = load_checkpoint(path)
+    if 'hyps' in data:
+        hyps = data['hyps']
+        kwargs = hyps
+    elif 'model_hyps' in data:
+        hyps = data['model_hyps']
+        kwargs = hyps
+    elif hyps is not None:
+        kwargs = hyps
+    else:
+        assert False, "Cannot find architecture arguments"
+    hyps["dataset"] =   data['dataset']
+    hyps["stim_type"] = data["stim_type"]
+    hyps["norm_stats"] = data["norm_stats"]
+    hyps["lossfxn"] = data["lossfxn"]
+    if "img_shape" in data:
+        hyps["img_shape"] = data["img_shape"]
     try:
-        if 'hyps' in data:
-            kwargs = data['hyps']
-        elif 'model_hyps' in data:
-            kwargs = data['model_hyps']
-        elif hyps is not None:
-            kwargs = hyps
-        else:
-            assert False, "Cannot find architecture arguments"
+        hyps["cells"] =     data['cells']
+    except:
+        pass
+
+    try:
         model = globals()[data['model_type']](**kwargs)
     except Exception as e:
         print(e)
@@ -211,11 +231,10 @@ def load_model(path,verbose=True):
             print(i,"Model:", mk)
     model.norm_stats = data['norm_stats']
     model.zero_dict = utils.try_key(data,'zero_dict',dict())
-    if "hyps" in data:
-        model.zero_bias = utils.try_key(data['hyps'],'zero_bias',True)
-    else:
-        model.zero_bias = True
+    model.zero_bias = utils.try_key(hyps,'zero_bias',True)
     tdrprune.zero_chans(model, model.zero_dict, model.zero_bias)
+    if ret_hyps:
+        return model, hyps
     return model
 
 def get_hyps(folder):
@@ -254,7 +273,7 @@ def get_next_exp_num(exp_name):
         exp_num = foldersort(folder)
         exp_nums.add(exp_num)
     for i in range(len(exp_nums)):
-        if i not in exp_nums:
+        if i not in exp_nums and str(i) not in exp_nums:
             return i
     return len(exp_nums)
 
