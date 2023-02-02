@@ -34,28 +34,46 @@ if __name__=="__main__":
 
     # Load Model from Checkpoint File
     model = tdr.io.load_model(file_name) 
+    # Convert to non-stacked model if using LinearStacked model type
+    model = tdr.utils.stacked2conv(model)
     model.to(DEVICE)
     # If you want to do inference, do not forget this line!!!
     model.eval()
+    print(model)
+    tot_params = 0
+    for n,p in model.named_parameters():
+        print(n,np.prod(p.shape))
+        tot_params += np.prod(p.shape)
+    print("All Param Count:", tot_params)
 
     # Load the Appropriate Data (Make sure you have the data located
     # at `path_to_data`
     dataset = checkpt['dataset']
     cells = checkpt['cells']
     stim_type = checkpt["stim_type"]
+
     # Number of movie frames seen in 1 datapoint
     temporal_depth = checkpt['img_shape'][0]
     mean = checkpt['norm_stats']['mean']
     std = checkpt['norm_stats']['std']
+
     # Necessary to z-score the test data with statistics of the
     # training data
     norm_stats = [mean, std]
+    print("NormStats:", norm_stats)
+    train_data = tdr.datas.loadexpt(dataset, cells, stim_type, 'train',
+                                             temporal_depth, nskip=0,
+                                             norm_stats=None,
+                                             data_path=path_to_data)
+    print("Train data shape:", train_data.X.shape)
     test_data = tdr.datas.loadexpt(dataset, cells, stim_type, 'test',
                                              temporal_depth, nskip=0,
                                              norm_stats=norm_stats,
                                              data_path=path_to_data)
-
     print("Test data shape:", test_data.X.shape)
+    print("Test data Mean:", test_data.X.mean())
+    print("Test data StD:", test_data.X.std())
+
     # Compute model responses and determine pearson correlation with
     # ganglion cell output
     bsize = 500
