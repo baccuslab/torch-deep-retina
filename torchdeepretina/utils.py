@@ -8,7 +8,7 @@ import os
 import torchdeepretina.stimuli as tdrstim
 from torchdeepretina.custom_modules import LinearStackedConv2d,\
                                             GrabUnits, AbsBatchNorm1d,\
-                                            update_shape
+                                            update_shape, AbsBatchNorm2d
 from tqdm import tqdm
 import pyret.filtertools as ft
 import time
@@ -67,6 +67,30 @@ def get_shifts(row_steps=0, col_steps=0, n_row=50, n_col=50,
     for row in row_rng:
         for col in col_rng:
             yield (int(row), int(col))
+
+def decompose_sta(sta, rank=1):
+    """
+    Decompose an STA or an RF into a spatial and a temporal component.
+
+    args:
+        sta: ndarray or torch tensor (T,H,W)
+        rank: int
+            number of components to include in result
+    returns:
+        temporal: ndarray or tensor (T,)
+        spatial: ndarray or tensor (H,W)
+    """
+    if len(sta.shape)!=2:
+        t,h,w = sta.shape
+    else:
+        t,h = sta.shape
+    U,S,V = np.linalg.svd(sta.reshape(t,-1))
+    temporal = (U[:rank] * S[:rank, None]).sum(0)
+    spatial = (V[:,:rank]*S[:rank]).sum(-1)
+    if len(sta.shape)!=2:
+        spatial = spatial.reshape(h,w)
+    return spatial, temporal
+
 
 def partial_whiten(X, alpha, eigval_tol=1e-7):
     """
@@ -657,6 +681,28 @@ def get_conv_layer_names(model, conv_types=None):
         conv_types.add(nn.Linear)
     return get_layer_names(model, conv_types)
 
+def get_bnorm_layer_names(model, conv_types=None):
+    """
+    Finds the layer names of convolutions in the model. Does not
+    return names of sublayers. Linear layers are included by default.
+
+    inputs:
+        model: torch nn Module object
+        conv_types: set of classes
+            the classes that constitute a convolutional layer type
+
+    returns:
+        conv_names: list of str
+            list of all the conv names in the model
+    """
+    if conv_types is None:
+        conv_types = set()
+        conv_types.add(nn.BatchNorm2d)
+        conv_types.add(nn.BatchNorm1d)
+        conv_types.add(AbsBatchNorm2d)
+        conv_types.add(AbsBatchNorm1d)
+    return get_layer_names(model, conv_types)
+
 def get_layer_name_sets(model, delimeters=[nn.ReLU,nn.Softplus,
                                                      nn.Tanh]):
     """
@@ -856,8 +902,9 @@ def inspect(model, X, insp_keys=set(), batch_size=500, to_numpy=True,
                                                  to_cpu=to_cpu)
             handle = mod.register_forward_hook(hook)
             handles.append(handle)
-    if len(set(insp_keys)-insp_keys_copy) > 0:
-        print("Insp keys:", insp_keys-insp_keys_copy, "not found")
+    set_insp_keys = set(insp_keys)
+    if len(set_insp_keys-insp_keys_copy) > 0 and "outputs" not in set_insp_keys:
+        print("Insp keys:", set_insp_keys-insp_keys_copy, "not found")
     insp_keys = insp_keys_copy
     if not isinstance(X,torch.Tensor):
         X = torch.FloatTensor(X)
