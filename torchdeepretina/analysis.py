@@ -157,7 +157,7 @@ def get_analysis_table(folder=None, hyps=None):
             table[k] = [v]
     return table
 
-def test_model(model, hyps, verbose=False):
+def test_model(model, hyps, verbose=False, mean=True, batch_size=500):
     """
     Runs the test data through the model and determines the loss and
     correlation with the truth.
@@ -167,25 +167,38 @@ def test_model(model, hyps, verbose=False):
         keys: str
             hyperparameter names
         vals: values corresponding to each hyperparameter key
+    mean: bool
+        if true, returns averages over gc cells, otherwise returns
+        individual gc values
     """
     data = tdrdatas.load_test_data(hyps,verbose=verbose)
     with torch.no_grad():
-        batch_size = 128 if hyps['self_attn'] else 1000
-        response = tdrutils.inspect(model, data.X, batch_size=128,
-                                         to_numpy=False)['outputs']
+        response = tdrutils.inspect(
+            model, data.X,
+            batch_size=batch_size,
+            to_numpy=False
+        )['outputs']
+        reduction = "mean"
+        if not mean: reduction = "none"
         if hyps['lossfxn'] == "PoissonNLLLoss":
-            lp = hyps['log_poisson']
-            lossfxn = globals()[hyps['lossfxn']](log_input=lp)
+            lp = tdrutils.try_key(hyps, 'log_poisson', False)
+            lossfxn = globals()[hyps['lossfxn']](
+                log_input=lp, reduction=reduction
+            )
         else:
-            lossfxn = globals()[hyps['lossfxn']]()
-        loss = lossfxn(response, torch.FloatTensor(data.y)).item()
+            lossfxn = globals()[hyps['lossfxn']](reduction=reduction)
+        loss = lossfxn(response, torch.FloatTensor(data.y))
+        if mean: loss = loss.item()
+        else: loss = loss.mean(0).cpu().data.detach().tolist()
     resp = response.data.numpy()
     pearson = scipy.stats.pearsonr
     rec_intrs=False,
-    cors = [pearson(resp[:,i], data.y[:,i])[0] for i in\
-                                    range(resp.shape[1])]
-    cor = np.mean(cors)
-    return loss, cor
+    cors = [
+        pearson(resp[:,i], data.y[:,i])[0] for i in range(resp.shape[1])
+    ]
+    if mean:
+        cors = np.mean(cors)
+    return loss, cors
 
 def get_interneuron_rfs(stims, mem_pots, filt_len=40,verbose=False):
     """
@@ -563,12 +576,15 @@ def get_model2model_cca(model1, model2, model1_layers=[],
         ccors[key] = np.mean(ccor)
     return ccors
 
-def get_intr_cors(model, layers=['sequential.0', 'sequential.6'],
+def get_intr_cors(model, layers=['sequential.0', 'sequential.4'],
                                      stim_keys={"boxes",'lines'},
                                      files=None,
                                      ret_real_rfs=False,
                                      ret_model_rfs=False,
                                      slide_steps=0,
+                                     tslide_steps=15,
+                                     normalize=False,
+                                     abs_val=False,
                                      verbose=True):
     """
     Gets and returns a DataFrame of the interneuron correlations with
@@ -593,13 +609,32 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'],
         This is the number of slides to try. Note that it operates
         in both the x and y dimension so the total number of attempts
         is equal to slide_steps squared.
+    tslide_steps - int
+        slides the interneuron output when computing correlations for
+        the possibility of response delays in the model.
+    normalize: bool
+        if true, normalizes the interneuron stimulus according to
+        the model's norm_stats. Probably don't want to do this,
+        though, because the interneuron data is already zero centered
+        with unit variance. Probably don't want to use this for
+        interneuron models. They've probably already been trained
+        directly on the autonormalization.
+    abs_val: bool
+        if true, finds cell correlation locations based on the 
+        correlation with the greatest magnitude rather than just the
+        raw value. The returned maximum correlations, however, are the
+        best raw correlations rather than the best absolute value.
     """
     if verbose:
         print("Reading data for interneuron correlations...")
         print("Using stim keys:", ", ".join(list(stim_keys)))
     filt_len = model.img_shape[0]
     rp = "~/interneuron_data"
+    norm_stats = None
+    if normalize and hasattr(model, "norm_stats"):
+        norm_stats = model.norm_stats
     interneuron_data = tdrdatas.load_interneuron_data(root_path=rp,
+                                            norm_stats=norm_stats,
                                             filter_length=filt_len,
                                             files=files,
                                             stim_keys=stim_keys,
@@ -613,7 +648,7 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'],
     # additional dict listing the stimuli types. So here we provide
     # that structure and name the stimulus as 'test'
     for k in stim_dict.keys():
-        stim_dict[k] = {"test":stim_dict[k]}
+        stim_dict[k] = {"test": stim_dict[k]}
         mem_pot_dict[k] = {"test":mem_pot_dict[k]}
 
     if ret_real_rfs:
@@ -625,7 +660,10 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'],
     df = tdrintr.get_intr_cors(model, stim_dict, mem_pot_dict,
                                            layers=set(layers),
                                            batch_size=batch_size,
+                                           abs_val=abs_val,
                                            slide_steps=slide_steps,
+                                           t_start=0,
+                                           t_end=tslide_steps,
                                            verbose=verbose,
                                            window=False)
     if ret_model_rfs:
@@ -634,8 +672,8 @@ def get_intr_cors(model, layers=['sequential.0', 'sequential.6'],
         temp_df = temp_df.drop_duplicates(dups)
         model_rfs = get_model_rfs(model, temp_df, verbose=verbose)
     if verbose:
-        temp = df.sort_values(by='cor',ascending=False)
         dups = ['cell_file', 'cell_idx']
+        temp = df.sort_values(by='cor',ascending=False)
         temp = temp.drop_duplicates(dups)
         print(temp.groupby('cell_file')['cor'].mean())
     if ret_real_rfs and ret_model_rfs:
@@ -686,6 +724,7 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
                                                  slide_steps=0,
                                                  intrnrn_stim='boxes',
                                                  dsi_idxs=None,
+                                                 calc_intrs=True,
                                                  verbose=True):
     """
     Calculates model performance on the testset and calculates
@@ -706,6 +745,8 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
     intrnrn_stim - str {'boxes', 'lines', 'all', 'none', or None}
         determines the stimulus that should be used for the interneuron
         correlations, if the correlations should be calculated at all
+    calc_intrs: bool
+        if False, will not calculate interneuron correlations
     """
     hyps = tdrio.get_hyps(folder)
     table = get_analysis_table(folder, hyps=hyps)
@@ -755,12 +796,12 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
     if verbose:
         print("Test Cor:", gc_cor,"  Loss:", gc_loss)
 
-    if hyps['self_attn']:
+    if "self_attn" in hyps and hyps['self_attn']:
         layers = ["sequential.0", "sequential.5","sequential.10"]
     else:
         layers = tdrutils.get_conv_layer_names(model)
     layers = sorted(layers, key=lambda x: int(x.split(".")[-1]))
-    if intrnrn_stim is not None and intrnrn_stim.lower() != "none":
+    if calc_intrs and intrnrn_stim is not None and intrnrn_stim.lower() != "none":
         if verbose:
             print("Calculating intrnrn correlations for:", layers)
 
@@ -793,6 +834,14 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
         df['unk_intr_cor'] = unk_intr_cor
 
         df['intr_cor'] = bests['cor'].mean()
+        df["normalized"] = bool(normalize)
+
+        if verbose:
+            print("Interneuron Correlations:")
+            print("Bipolar Avg:", bip_intr_cor)
+            print("Amacrine Avg:", amc_intr_cor)
+            print("Unknown Avg:", unk_intr_cor)
+            print("Horizontal Avg:", hor_intr_cor)
     else:
         intr_df = pd.DataFrame()
         df['bipolar_intr_cor'] = None
@@ -808,16 +857,12 @@ def analyze_model(folder, make_figs=True, make_model_rfs=False,
         save_name = os.path.join(folder, "model_rf")
         tdrvis.plot_model_rfs(rfs, save_name)
 
-    if verbose:
-        print("Interneuron Correlations:")
-        print("Bipolar Avg:", bip_intr_cor)
-        print("Amacrine Avg:", amc_intr_cor)
-        print("Unknown Avg:", unk_intr_cor)
-        print("Horizontal Avg:", hor_intr_cor)
-
     return df, intr_df
 
 def analyze_interneurons(folder, slide_steps=0, intrnrn_stim='boxes',
+                                                normalize=True,
+                                                abs_val=False,
+                                                tslide_steps=15,
                                                 verbose=True):
     """
     Calculates model performance on the testset and calculates
@@ -831,9 +876,19 @@ def analyze_interneurons(folder, slide_steps=0, intrnrn_stim='boxes',
         the number of slides to try. Note that it operates in both
         the x and y dimension so the total number of attempts is
         equal to slide_steps squared.
+    normalize - bool
+        if true, normalizes the interneuron stimulus according to
+        the model's norm_stats. Probably don't want to do this,
+        though, because the interneuron data is already zero centered
+        with unit variance.
     intrnrn_stim - str {'boxes', 'lines', 'all', 'none', or None}
         determines the stimulus that should be used for the interneuron
         correlations, if the correlations should be calculated at all
+    tslide_steps - int
+        slides the interneuron output when computing correlations for
+        the possibility of response delays in the model.
+    abs_val: bool
+        if true, takes the correlation with the greatest magnitude
     """
     hyps = tdrio.get_hyps(folder)
 
@@ -842,6 +897,11 @@ def analyze_interneurons(folder, slide_steps=0, intrnrn_stim='boxes',
     model.eval()
     model.to(DEVICE)
     layers = tdrutils.get_conv_layer_names(model)
+    print("Layers:", layers)
+    temp = set(layers)
+    temp.add("outputs")
+    layers = list(temp)
+    print("Layers With output:", layers)
     # Pruning
     if hasattr(model, "zero_dict"):
         zero_dict = model.zero_dict
@@ -850,11 +910,15 @@ def analyze_interneurons(folder, slide_steps=0, intrnrn_stim='boxes',
     else: stim_keys = {intrnrn_stim}
     intr_df = get_intr_cors(model, layers=layers,
                                    stim_keys=stim_keys,
+                                   normalize=normalize,
                                    slide_steps=slide_steps,
+                                   tslide_steps=tslide_steps,
+                                   abs_val=abs_val,
                                    verbose=verbose)
     # Drop duplicates and average over celll type
-    intr_df['intr_stim'] = intrnrn_stim 
+    intr_df['intr_stim'] = intrnrn_stim
     intr_df['save_folder'] = folder
+    intr_df["normalized"] = bool(normalize)
     return intr_df
 
 def evaluate_ln(ln, hyps):
@@ -878,7 +942,10 @@ def evaluate_ln(ln, hyps):
     return df
 
 def interneuron_pipeline(main_folder, slide_steps=0,
+                                      tslide_steps=15,
                                       intrnrn_stim='boxes',
+                                      normalize=True,
+                                      abs_val=False,
                                       verbose=True):
     """
     Calculates interneuron correlations and saves data as a csv.
@@ -891,13 +958,28 @@ def interneuron_pipeline(main_folder, slide_steps=0,
         the number of slides to try. Note that it operates in both
         the x and y dimension so the total number of attempts is
         equal to slide_steps squared.
+    tslide_steps - int
+        slides the interneuron output when computing correlations for
+        the possibility of response delays in the model.
     intrnrn_stim - str {'boxes', 'lines', 'all', 'none', or None}
         determines the stimulus that should be used for the interneuron
         correlations, if the correlations should be calculated at all
+    normalize: bool
+        if true, normalizes the interneuron stimulus according to
+        the model's norm_stats. Probably don't want to do this,
+        though, because the interneuron data is already zero centered
+        with unit variance.
+    abs_val: bool
+        if true, takes the correlation with the greatest magnitude
     """
     model_folders = tdrio.get_model_folders(main_folder)
     # Model data must be first here
     csv = 'intr_data.csv'
+    if abs_val:
+        csv = "abs_" + csv
+    if normalize:
+        csv = "normalized_" + csv
+
     dfs = dict()
     save_folders = dict()
     csv_path = os.path.join(main_folder,csv)
@@ -920,7 +1002,10 @@ def interneuron_pipeline(main_folder, slide_steps=0,
         
         intr_df = analyze_interneurons(save_folder,
                                        slide_steps=slide_steps,
+                                       tslide_steps=tslide_steps,
                                        intrnrn_stim=intrnrn_stim,
+                                       abs_val=abs_val,
+                                       normalize=normalize,
                                        verbose=verbose)
         if 'empty' in dfs[csv]:
             dfs[csv] = intr_df
@@ -948,6 +1033,7 @@ def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
                                                   slide_steps=0,
                                                   intrnrn_stim='boxes',
                                                   rec_intrs=True,
+                                                  calc_intrs=True,
                                                   verbose=True):
     """
     Evaluates model on test set, calculates interneuron correlations,
@@ -975,6 +1061,8 @@ def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
     rec_intrs: bool
         if true will record the best interneuron correlations per
         channel in one large csv
+    calc_intrs: bool
+        if False, will not calculate interneuron correlations
     """
     model_folders = tdrio.get_model_folders(main_folder)
     # Model data must be first here
@@ -1002,6 +1090,7 @@ def analysis_pipeline(main_folder, make_figs=True,make_model_rfs=True,
                                         make_model_rfs=make_model_rfs,
                                         slide_steps=slide_steps,
                                         intrnrn_stim=intrnrn_stim,
+                                        calc_intrs=calc_intrs,
                                         verbose=verbose)
         for i,csv in enumerate(csvs):
             if save_folder not in save_folders[csv]:

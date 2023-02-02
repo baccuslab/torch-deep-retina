@@ -13,6 +13,7 @@ import torchdeepretina.analysis as analysis
 
 if __name__ == "__main__":
     start_idx = None
+    calc_intrs = False
     if len(sys.argv) >= 2:
         try:
             start_idx = int(sys.argv[1])
@@ -29,5 +30,6 @@ if __name__ == "__main__":
                                       intrnrn_stim='boxes',
                                       save_dfs=True,
                                       rec_intrs=True, #If false, cors are still calculated, details just aren't recorded
+                                      calc_intrs=calc_intrs,
                                       verbose=True)
 

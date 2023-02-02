@@ -108,7 +108,7 @@ class DataContainer():
 def loadexpt(expt, cells, filename, train_or_test, history, nskip=0,
                                      cutout_width=None, 
                                      norm_stats=None, 
-                                     data_path="~/experiments/data"):
+                                     data_path="/home/TRAIN_DATA"):
     """
     Loads an experiment from an h5 file on disk
 
@@ -225,23 +225,47 @@ def _loadexpt_h5(expt, filename, root="~/experiments/data"):
     filepath = join(expanduser(root), expt, filename + '.h5')
     return h5py.File(filepath, mode='r')
 
-def prepare_stim(stim, stim_type):
+def prepare_stim(stim, stim_type, norm_stats=None):
     """
     Used to prepare the interneuron stimulus for the model
 
     stim: ndarray
     stim_type: str
         preparation method
+    norm_stats : listlike of floats or dict i.e. [mean, std], optional
+        If a list of len 2 is argued, idx 0 will be used as the mean 
+        and idx 1 the std for data normalization. if dict, use 'mean' 
+        and 'std' as keys
     """
+    max_noise_value = 128 # guessing this from ganglion whitenoise data
     if stim_type == 'boxes':
+        if norm_stats is not None:
+            if type(norm_stats)==type(dict()):
+                mu,std = norm_stats["mean"], norm_stats["std"]
+            else:
+                mu,std = norm_stats[0], norm_stats[1]
+            stim = (stim*max_noise_value-mu)/std
+            return stim
         return 2*stim - 1
     elif stim_type == 'flashes':
         stim = stim.reshape(stim.shape[0], 1, 1)
+        if norm_stats is not None:
+            if type(norm_stats)==type(dict()):
+                mu,std = norm_stats["mean"], norm_stats["std"]
+            else:
+                mu,std = norm_stats[0], norm_stats[1]
+            stim = (stim*max_noise_value-mu)/std
         return np.broadcast_to(stim, (stim.shape[0], 38, 38))
     elif stim_type == 'movingbar':
         stim = block_reduce(stim, (1,6), func=np.mean)
         stim = stim.reshape(stim.shape[0], stim.shape[1], 1)
         stim = pyret.stimulustools.upsample(stim, 5)[0]
+        if norm_stats is not None:
+            if type(norm_stats)==type(dict()):
+                mu,std = norm_stats["mean"], norm_stats["std"]
+            else:
+                mu,std = norm_stats[0], norm_stats[1]
+            stim = (stim*max_noise_value-mu)/std
         return np.broadcast_to(stim, (stim.shape[0], stim.shape[1],
                                                     stim.shape[1]))
     elif stim_type == 'lines':
@@ -250,6 +274,12 @@ def prepare_stim(stim, stim_type):
         stim = stim_averaged[:,::2]
         # now stack stimulus to convert 1d to 2d spatial stimulus
         shape = (-1,1,stim.shape[-1])
+        if norm_stats is not None:
+            if type(norm_stats)==type(dict()):
+                mu,std = norm_stats["mean"], norm_stats["std"]
+            else:
+                mu,std = norm_stats[0], norm_stats[1]
+            stim = (stim*max_noise_value-mu)/std
         return stim.reshape(shape).repeat(stim.shape[-1], axis=1)
     else:
         print("Invalid stim type")
@@ -259,7 +289,7 @@ def loadintrexpt(expt, cells, stim_type, history, H=None, W=None,
                                      cutout_width=None,
                                      norm_stats=None,
                                      train_or_test="train",
-                                     data_path="~/interneuron_data",
+                                     data_path="/home/TRAIN_DATA/interneuron_data",
                                      cross_val_idx=None,
                                      n_cv_folds=None):
     """
@@ -413,7 +443,8 @@ def load_interneuron_data(root_path="~/interneuron_data/",
                           stim_keys={"boxes"},
                           join_stims=False,
                           trunc_join=True,
-                          window=False):
+                          window=False,
+                          norm_stats=None):
     """ 
     Load data
 
@@ -431,7 +462,14 @@ def load_interneuron_data(root_path="~/interneuron_data/",
        truncates the joined stimuli to be of equal length. 
        Only applies if join_stims is true.
     window: bool
-        if true, windows the stimulus with the argued filter_length
+        if true, uses rolling window on the stimulus with the argued
+        filter_length
+    norm_stats: None, listlike of floats, or dict i.e. [mean, std], optional
+        If a list of len 2 is argued, idx 0 will be used as the mean 
+        and idx 1 the std for data normalization. if dict, use 'mean' 
+        and 'std' as keys. Only do this for ganglion cell CNNs!
+        Interneuron models have already been trained on normalized
+        stim, I believe..
 
     Returns:
         if using join_stims then no stim_type key exists!!!
@@ -479,7 +517,7 @@ def load_interneuron_data(root_path="~/interneuron_data/",
                         try:
                             temp = f[k+'/stimuli']
                             temp = np.asarray(temp, dtype=np.float32)
-                            stims[file_name][k]=prepare_stim(temp, k)
+                            stims[file_name][k]=prepare_stim(temp, k, norm_stats)
                             if window:
                                 s = rolling_window(stims[file_name][k],
                                                    filter_length)
@@ -525,7 +563,7 @@ def load_interneuron_data(root_path="~/interneuron_data/",
                     if k not in stim_keys:
                         continue
                     prepped = np.asarray(f[k+'/stimuli'])
-                    prepped = prepare_stim(prepped, k)
+                    prepped = prepare_stim(prepped, k, norm_stats)
                     if trunc_join:
                         prepped = prepped[:trunc_len]
                     # In case stim have varying spatial dimensions
@@ -734,6 +772,8 @@ class DataDistributor:
         self.val_y = DataObj(self.y, self.val_idxs)
         self.train_shape = (len(self.train_idxs), *self.X.shape[1:])
         self.val_shape = (len(self.val_idxs), *self.X.shape[1:])
+        print("Train Shape:", self.train_shape)
+        print("Valid Shape:", self.val_shape)
         if self.recurrent:
             self.n_loops = self.train_shape[0]
         else:
