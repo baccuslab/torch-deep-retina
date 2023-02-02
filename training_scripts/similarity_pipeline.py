@@ -62,14 +62,21 @@ if __name__=="__main__":
     save_ext = "similarities.csv"
     store_act_mtx = False # limits memory consumption if false
     max_mtx_storage = None # Limits mem consumption if not None
-    same_chans_only = True # If true, models are only compared with models with the same total channel counts. Does not work for pruned models.
+    same_chans_only = False # If true, models are only compared with models with the same total channel counts. Does not work for pruned models.
     total_chans = False # Only active if same_chans_only is true. If False, only compares models with exact same channel counts
+    all_chans = True # ONly applies for max_act, collects max sim for all model2 channels
+    abs_val = True # Uses the max absolute value of the correlation to select location of correlation
 
     sim_type_dict = dict()
     sim_type_dict['max_act']  = True
     sim_type_dict['max_ig']   = False
-    sim_type_dict['perm_act'] = True
+    sim_type_dict['perm_act'] = False
     sim_type_dict['perm_ig']  = False
+
+    if all_chans:
+        save_ext = "chans_"+save_ext
+        if abs_val:
+            save_ext = "abs_"+save_ext
 
     if same_chans_only:
         save_ext = "same_"+save_ext
@@ -80,24 +87,31 @@ if __name__=="__main__":
         os.mkdir(sim_folder)
     grand_folders = sys.argv[1:]
     torch.cuda.empty_cache()
-    model_paths = None
     model_info_df = pd.DataFrame()
-    for grand_folder in grand_folders:
+    comp_paths = None
+    for i,grand_folder in enumerate(grand_folders):
         print("Analyzing", grand_folder)
         paths = tdr.io.get_model_folders(grand_folder)
         paths = [os.path.join(grand_folder,path) for path in paths]
-        if model_paths is None:
+        if i == 0:
             model_paths = paths
+        elif i==1:
+            comp_paths = paths
         else:
-            model_paths = model_paths + paths
-        save_file = grand_folder.replace("/","") + "_" + save_ext
+            comp_paths = comp_paths + paths
         temp_path = os.path.join(grand_folder,"model_data.csv")
         if os.path.exists(temp_path):
             temp = pd.read_csv(temp_path,sep="!")
             model_info_df = model_info_df.append(temp,sort=True)
-    save_file = os.path.join(sim_folder,save_file)
+    if comp_paths is None: comp_paths = model_paths
+    #save_file = [grand_folder.replace("/","") + "_" + save_ext for 
+    save_file = [gfold.replace("/","") + "_" for gfold in grand_folders]
+    save_file = "_".join(save_file) + save_ext
+    save_file = os.path.join(sim_folder,save_file).replace("__", "_")
     print("Models:")
     print("\n".join(model_paths))
+    print("Comp Models:")
+    print("\n".join(comp_paths))
     print("Saving to:", save_file)
     print("\n".join([k+": "+str(v) for k,v in sim_type_dict.items()]))
 
@@ -131,7 +145,7 @@ if __name__=="__main__":
         idx = (main_df['model1']==model_paths[i])
         prev_comps = set(main_df.loc[idx,'model2'])
         missing_comp = False
-        for path in model_paths[i:]:
+        for path in comp_paths:
             if path not in prev_comps:
                 if same_chans_only and "save_folder" in model_info_df:
                     tot_chans = get_chan_count(model_info_df, path,
@@ -190,26 +204,26 @@ if __name__=="__main__":
             ig_vecs[model_paths[i]] = ig_resp1
         model1 = model1.cpu()
 
-        for j in range(i,len(model_paths)):
+        for j in range(len(comp_paths)):
             idx = (main_df['model1']==model_paths[i])
-            if model_paths[j] in set(main_df.loc[idx,"model2"]):
-                print("Skipping", model_paths[j],"due to previous record")
+            if comp_paths[j] in set(main_df.loc[idx,"model2"]):
+                print("Skipping", comp_paths[j],"due to previous record")
                 continue
             if verbose:
                 s = "Comparing: {} to {} | {} comparisons left"
-                s = s.format(model_paths[i],model_paths[j],
-                                        len(model_paths)-j)
+                s = s.format(model_paths[i],comp_paths[j],
+                                        (len(model_paths)-i)*len(comp_paths))
                 print(s)
 
             if same_chans_only:
-                tot_chans = get_chan_count(model_info_df, model_paths[j],
+                tot_chans = get_chan_count(model_info_df, comp_paths[j],
                                                        total=total_chans)
                 if tot_chans != tot_chans1:
-                    print("Skipping", model_paths[j],"due to diff chan count")
+                    print("Skipping", comp_paths[j],"due to diff chan count")
                     continue
 
             torch.cuda.empty_cache()
-            model2 = tdr.io.load_model(model_paths[j])
+            model2 = tdr.io.load_model(comp_paths[j])
             model2 = tdr.pruning.reduce_model(model2, model2.zero_dict)
             m2_chans = np.sum(model2.chans[:2])
             if same_chans_only and (m2_chans != m1_chans):
@@ -221,13 +235,13 @@ if __name__=="__main__":
                 print("Computing Model2 Responses")
             act_resp2 = None
             ig_resp2 = None
-            if model_paths[j] in act_vecs:
-                act_resp2 = act_vecs[model_paths[j]]
-            if model_paths[j] in ig_vecs:
-                ig_resp2 = ig_vecs[model_paths[j]]
+            if comp_paths[j] in act_vecs:
+                act_resp2 = act_vecs[comp_paths[j]]
+            if comp_paths[j] in ig_vecs:
+                ig_resp2 = ig_vecs[comp_paths[j]]
             calc_act = act_resp2 is None
             calc_ig = sim_type_dict['perm_ig'] or sim_type_dict['max_ig']
-            calc_ig = ig_resp2 is None
+            calc_ig = ig_resp2 is None and calc_ig
             model2.to(DEVICE)
             with torch.no_grad():
                 loc =(model2.shapes[-1][0]//2,model2.shapes[-1][1]//2)
@@ -245,8 +259,8 @@ if __name__=="__main__":
                 ig_resp2 = ig if calc_ig else ig_resp2
             if max_mtx_storage is None or len(ig_vecs)<max_mtx_storage:
                 if store_act_mtx:
-                    act_vecs[model_paths[j]] = act_resp2
-                ig_vecs[model_paths[j]] = ig_resp2
+                    act_vecs[comp_paths[j]] = act_resp2
+                ig_vecs[comp_paths[j]] = ig_resp2
             model2 = model2.cpu()
             model1_shapes = [act_resp1[l].shape for l in model1_layers]
             model2_shapes = [act_resp2[l].shape for l in model2_layers]
@@ -263,61 +277,93 @@ if __name__=="__main__":
                 stats_string += "\nActivation Correlations:\n"
                 for l1,s1 in zip(model1_layers,model1_shapes):
                     s1 = s1[-1]//2 if len(s1)>2 else None
+                    if s1 is None: continue
                     resp1 = act_resp1[l1][:,:,s1,s1].squeeze()
                     for l2,s2 in zip(model2_layers,model2_shapes):
                         s2 = s2[-1]//2 if len(s2)>2 else None
+                        if s2 is None: continue
+                        print("s2:", s2)
                         torch.cuda.empty_cache()
                         lim = window_lim
-                        resp2 = act_resp2[l2][:,:,s2,s2].squeeze()
                         cutout1 = tdr.stimuli.get_cutout(act_resp1[l1],
                                                         center=(s1,s1),
                                                         span=2*lim+1,
                                                         pad_to=0)
                         flat_cutout1 = cutout1.reshape(len(cutout1),-1)
+
+                        #resp2 = act_resp2[l2][:,:,s2,s2].squeeze()
                         cutout2 = tdr.stimuli.get_cutout(act_resp2[l2],
-                                                        center=(s2,s2),
-                                                        span=2*lim+1,
-                                                        pad_to=0)
+                                                    center=(s2,s2),
+                                                    span=2*lim+1,
+                                                    pad_to=0)
+                        og_shape = cutout2.shape
                         flat_cutout2 = cutout2.reshape(len(cutout2),-1)
                         sim1 = mtx_cor(resp1,flat_cutout2,to_numpy=True)
-                        sim2 = mtx_cor(resp2,flat_cutout1,to_numpy=True)
-                        if i==j and l1==l2: # same model and layer
+                        #sim2 = mtx_cor(resp2,flat_cutout1,to_numpy=True)
+                        # same model and layer
+                        if model_paths[i]==comp_paths[j] and l1==l2: 
                             n_chans = cutout1.shape[-3]
                             inc = cutout1.shape[-2]*cutout1.shape[-1]
                             for chan in range(n_chans):
                                 sim1[chan,inc*chan:inc*chan+inc] = 0
-                                sim2[chan,inc*chan:inc*chan+inc] = 0
-                        max_sims1 = np.max(sim1,axis=-1)
-                        max_sims2 = np.max(sim2,axis=-1)
-                        for chan in range(len(max_sims1)):
-                            table['model1'].append(model_paths[i])
-                            table['model2'].append(model_paths[j])
-                            table['cor_type'].append("max_act")
-                            table['m1_layer'].append(l1)
-                            table['m2_layer'].append(l2)
-                            table['xy_coord'].append((s1,s1))
-                            table['chan1'].append(chan)
-                            table['chan2'].append(None)
-                            table['cor'].append(max_sims1[chan])
-                        stats_string += "{}-{}: {}\n".format(l1, l2,
-                                                       np.mean(max_sims1))
-                        if model_paths[i]!=model_paths[j]:
-                            for chan in range(len(max_sims2)):
-                                table['model1'].append(model_paths[j])
-                                table['model2'].append(model_paths[i])
+                                #sim2[chan,inc*chan:inc*chan+inc] = 0
+                        if all_chans:
+                            sim1 = sim1.reshape(len(sim1),og_shape[1],-1)
+                            if abs_val:
+                                args = np.argmax(np.abs(sim1), axis=-1)
+                                max_sims1 = np.take_along_axis(
+                                    sim1,args[...,None],axis=-1
+                                )
+                                max_sims1 = max_sims1[...,0]
+                            else:
+                                max_sims1 = np.max(sim1,axis=-1)
+                            #max_sims2 = np.max(sim2,axis=-1)
+                            for chan in range(len(max_sims1)):
+                                for chan2 in range(sim1.shape[1]):
+                                    table['model1'].append(model_paths[i])
+                                    table['model2'].append(comp_paths[j])
+                                    table['cor_type'].append("max_act")
+                                    table['m1_layer'].append(l1)
+                                    table['m2_layer'].append(l2)
+                                    table['xy_coord'].append((s1,s1))
+                                    table['chan1'].append(chan)
+                                    table['chan2'].append(chan2)
+                                    table['cor'].append(max_sims1[chan,chan2])
+                            stats_string += "{}-{}: {}\n".format(l1, l2,
+                                                           np.mean(max_sims1))
+                        else:
+                            max_sims1 = np.max(sim1,axis=-1)
+                            arg_maxes = np.argmax(sim1, axis=-1)
+                            #max_sims2 = np.max(sim2,axis=-1)
+                            for chan in range(len(max_sims1)):
+                                table['model1'].append(model_paths[i])
+                                table['model2'].append(comp_paths[j])
                                 table['cor_type'].append("max_act")
-                                table['m1_layer'].append(l2)
-                                table['m2_layer'].append(l1)
-                                table['xy_coord'].append((s2,s2))
+                                table['m1_layer'].append(l1)
+                                table['m2_layer'].append(l2)
+                                table['xy_coord'].append((s1,s1))
                                 table['chan1'].append(chan)
-                                table['chan2'].append(None)
-                                table['cor'].append(max_sims2[chan])
-                            s = "rev {}-{}: {}\n".format(l2, l1,
-                                                   np.mean(max_sims2))
-                            stats_string += s
+                                table['chan2'].append(
+                                  np.unravel_index(arg_maxes, og_shape[1:])[0][0]
+                                )
+                                table['cor'].append(max_sims1[chan])
+                            stats_string += "{}-{}: {}\n".format(l1, l2,
+                                                           np.mean(max_sims1))
+                        #if model_paths[i]!=comp_paths[j]:
+                        #    for chan in range(len(max_sims2)):
+                        #        table['model1'].append(comp_paths[j])
+                        #        table['model2'].append(model_paths[i])
+                        #        table['cor_type'].append("max_act")
+                        #        table['m1_layer'].append(l2)
+                        #        table['m2_layer'].append(l1)
+                        #        table['xy_coord'].append((s2,s2))
+                        #        table['chan1'].append(chan)
+                        #        table['chan2'].append(None)
+                        #        table['cor'].append(max_sims2[chan])
+                        #    s = "rev {}-{}: {}\n".format(l2, l1,
+                        #                           np.mean(max_sims2))
+                        #    stats_string += s
 
-                if verbose:
-                    print(stats_string)
             # Integrated Gradient Max Correlation
             torch.cuda.empty_cache()
             if sim_type_dict['max_ig']:
@@ -346,45 +392,47 @@ if __name__=="__main__":
                                                         center=(s2,s2),
                                                         span=2*lim+1,
                                                         pad_to=0)
+                        og_shape = cutout2.shape
                         flat_cutout2 = cutout2.reshape(len(cutout2),-1)
                         sim1 = mtx_cor(resp1,flat_cutout2,to_numpy=True)
-                        sim2 = mtx_cor(resp2,flat_cutout1,to_numpy=True)
+                        #sim2 = mtx_cor(resp2,flat_cutout1,to_numpy=True)
                         if i==j and l1==l2: # same model and layer
                             n_chans = cutout1.shape[-3]
                             inc = cutout1.shape[-2]*cutout1.shape[-1]
                             for chan in range(n_chans):
                                 sim1[chan,inc*chan:inc*chan+inc] = 0
-                                sim2[chan,inc*chan:inc*chan+inc] = 0
+                                #sim2[chan,inc*chan:inc*chan+inc] = 0
                         max_sims1 = np.max(sim1,axis=-1)
-                        max_sims2 = np.max(sim2,axis=-1)
+                        arg_maxes = np.argmax(sim1, axis=-1)
+                        #max_sims2 = np.max(sim2,axis=-1)
                         for chan in range(len(max_sims1)):
                             table['model1'].append(model_paths[i])
-                            table['model2'].append(model_paths[j])
+                            table['model2'].append(comp_paths[j])
                             table['cor_type'].append("max_ig")
                             table['m1_layer'].append(l1)
                             table['m2_layer'].append(l2)
                             table['xy_coord'].append((s1,s1))
                             table['chan1'].append(chan)
-                            table['chan2'].append(None)
+                            table['chan2'].append(
+                              np.unravel_index(arg_maxes, og_shape[1:])[0][0]
+                            )
                             table['cor'].append(max_sims1[chan])
                         stats_string += "{}-{}: {}\n".format(l1, l2,
                                                        np.mean(max_sims1))
-                        if model_paths[i]!=model_paths[j]:
-                            for chan in range(len(max_sims2)):
-                                table['model1'].append(model_paths[j])
-                                table['model2'].append(model_paths[i])
-                                table['cor_type'].append("max_ig")
-                                table['m1_layer'].append(l2)
-                                table['m2_layer'].append(l1)
-                                table['xy_coord'].append((s2,s2))
-                                table['chan1'].append(chan)
-                                table['chan2'].append(None)
-                                table['cor'].append(max_sims2[chan])
-                            s = "rev {}-{}: {}\n".format(l2, l1,
-                                                   np.mean(max_sims2))
-                            stats_string += s
-                if verbose:
-                    print(stats_string)
+                        #if model_paths[i]!=comp_paths[j]:
+                        #    for chan in range(len(max_sims2)):
+                        #        table['model1'].append(comp_paths[j])
+                        #        table['model2'].append(model_paths[i])
+                        #        table['cor_type'].append("max_ig")
+                        #        table['m1_layer'].append(l2)
+                        #        table['m2_layer'].append(l1)
+                        #        table['xy_coord'].append((s2,s2))
+                        #        table['chan1'].append(chan)
+                        #        table['chan2'].append(None)
+                        #        table['cor'].append(max_sims2[chan])
+                        #    s = "rev {}-{}: {}\n".format(l2, l1,
+                        #                           np.mean(max_sims2))
+                        #    stats_string += s
             ########### Permutation correlations
             torch.cuda.empty_cache()
             if sim_type_dict['perm_act']:
@@ -429,7 +477,7 @@ if __name__=="__main__":
                                                        verbose=False)
                             best_xy = (0,0)
                         table['model1'].append(model_paths[i])
-                        table['model2'].append(model_paths[j])
+                        table['model2'].append(comp_paths[j])
                         table['cor_type'].append("perm_act")
                         table['m1_layer'].append(l1)
                         table['m2_layer'].append(l2)
@@ -439,8 +487,6 @@ if __name__=="__main__":
                         table['cor'].append(best_sim)
                         stats_string += "{}-{}: {}\n".format(l1, l2,
                                                              best_sim)
-                if verbose:
-                    print(stats_string)
 
             # Integrated Gradient Perm Correlation
             torch.cuda.empty_cache()
@@ -473,7 +519,7 @@ if __name__=="__main__":
                                     best_sim = sim
                                     best_xy = (x,y)
                         table['model1'].append(model_paths[i])
-                        table['model2'].append(model_paths[j])
+                        table['model2'].append(comp_paths[j])
                         table['cor_type'].append("perm_ig")
                         table['m1_layer'].append(l1)
                         table['m2_layer'].append(l2)
@@ -498,7 +544,7 @@ if __name__=="__main__":
                                  header=True, index=False)
             gc.collect()
             max_mem_used = resource.getrusage(resource.RUSAGE_SELF)
-            max_mem_used = max_mem_used.ru_maxrss/1024
+            max_mem_used = max_mem_used.ru_maxrss/1024/1024
             print("Memory Used: {:.2f} mb".format(max_mem_used))
             gpu_mem = tdr.utils.get_gpu_mem()
             s = ["gpu{}: {}".format(k,v) for k,v in gpu_mem.items()]
