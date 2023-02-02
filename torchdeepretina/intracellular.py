@@ -503,16 +503,16 @@ def model2model_one2one_cors(model1, model2,
     bests1, bests2 = tdrutils.best_one2one_mapping(cor_mtx)
     return cor_mtx, bests1, bests2
 
-def get_intr_cors(model, stim_dict, mem_pot_dict,
-                              layers={"sequential.2", "sequential.8"},
+def get_intr_cors_noshifts(model, stim_dict, mem_pot_dict,
+                              layers={"sequential.0", "sequential.4"},
                               batch_size=500,
-                              slide_steps=0,
+                              abs_val=False,
                               window=True,
                               verbose=False):
     """
     Takes a model and dicts of stimuli and membrane potentials to find
-    all correlations for each layer in the model. Returns a dict that
-    can easily be converted into a pandas data frame.
+    all correlations for each layer in the model. Returns a pandas
+    data frame.
 
     model - torch Module
     stim_dict - dict of interneuron stimuli
@@ -526,16 +526,15 @@ def get_intr_cors(model, stim_dict, mem_pot_dict,
                 keys: stim_types
                     vals: ndarray (CI, T)
                         CI is cell idx and T is time
-    slide_steps - int
-        slides the stimulus in strides by this amount in an attempt
-        to align the receptive fields of the interneurons with the
-        ganglion cells
-
     window - bool
         if true, stimulus is windowed prior to being run through model.
 
+    abs_val: bool
+        if true, uses the cell with the correlation with the greatest
+        magnitude
+
     returns:
-        intr_df - pandas DataFrame
+        intr_df: pandas DataFrame
                 - cell_file: string
                 - cell_idx: int
                 - stim_type: string
@@ -560,6 +559,167 @@ def get_intr_cors(model, stim_dict, mem_pot_dict,
         "cor":[],
         "xshift":[],
         "yshift":[]
+    }
+    layers = sorted(list(layers))
+    for cell_file in stim_dict.keys():
+        for stim_type in stim_dict[cell_file].keys():
+            D,H,W = model.img_shape
+            stim = stim_dict[cell_file][stim_type]
+            center = (stim.shape[-2]//2,stim.shape[-1]//2)
+            stim = tdrstim.get_cutout(stim, center=center,
+                                            span=H,
+                                            pad_to=H)
+            if window:
+                stim = tdrstim.rolling_window(stim, D)
+
+            if verbose:
+                temp = cell_file.split("/")[-1].split(".")[0]
+                s = "cell_file:{}, stim_type:{}..."
+                cellstim = s.format(temp, stim_type)
+                print("Collecting model response for "+cellstim)
+            response = tdrutils.inspect(model, stim,
+                                   insp_keys=layers,
+                                   batch_size=batch_size,
+                                   to_numpy=True,
+                                   verbose=verbose)
+            pots = mem_pot_dict[cell_file][stim_type]
+
+            shapes = dict()
+            for layer in layers:
+                resp = response[layer]
+                shapes[layer] = resp.shape
+                shape = shapes[layer][1:]
+                if verbose:
+                    print("Calculating cors for layer:", layer)
+
+                resp = resp.reshape(len(resp),-1)
+
+                # Retrns ndarray (Model Neurons, Potentials)
+                cor_mtx = tdrutils.mtx_cor(resp, pots.T,
+                                  batch_size=batch_size,
+                                  to_numpy=True)
+                for cell_idx in range(cor_mtx.shape[1]):
+                    bests  =   cor_mtx[:,cell_idx]
+                    if len(shape)>1:
+                        bests = bests.reshape(shape[0],-1) # (Chan,Row*Col)
+                    for chan in range(bests.shape[0]):
+                        intr_cors['cell_file'].append(cell_file)
+                        intr_cors['cell_idx'].append(cell_idx)
+                        intr_cors['stim_type'].append(stim_type)
+                        cell_type = cell_file.split("/")[-1] 
+                        cell_type = cell_type.split("_")[0][:-1]
+                        # amacrine or bipolar
+                        intr_cors['cell_type'].append(cell_type)
+
+                        if len(shape)==1:
+                            cor = bests[chan]
+                        else:
+                            if abs_val: 
+                                argmax = np.argmax(
+                                    np.abs(bests[chan]),
+                                    axis=-1
+                                )
+                            else:
+                                argmax = np.argmax(bests[chan], axis=-1)
+                            cor = bests[chan][argmax]
+
+                        intr_cors['cor'].append(cor)
+                        intr_cors['layer'].append(layer)
+                        intr_cors['chan'].append(chan)
+                        if len(shape) == 1:
+                            row,col = 0,0
+                        else:
+                            (row,col)= np.unravel_index(argmax, shape[1:])
+                        intr_cors['row'].append(row)
+                        intr_cors['col'].append(col)
+                        intr_cors['xshift'] = 0
+                        intr_cors['yshift'] = 0
+
+    intr_df = pd.DataFrame(intr_cors)
+    dups = ['cell_file', 'cell_idx', 'stim_type', "layer", "chan"]
+    if abs_val:
+        intr_df["abs_cor"] = np.abs(intr_df["cor"])
+        intr_df = intr_df.sort_values(by="abs_cor", ascending=False)
+    else:
+        intr_df = intr_df.sort_values(by="cor", ascending=False)
+    final = intr_df.drop_duplicates(dups)
+    assert len(final)==len(intr_df)
+    return final
+
+def get_intr_cors(model, stim_dict, mem_pot_dict,
+                              layers={"sequential.0", "sequential.4"},
+                              batch_size=500,
+                              slide_steps=0,
+                              t_start=0,
+                              t_end=5,
+                              abs_val=False,
+                              window=True,
+                              verbose=False):
+    """
+    Takes a model and dicts of stimuli and membrane potentials to find
+    all correlations for each layer in the model. Returns a pandas
+    data frame.
+
+    model - torch Module
+    stim_dict - dict of interneuron stimuli
+        keys: str (interneuron data file name)
+            vals: dict
+                keys: stim_types
+                    vals: ndarray (T, H, W)
+    mem_pot_dict - dict of interneuron membrane potentials
+        keys: str (interneuron data file name)
+            vals: dict
+                keys: stim_types
+                    vals: ndarray (CI, T)
+                        CI is cell idx and T is time
+    slide_steps - int
+        slides the stimulus in strides by this amount in an attempt
+        to align the receptive fields of the interneurons with the
+        ganglion cells
+
+    t_start - int
+    t_end - int
+        use t_start and t_end to slide the timing of the correlation
+        between the model and the membrane potentials. This function
+        will search all values between t_start and t_end inclusive.
+        Positive values shift the model response forward. i.e. if the
+        model has a delay of x milliseconds, then argue a positive
+        value of x/10 to remove the delay.
+
+    window - bool
+        if true, stimulus is windowed prior to being run through model.
+
+    abs_val: bool
+        if true, uses the cell with the correlation with the greatest
+        magnitude
+
+    returns:
+        intr_df: pandas DataFrame
+                - cell_file: string
+                - cell_idx: int
+                - stim_type: string
+                - cell_type: string
+                - cor: float
+                - layer: string
+                - chan: int
+                - row: int
+                - col: int
+                - xshift: int
+                - yshift: int
+    """
+    intr_cors = {
+        "cell_file":[], 
+        "cell_idx":[],
+        "stim_type":[],
+        "cell_type":[],
+        "layer":[],
+        "chan":[],
+        "row":[],
+        "col":[],
+        "cor":[],
+        "xshift":[],
+        "yshift":[],
+        "tshift":[]
     }
     layers = sorted(list(layers))
     for cell_file in stim_dict.keys():
@@ -601,35 +761,50 @@ def get_intr_cors(model, stim_dict, mem_pot_dict,
                 pots = mem_pot_dict[cell_file][stim_type]
                 shapes = dict()
                 for layer in layers:
-                    if verbose:
-                        print("Calculating cors for layer:", layer)
                     resp = response[layer]
                     shapes[layer] = resp.shape
+                    if verbose:
+                        print("Calculating cors for layer:", layer)
+
                     resp = resp.reshape(len(resp),-1)
                     # Retrns ndarray (Model Neurons, Potentials)
-                    cor_mtx = tdrutils.mtx_cor(resp, pots.T,
-                                      batch_size=batch_size,
-                                      to_numpy=True)
-                    # We need to store the best mtx for each potential
-                    for ci in range(cor_mtx.shape[1]):
-                        if ci in best_mtxs[layer]:
-                            bests = best_mtxs[layer][ci]['cors']
-                            diff = bests.max(0)-cor_mtx[:,ci].max(0)
-                        if ci not in best_mtxs[layer] or diff < 0:
-                            best_mtxs[layer][ci]["cors"]=cor_mtx[:,ci]
-                            best_mtxs[layer][ci]["xshift"] = xshift
-                            best_mtxs[layer][ci]["yshift"] = yshift
+                    for t in range(t_start,t_end+1):
+                        if t==0:
+                            arg1,arg2 = resp, pots.T
+                        elif t < 0:
+                            arg1 = resp[:t]
+                            arg2 = pots[:,-t:].T
+                        elif t > 0:
+                            arg1 = resp[t:]
+                            arg2 = pots[:,:-t].T
+                        cor_mtx = tdrutils.mtx_cor(arg1, arg2,
+                                          batch_size=batch_size,
+                                          to_numpy=True)
+                        # We need to store the best mtx for each potential
+                        for ci in range(cor_mtx.shape[1]):
+                            # Determine if the best correlated value is
+                            # larger in this shift than all previous shifts
+                            if ci in best_mtxs[layer]:
+                                bests = best_mtxs[layer][ci]['cors']
+                                diff = bests.max(0)-cor_mtx[:,ci].max(0)
+                            if ci not in best_mtxs[layer] or diff < 0:
+                                best_mtxs[layer][ci]["cors"]= cor_mtx[:,ci]
+                                best_mtxs[layer][ci]["xshift"] = xshift
+                                best_mtxs[layer][ci]["yshift"] = yshift
+                                best_mtxs[layer][ci]["tshift"] = t
 
             if verbose:
                 print("Recording best shifts")
             for layer in best_mtxs.keys():
-                modu = tdrutils.get_module_by_name(model,layer)
                 shape = shapes[layer][1:]
                 for cell_idx in range(cor_mtx.shape[1]):
-                    bests =    best_mtxs[layer][cell_idx]['cors']
+                    bests  =   best_mtxs[layer][cell_idx]['cors']
                     xshift =   best_mtxs[layer][cell_idx]['xshift']
                     yshift =   best_mtxs[layer][cell_idx]['yshift']
-                    for unit_idx in range(bests.shape[0]):
+                    t =   best_mtxs[layer][cell_idx]['tshift']
+                    if len(shape)>1:
+                        bests = bests.reshape(shape[0],-1)
+                    for chan in range(bests.shape[0]):
                         intr_cors['cell_file'].append(cell_file)
                         intr_cors['cell_idx'].append(cell_idx)
                         intr_cors['stim_type'].append(stim_type)
@@ -637,23 +812,39 @@ def get_intr_cors(model, stim_dict, mem_pot_dict,
                         cell_type = cell_type.split("_")[0][:-1]
                         # amacrine or bipolar
                         intr_cors['cell_type'].append(cell_type)
-                        cor = bests[unit_idx]
+
+                        if len(shape)==1:
+                            cor = bests[chan]
+                        else:
+                            if abs_val: 
+                                argmax = np.argmax(
+                                    np.abs(bests[chan]),
+                                    axis=-1
+                                )
+                            else:
+                                argmax = np.argmax(bests[chan], axis=-1)
+                            cor = bests[chan][argmax]
+
                         intr_cors['cor'].append(cor)
                         intr_cors['layer'].append(layer)
                         if len(shape) == 1:
-                            chan,row,col = unit_idx,0,0
+                            row,col = 0,0
                         else:
-                            (chan,row,col)= np.unravel_index(unit_idx,
-                                                             shape)
+                            (row,col)= np.unravel_index(argmax, shape[1:])
                         intr_cors['chan'].append(chan)
                         intr_cors['row'].append(row)
                         intr_cors['col'].append(col)
                         intr_cors['xshift'] = xshift
                         intr_cors['yshift'] = yshift
+                        intr_cors['tshift'] = t
 
     intr_df = pd.DataFrame(intr_cors)
     dups = ['cell_file', 'cell_idx', 'stim_type', "layer", "chan"]
-    intr_df = intr_df.sort_values(by="cor", ascending=False)
+    if abs_val:
+        intr_df["abs_cor"] = np.abs(intr_df["cor"])
+        intr_df = intr_df.sort_values(by="abs_cor", ascending=False)
+    else:
+        intr_df = intr_df.sort_values(by="cor", ascending=False)
     return intr_df.drop_duplicates(dups)
 
 def get_cor_generalization(model, stim_dict, mem_pot_dict,
