@@ -1,5 +1,6 @@
 {
     "exp_name": "myfirstexperiment",
+    "save_root": "./",
 
     "seed": 1582749400,
     "save_every_epoch": false,
