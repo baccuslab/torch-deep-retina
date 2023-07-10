@@ -660,10 +660,13 @@ def hyper_search(hyps, hyp_ranges, early_stopping=10,
         early stopping epoch count
     """
     starttime = time.time()
+    exp_dir = os.path.abspath(
+        os.path.join(hyps.get("save_root", "./"), hyps['exp_name'])
+    )
     # Make results file
-    if not os.path.exists(hyps['exp_name']):
-        os.mkdir(hyps['exp_name'])
-    results_file = hyps['exp_name']+"/results.txt"
+    if not os.path.exists(exp_dir):
+        os.mkdir(exp_dir)
+    results_file = os.path.join(exp_dir, "results.txt")
     with open(results_file,'a') as f:
         f.write("Hyperparameters:\n")
         for k in hyps.keys():

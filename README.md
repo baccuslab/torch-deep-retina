@@ -1,28 +1,44 @@
 # Torch Deep Retina
-This repo contains the code used to produce the figures in [The dynamic neural code of the retina for natural scenes](https://www.biorxiv.org/content/10.1101/340943v5).
+This repo contains the code for the findings in [The dynamic neural code of the retina for natural scenes](https://www.biorxiv.org/content/10.1101/340943v5).
+
+### Installation
+This project is structured as a pip package. You will first need to install all the required dependencies.
+
+```
+$ pip install -r requirements.txt
+```
+
+Then you will need to install this project.
+
+```
+$ pip install -e .
+```
 
 ### Training
-To train a model you will need to have data and a hyperparameters json, and optionally a hyperranges json. The hyperparameters json details the values of each of the training parameters that will be used for the training. See the [training_scripts readme](training_scripts/readme.md) for parameter details. The hyperranges json contains a subset of the hyperparameter keys each indicating to a list of values that will be cycled through for training. Every combination of the hyperranges key value pairs will be scheduled for training. This allows for easy hyperparameter searches. For example, if `lr` is the only key in the hyperranges json, then trainings for each listed value of the learning rate will be queued and processed in order. If `lr` and `l2` each are in the hyperranges json, then every combination of the `lr` and `l2` values will be queued for training.
+To train a model you will need to have data and a configuration json file, and optionally a config ranges json. The config json dictates the values of each of the training parameters that will be used for the training. See the [training_scripts readme](training_scripts/readme.md) for parameter details. The config-ranges json contains a subset of the config keys each indicating to a list of values that will be cycled through for training. Every combination of the config-ranges key value pairs will be scheduled for training. This allows for easy hyperparameter searches. For example, if `lr` is the only key in the config-ranges json, then trainings for each listed value of the learning rate will be queued and processed in order. If `lr` and `l2` each are in the config-ranges json, then every combination of the `lr` and `l2` values will be queued for training.
 
 #### Retrieving Sample Data
-Sample data can be found [here](https://github.com/baccuslab/demo_tdr_data/). Simply clone the repository and set the `datapath` parameter in your hyperparams json to the path to the cloned repository.
+Sample data can be found through the Nature paper.
 
 #### Running a Training
-To run a training session, navigate to the `training_scripts` folder:
+To run a training, navigate to the `training_scripts` folder:
 
 ```
 $ cd training_scripts
 ```
 
-And then select the cuda device index you will want to use (in this case 0) and type the following command:
+Here you will want to create a config.json file. You can use the example json provided by this repo to start, but you will likely run into issues with the dataset. Download the data and then be sure to update the config.json entry "datapath" with the path to the directory in which you downloaded the data. See the `readme.md` file in the `training_scripts` folder for details on all config options.
+
+Then select the cuda device index you will want to use (in this case 0) and type the following command:
 
 ```
-$ CUDA_VISIBLE_DEVICES=0 python3 main.py path_to_hyperparameters.json
+$ CUDA_VISIBLE_DEVICES=0 python3 main.py path_to_config.json
 ```
 or
 ```
-$ CUDA_VISIBLE_DEVICES=0 python3 main.py path_to_hyperparameters.json path_to_hyperranges.json
+$ CUDA_VISIBLE_DEVICES=0 python3 main.py path_to_config.json path_to_config-ranges.json
 ```
+
 ### Analysis
 ##### Full Model Analyses
 It is perhaps best for each user to do their own analyses. This will reduce the risk of misinterpretations of results. There is, however, an automated analysis pipeline that can be used if your model falls in the categories below. To use this automated analysis tool, simply argue the name of the main experiment folder to the `analysis_pipeline.py` script within the `training_scripts/` folder:

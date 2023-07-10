@@ -60,22 +60,25 @@ if __name__ == "__main__":
         print(s.format("!"*5))
 
     sleep_time = 8
-    if os.path.exists(hyps['exp_name']):
-        dirs = get_model_folders(hyps['exp_name'])
+    exp_dir = os.path.abspath(
+        os.path.join(hyps.get("save_root", "./"), hyps["exp_name"])
+    )
+    if os.path.exists(exp_dir):
+        dirs = get_model_folders(exp_dir)
         if len(dirs) > 0:
             s = "Overwrite last folder {}? (No/yes)".format(dirs[-1])
             print(s)
             i,_,_ = select.select([sys.stdin], [],[],sleep_time)
             if i and "y" in sys.stdin.readline().strip().lower():
-                path = os.path.join(hyps['exp_name'], dirs[-1])
+                path = os.path.join(exp_dir, dirs[-1])
                 shutil.rmtree(path, ignore_errors=True)
         else:
             s = "You have {} seconds to cancel experiment name {}:"
-            print(s.format(sleep_time, hyps['exp_name']))
+            print(s.format(sleep_time, exp_dir))
             i,_,_ = select.select([sys.stdin], [],[],sleep_time)
     else:
         s = "You have {} seconds to cancel experiment name {}:"
-        print(s.format(sleep_time, hyps['exp_name']))
+        print(s.format(sleep_time, exp_dir))
         i,_,_ = select.select([sys.stdin], [],[],sleep_time)
     print()
 

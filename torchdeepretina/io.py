@@ -315,5 +315,7 @@ def make_save_folder(hyps):
                                     hyps['exp_name'],
                                     hyps['exp_num'])
     save_folder += hyps.get('search_keys', "")
-    return save_folder
+    return os.path.abspath(
+        os.path.join(hyps.get("save_root","./"), save_folder)
+    )
 
