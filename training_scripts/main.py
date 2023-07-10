@@ -14,6 +14,10 @@ import numpy as np
 import torch
 import select
 from torchdeepretina.io import get_model_folders
+import sys #new
+#sys.path.append('~/torch_baccus/torch-deep-retina/torchdeepretina' #new
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) #new
+sys.path.append(os.path.dirname(SCRIPT_DIR)) #new
 from torchdeepretina.training import hyper_search
 from torchdeepretina.utils import load_json
 from torchdeepretina.analysis import analysis_pipeline
@@ -85,4 +89,4 @@ if __name__ == "__main__":
     start_time = time.time()
     hyper_search(hyps, hyp_ranges, device)
     print("Total Execution Time:", time.time() - start_time)
-    print(exp_folder, "Training Complete")
+    print(exp_dir, "Training Complete")
