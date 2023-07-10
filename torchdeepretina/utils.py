@@ -1496,7 +1496,8 @@ def compute_sta(model, layer, cell_index, layer_shape=None,
                                            n_repeats=3,
                                            rand_spat=True)
         X = tdrstim.rolling_window(X,model.img_shape[0])
-    X = torch.FloatTensor(X)
+    if type(X)==type(np.zeros(1)):
+        X = torch.FloatTensor(X)
     X.requires_grad = True
 
     # compute the gradient of the model with respect to the stimulus
@@ -1763,6 +1764,7 @@ def revcor_sta(model, layer, cell_index, layer_shape=None,
                                           batch_size=500,
                                           contrast=1,
                                           to_numpy=False,
+                                          X=None,
                                           verbose=True):
     """
     Calculates the STA using the reverse correlation method.
@@ -1782,12 +1784,18 @@ def revcor_sta(model, layer, cell_index, layer_shape=None,
         contrast of whitenoise used to calculate STA
     to_numpy: bool
         returns values as numpy arrays if true, else as torch tensors
+    X: None or torch tensor (B,C,H,W)
+        optionally argue the stimulus you would like to use for the sta
+
+    Returns:
+        sta: (C,H,W)
     """
-    noise = tdrstim.repeat_white(n_samples,nx=model.img_shape[1],
+    if X is None:
+        noise = tdrstim.repeat_white(n_samples,nx=model.img_shape[1],
                                            contrast=contrast,
                                            n_repeats=3,
                                            rand_spat=True)
-    X = tdrstim.rolling_window(noise, model.img_shape[0])
+        X = tdrstim.rolling_window(noise, model.img_shape[0])
     with torch.no_grad():
         response = inspect(model, X, insp_keys=set([layer]),
                                       batch_size=batch_size,
@@ -2164,12 +2172,14 @@ def max_matrix(mtx):
     loc = np.unravel_index(argmax,shape)
     return (*loc,valmax)
 
-def rf_display(rf) :
+def rf_display(rf, scale_by_center=False) :
     #Creates a display for a spatiotemporal receptive field (RF)
     #
     #space_ave,time_cen,time_sur = RFDisplay(RF)
     #
     #RF: Spatiotemporal receptive field (Time, X , Y)
+    #scale_by_center: bool, if true will scale surround by same factor
+    # as center
     #space_ave: Spatial average of RF
     #time_cen: Time course of pixels in RF center
     #time_sur: Time course of pixels in RF surround
@@ -2238,8 +2248,10 @@ def rf_display(rf) :
         time_sur=time_sur+rftrunc[:,sur_idxs[i,0],sur_idxs[i,1]]
 
     #Scale center and surround timecourses to a max amplitude of one
-    time_cen=time_cen/np.max(abs(time_cen))
-    time_sur=time_sur/np.max(abs(time_sur))
+    scale_factor = np.max(abs(time_cen))
+    time_cen=time_cen/scale_factor
+    if not scale_by_center: scale_factor = np.max(abs(time_sur))
+    time_sur=time_sur/scale_factor
     space_ave=space_ave[16:35,16:35]
 
     return spacepeak, time_cen, time_sur
