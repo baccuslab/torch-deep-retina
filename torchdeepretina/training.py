@@ -793,11 +793,11 @@ def get_model_and_distr(hyps, train_data):
     seq_len = 1
     shift_labels = utils.try_key(hyps,'shift_labels',False)
     zscorey = utils.try_key(hyps,'zscorey',False)
-    cross_val_idx = hyps['cross_val_idx']
-    n_cv_folds = hyps['n_cv_folds']
-    rand_sample = utils.try_key(hyps,"rand_sample",None)
+    cross_val_idx = hyps.get('cross_val_idx', None)
+    n_cv_folds = hyps.get('n_cv_folds', 10)
+    rand_sample = hyps.get("rand_sample",None)
     data_distr = DataDistributor(train_data, batch_size=batch_size,
-                                    shuffle=hyps['shuffle'],
+                                    shuffle=hyps.get('shuffle',True),
                                     rand_sample=rand_sample,
                                     cross_val_idx=cross_val_idx,
                                     n_cv_folds=n_cv_folds,
@@ -832,7 +832,7 @@ def get_data(hyps):
     """
     cutout_size = None if 'cutout_size' not in hyps else\
                                       hyps['cutout_size']
-    img_depth,_,_ = hyps['img_shape']
+    img_depth = hyps.get("img_depth", hyps['img_shape'][0])
 
     if hyps['dataset'] in set(tdrintr.centers.keys()):
         data_path=utils.try_key(hyps,'datapath','~/interneuron_data/')
