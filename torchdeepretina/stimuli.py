@@ -1083,7 +1083,7 @@ def repeat_white(n_samples, nx=50, contrast=1.0, n_repeats=3,
     """
     compressed_time = int(np.ceil(n_samples/n_repeats))
     if rand_spat:
-        compressed_stim  = np.random.randn(n_samples, nx, nx)*contrast
+        compressed_stim  = np.random.randn(compressed_time, nx, nx)*contrast
     else:
         compressed_stim = white(compressed_time, nx=nx,
                                             contrast=contrast)
