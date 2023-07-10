@@ -61,11 +61,15 @@ if __name__=="__main__":
     # training data
     norm_stats = [mean, std]
     print("NormStats:", norm_stats)
+
+    # Although the example does not need the train data, this is how
+    # you would load it.
     train_data = tdr.datas.loadexpt(dataset, cells, stim_type, 'train',
                                              temporal_depth, nskip=0,
                                              norm_stats=None,
                                              data_path=path_to_data)
     print("Train data shape:", train_data.X.shape)
+
     test_data = tdr.datas.loadexpt(dataset, cells, stim_type, 'test',
                                              temporal_depth, nskip=0,
                                              norm_stats=norm_stats,
