@@ -190,10 +190,13 @@ def load_model(path,verbose=True, ret_hyps=False):
         kwargs = hyps
     else:
         assert False, "Cannot find architecture arguments"
-    hyps["dataset"] =   data['dataset']
-    hyps["stim_type"] = data["stim_type"]
-    hyps["norm_stats"] = data["norm_stats"]
-    hyps["lossfxn"] = data["lossfxn"]
+    try:
+        hyps["dataset"] =   data['dataset']
+        hyps["stim_type"] = data["stim_type"]
+        hyps["norm_stats"] = data["norm_stats"]
+        hyps["lossfxn"] = data["lossfxn"]
+    except:
+        for k in hyps.keys(): data[k] = hyps[k]
     if "img_shape" in data:
         hyps["img_shape"] = data["img_shape"]
     try:
@@ -208,7 +211,10 @@ def load_model(path,verbose=True, ret_hyps=False):
         print("Likely the checkpoint you are using is deprecated.")
     try:
         try:
-            model.load_state_dict(data['model_state_dict'])
+            if "state_dict" in data:
+                model.load_state_dict(data['state_dict'])
+            else:
+                model.load_state_dict(data['model_state_dict'])
         except:
             if verbose:
                 print("Error loading state_dict, attempting fix..")
@@ -229,7 +235,7 @@ def load_model(path,verbose=True, ret_hyps=False):
         for i,(sk,mk) in enumerate(zip(sd_keys,m_keys)):
             print(i,"State Dict:", sk)
             print(i,"Model:", mk)
-    model.norm_stats = data['norm_stats']
+    model.norm_stats = data.get('norm_stats', [0,1])
     model.zero_dict = utils.try_key(data,'zero_dict',dict())
     model.zero_bias = utils.try_key(hyps,'zero_bias',True)
     tdrprune.zero_chans(model, model.zero_dict, model.zero_bias)
@@ -259,15 +265,15 @@ def get_hyps(folder):
                     hyps[splt[0]] = splt[1]
     return hyps
 
-def get_next_exp_num(exp_name):
+def get_next_exp_num(exp_path):
     """
     Finds the next open experiment id number.
 
-    exp_name: str
+    exp_path: str
         path to the main experiment folder that contains the model
         folders
     """
-    folders = get_model_folders(exp_name)
+    folders = get_model_folders(exp_path)
     exp_nums = set()
     for folder in folders:
         exp_num = foldersort(folder)
@@ -308,6 +314,6 @@ def make_save_folder(hyps):
     save_folder = "{}/{}_{}".format(hyps['exp_name'],
                                     hyps['exp_name'],
                                     hyps['exp_num'])
-    save_folder += hyps['search_keys']
+    save_folder += hyps.get('search_keys', "")
     return save_folder
 
