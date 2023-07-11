@@ -14,6 +14,10 @@ Rough Outline:
     The test data can be found by arguing the appropriate parameters
         to the loadexpt() function
 """
+path_to_data = "/home/TRAIN_DATA/"
+# Name of the saved checkpoint or model folder
+file_name = "../models/15-11-21a_naturalscene.pt"
+
 
 import torchdeepretina as tdr
 from scipy.stats import pearsonr
@@ -26,9 +30,6 @@ else:
     DEVICE = torch.device("cpu")
 
 if __name__=="__main__":
-    path_to_data = "/home/TRAIN_DATA/"
-    # Name of the saved checkpoint
-    file_name = "../models/15-11-21a_naturalscene.pt"
 
     checkpt = tdr.io.load_checkpoint(file_name)
 
