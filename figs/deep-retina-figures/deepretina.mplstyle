@@ -1,0 +1,66 @@
+lines.linewidth : 2.5
+lines.markeredgewidth : 0.5
+lines.markersize : 15
+lines.antialiased : True
+
+patch.linewidth : 1.0
+patch.facecolor : blue
+patch.edgecolor : black
+patch.antialiased : True
+
+font.family : sans-serif
+font.style : normal
+font.variant : normal
+font.weight : medium
+font.stretch : normal
+
+font.size : 18.0
+font.serif : Times New Roman, Times
+font.sans-serif : Helvetica, Arial Narrow, PT Sans
+
+axes.facecolor : white
+axes.edgecolor : 222222
+axes.linewidth : 1.5
+axes.grid : False
+axes.titlesize : 20
+axes.labelsize : 12
+axes.axisbelow : True
+# axes.prop_cycle : cm.Set3
+axes.prop_cycle : cycler('color', ['247AAD', '960618', '6A5896', '366811', 'C54E00', 'BC6997', '46A4D9', '008E63', 'E0D432', '0062A2'])  # color cycle for plot lines
+axes.labelcolor : 333333
+axes.titlecolor : 333333
+
+xtick.direction : out
+ytick.direction : out
+xtick.labelsize : 12
+ytick.labelsize : 12
+xtick.major.size : 6
+xtick.major.width : 1.5
+xtick.minor.size : 5
+xtick.minor.width : 1.5
+xtick.color : 333333
+ytick.major.size : 6
+ytick.major.width : 1.5
+ytick.minor.size : 5
+ytick.minor.width : 1.5
+ytick.color : 333333
+
+grid.color : gray
+grid.linestyle : dotted
+grid.linewidth : 0.5
+grid.alpha : 0.5
+
+legend.frameon : True
+legend.fancybox : True
+
+figure.dpi : 600
+figure.facecolor : white
+figure.edgecolor : white
+
+image.cmap : gray
+image.interpolation : none
+image.aspect : equal
+
+savefig.dpi : 300
+savefig.format : pdf
+savefig.bbox : tight

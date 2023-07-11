@@ -1,0 +1,289 @@
+cell_file!cell_idx!stim_type!cell_type!layer!chan!row!col!cor!xshift!yshift!save_folder
+bipolars_late_2012.h5!0!test!bipolar!sequential.4!6!13!23!0.7261589!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!6!test!amacrine!sequential.4!5!12!21!0.7053026!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!3!test!amacrine!sequential.4!0!14!24!0.7050126!0!0!convgc_26_chans[8, 8]
+unks_17-10-18.h5!4!test!unk!sequential.0!6!13!22!0.6881693!0!0!convgc_26_chans[8, 8]
+bipolars_late_2012.h5!3!test!bipolar!sequential.4!6!12!20!0.66998273!0!0!convgc_26_chans[8, 8]
+unks_17-10-18.h5!5!test!unk!sequential.0!6!18!24!0.6675792!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!8!test!amacrine!sequential.4!6!12!22!0.6632559!0!0!convgc_26_chans[8, 8]
+unks_17-10-18.h5!10!test!unk!sequential.0!6!17!24!0.6549826!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!2!test!amacrine!sequential.4!5!13!24!0.6456644!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!9!test!amacrine!sequential.4!6!13!23!0.64214736!0!0!convgc_26_chans[8, 8]
+unks_17-10-18.h5!2!test!unk!sequential.0!5!17!22!0.6398634!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!12!test!amacrine!sequential.4!6!14!21!0.6364715!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!5!test!amacrine!sequential.4!6!13!22!0.6226568!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!4!test!amacrine!sequential.0!6!20!30!0.62205195!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!14!test!amacrine!sequential.4!6!13!18!0.61676204!0!0!convgc_26_chans[8, 8]
+unks_17-10-18.h5!13!test!unk!sequential.0!5!16!25!0.6165588!0!0!convgc_26_chans[8, 8]
+unks_17-10-18.h5!8!test!unk!sequential.4!5!7!23!0.60805464!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!19!test!amacrine!sequential.4!6!14!19!0.6064107!0!0!convgc_26_chans[8, 8]
+amacrines_early_2012.h5!2!test!amacrine!sequential.4!6!13!25!0.59922427!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!7!test!amacrine!sequential.4!6!13!19!0.5930633!0!0!convgc_26_chans[8, 8]
+unks_17-10-18.h5!3!test!unk!sequential.0!5!15!23!0.59226006!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!10!test!amacrine!sequential.4!6!12!21!0.5764078!0!0!convgc_26_chans[8, 8]
+bipolars_late_2012.h5!2!test!bipolar!sequential.4!6!14!23!0.5734138!0!0!convgc_26_chans[8, 8]
+unks_17-10-18.h5!11!test!unk!sequential.0!4!14!23!0.5539757!0!0!convgc_26_chans[8, 8]
+amacrines_early_2012.h5!4!test!amacrine!sequential.0!5!17!28!0.5506263!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!13!test!amacrine!sequential.4!5!12!21!0.5353688!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!1!test!amacrine!sequential.0!6!20!24!0.5277837!0!0!convgc_26_chans[8, 8]
+unks_17-10-18.h5!6!test!unk!sequential.4!1!13!23!0.5272919!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!18!test!amacrine!sequential.4!6!11!20!0.5257661!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!15!test!amacrine!sequential.4!6!12!19!0.5102294!0!0!convgc_26_chans[8, 8]
+amacrines_early_2012.h5!0!test!amacrine!sequential.0!5!16!28!0.5075802!0!0!convgc_26_chans[8, 8]
+unks_17-10-18.h5!0!test!unk!sequential.4!1!11!22!0.49755332!0!0!convgc_26_chans[8, 8]
+bipolars_late_2012.h5!1!test!bipolar!sequential.4!6!11!22!0.49700302!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!11!test!amacrine!sequential.4!6!11!22!0.49700302!0!0!convgc_26_chans[8, 8]
+amacrines_early_2012.h5!1!test!amacrine!sequential.0!5!18!29!0.49098992!0!0!convgc_26_chans[8, 8]
+unks_17-10-18.h5!9!test!unk!sequential.4!6!10!21!0.49029666!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!17!test!amacrine!sequential.4!6!15!19!0.48916712!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!16!test!amacrine!sequential.4!6!12!22!0.47338507!0!0!convgc_26_chans[8, 8]
+amacrines_early_2012.h5!3!test!amacrine!sequential.4!5!12!25!0.4568142!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!0!test!amacrine!sequential.4!5!13!24!0.44597957!0!0!convgc_26_chans[8, 8]
+unks_17-10-18.h5!12!test!unk!sequential.4!2!10!21!0.44271496!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!20!test!amacrine!sequential.4!6!11!20!0.43390167!0!0!convgc_26_chans[8, 8]
+amacrines_late_2012.h5!21!test!amacrine!sequential.4!6!17!17!0.3705491!0!0!convgc_26_chans[8, 8]
+bipolars_early_2012.h5!2!test!bipolar!sequential.4!6!12!23!0.34395346!0!0!convgc_26_chans[8, 8]
+bipolars_early_2012.h5!0!test!bipolar!sequential.0!3!16!27!0.3182222!0!0!convgc_26_chans[8, 8]
+unks_17-10-18.h5!1!test!unk!sequential.0!5!12!22!0.31039593!0!0!convgc_26_chans[8, 8]
+unks_17-10-18.h5!7!test!unk!sequential.0!6!16!23!0.27145308!0!0!convgc_26_chans[8, 8]
+bipolars_early_2012.h5!1!test!bipolar!sequential.0!5!16!27!0.24848378!0!0!convgc_26_chans[8, 8]
+unks_17-10-18.h5!4!test!unk!sequential.0!2!13!15!0.73717505!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!6!test!amacrine!sequential.0!7!17!16!0.6879293!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+unks_17-10-18.h5!5!test!unk!sequential.0!2!18!17!0.6663854!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!4!test!amacrine!sequential.0!7!20!24!0.65376395!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+unks_17-10-18.h5!2!test!unk!sequential.0!7!17!17!0.6349397!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+unks_17-10-18.h5!3!test!unk!sequential.0!2!14!17!0.6330166!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+unks_17-10-18.h5!10!test!unk!sequential.0!2!17!18!0.6138209!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+unks_17-10-18.h5!11!test!unk!sequential.0!5!14!17!0.593524!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!3!test!amacrine!sequential.0!7!17!21!0.5848708!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!2!test!amacrine!sequential.0!2!18!19!0.57178175!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+unks_17-10-18.h5!8!test!unk!sequential.0!7!12!18!0.57034004!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!14!test!amacrine!sequential.0!7!17!16!0.55730355!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!19!test!amacrine!sequential.0!7!18!17!0.55551165!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+bipolars_late_2012.h5!0!test!bipolar!sequential.0!7!18!21!0.55353904!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!9!test!amacrine!sequential.0!7!18!21!0.54905784!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!5!test!amacrine!sequential.0!2!17!19!0.5394428!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+unks_17-10-18.h5!13!test!unk!sequential.0!7!16!19!0.53208673!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!8!test!amacrine!sequential.0!7!16!20!0.52376425!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!7!test!amacrine!sequential.0!7!18!17!0.5150529!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+bipolars_late_2012.h5!3!test!bipolar!sequential.0!7!17!17!0.49378246!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_early_2012.h5!2!test!amacrine!sequential.0!7!18!23!0.49266618!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!12!test!amacrine!sequential.0!7!19!19!0.4866799!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+unks_17-10-18.h5!9!test!unk!sequential.0!7!15!19!0.47326836!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!10!test!amacrine!sequential.0!7!16!19!0.46842274!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+unks_17-10-18.h5!12!test!unk!sequential.0!4!14!18!0.46239603!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_early_2012.h5!4!test!amacrine!sequential.0!7!17!22!0.4343596!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!1!test!amacrine!sequential.0!2!20!18!0.4297434!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!17!test!amacrine!sequential.0!7!19!17!0.40948415!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!15!test!amacrine!sequential.0!7!17!16!0.4076664!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+bipolars_late_2012.h5!1!test!bipolar!sequential.0!7!16!19!0.4041655!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!11!test!amacrine!sequential.0!7!16!19!0.4041655!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+bipolars_late_2012.h5!2!test!bipolar!sequential.0!7!18!20!0.40088132!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!18!test!amacrine!sequential.0!7!16!17!0.38648444!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!13!test!amacrine!sequential.4!7!11!11!0.3793203!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+unks_17-10-18.h5!6!test!unk!sequential.4!1!13!13!0.36749172!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_early_2012.h5!1!test!amacrine!sequential.4!7!12!17!0.3612286!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_early_2012.h5!3!test!amacrine!sequential.0!2!17!20!0.355988!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!0!test!amacrine!sequential.4!7!13!13!0.3558523!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!20!test!amacrine!sequential.0!7!16!17!0.33393502!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!16!test!amacrine!sequential.4!7!12!14!0.32643554!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_early_2012.h5!0!test!amacrine!sequential.4!5!11!18!0.32561103!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+amacrines_late_2012.h5!21!test!amacrine!sequential.0!7!23!14!0.3214015!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+unks_17-10-18.h5!1!test!unk!sequential.0!2!12!16!0.31918818!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+unks_17-10-18.h5!0!test!unk!sequential.4!1!11!12!0.31367502!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+bipolars_early_2012.h5!2!test!bipolar!sequential.4!4!11!16!0.27550447!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+unks_17-10-18.h5!7!test!unk!sequential.0!7!17!16!0.26057273!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+bipolars_early_2012.h5!0!test!bipolar!sequential.4!4!10!17!0.21723095!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+bipolars_early_2012.h5!1!test!bipolar!sequential.4!5!10!17!0.12055957!0!0!convgc_49_dataset15-10-07_stim_typenaturalscene
+unks_17-10-18.h5!4!test!unk!sequential.0!1!14!15!0.73706657!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!3!test!amacrine!sequential.0!1!18!21!0.7164026!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+unks_17-10-18.h5!2!test!unk!sequential.0!7!17!17!0.71513426!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+unks_17-10-18.h5!5!test!unk!sequential.0!7!19!18!0.70503324!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!6!test!amacrine!sequential.0!1!18!16!0.68026274!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!2!test!amacrine!sequential.0!1!19!19!0.6710341!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_early_2012.h5!1!test!amacrine!sequential.0!0!18!22!0.67028254!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!4!test!amacrine!sequential.4!6!16!20!0.66903657!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!8!test!amacrine!sequential.4!6!13!16!0.66016895!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+unks_17-10-18.h5!13!test!unk!sequential.0!7!16!19!0.6566826!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!7!test!amacrine!sequential.4!6!14!13!0.6519797!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+unks_17-10-18.h5!8!test!unk!sequential.0!1!13!18!0.6491413!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!19!test!amacrine!sequential.4!6!14!13!0.647429!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+unks_17-10-18.h5!10!test!unk!sequential.0!7!18!18!0.64741266!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+unks_17-10-18.h5!3!test!unk!sequential.0!1!16!17!0.6290676!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_early_2012.h5!0!test!amacrine!sequential.0!0!17!22!0.6232102!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_early_2012.h5!2!test!amacrine!sequential.0!7!18!23!0.6221158!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!10!test!amacrine!sequential.4!6!13!15!0.61526996!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!12!test!amacrine!sequential.4!6!15!15!0.61405665!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!14!test!amacrine!sequential.4!6!13!12!0.61041194!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_early_2012.h5!4!test!amacrine!sequential.0!7!17!22!0.6085362!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!1!test!amacrine!sequential.0!1!21!18!0.5810206!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!5!test!amacrine!sequential.4!6!14!16!0.57936054!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+bipolars_late_2012.h5!0!test!bipolar!sequential.4!6!14!17!0.57371485!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+bipolars_late_2012.h5!3!test!bipolar!sequential.4!6!13!14!0.5694377!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+unks_17-10-18.h5!11!test!unk!sequential.0!2!14!18!0.5573005!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!13!test!amacrine!sequential.0!0!17!16!0.5569634!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!9!test!amacrine!sequential.0!7!18!21!0.53754824!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!0!test!amacrine!sequential.0!0!19!18!0.5242999!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+unks_17-10-18.h5!6!test!unk!sequential.4!0!13!14!0.5089334!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+bipolars_early_2012.h5!2!test!bipolar!sequential.0!0!17!20!0.502098!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+unks_17-10-18.h5!12!test!unk!sequential.0!6!14!17!0.49811408!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!18!test!amacrine!sequential.4!6!12!14!0.4944429!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+bipolars_late_2012.h5!1!test!bipolar!sequential.4!6!13!16!0.48271665!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!11!test!amacrine!sequential.4!6!13!16!0.48271656!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!15!test!amacrine!sequential.4!6!13!12!0.47912428!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+bipolars_late_2012.h5!2!test!bipolar!sequential.4!6!15!17!0.47866082!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!17!test!amacrine!sequential.4!6!15!13!0.47443107!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!16!test!amacrine!sequential.0!0!18!19!0.4737526!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+unks_17-10-18.h5!9!test!unk!sequential.0!7!15!19!0.45985875!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+unks_17-10-18.h5!0!test!unk!sequential.4!0!11!13!0.45513728!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_early_2012.h5!3!test!amacrine!sequential.4!6!13!17!0.43251342!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!20!test!amacrine!sequential.4!6!13!14!0.42152464!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+bipolars_early_2012.h5!0!test!bipolar!sequential.0!0!16!21!0.3990852!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!21!test!amacrine!sequential.4!6!18!11!0.37975165!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+unks_17-10-18.h5!1!test!unk!sequential.0!1!13!16!0.3502607!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+bipolars_early_2012.h5!1!test!bipolar!sequential.0!7!16!21!0.33148533!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+unks_17-10-18.h5!7!test!unk!sequential.0!1!17!16!0.24512638!0!0!convgc_53_dataset15-10-07_stim_typewhitenoise
+amacrines_late_2012.h5!6!test!amacrine!sequential.0!0!15!23!0.7433734!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!3!test!amacrine!sequential.0!0!15!28!0.70721835!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!2!test!amacrine!sequential.0!0!16!26!0.70509684!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!4!test!amacrine!sequential.0!0!18!30!0.7028611!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+unks_17-10-18.h5!8!test!unk!sequential.0!0!10!25!0.70131403!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+bipolars_late_2012.h5!0!test!bipolar!sequential.0!0!16!27!0.6849875!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!8!test!amacrine!sequential.0!0!14!26!0.65844107!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!14!test!amacrine!sequential.0!0!15!22!0.6538014!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+unks_17-10-18.h5!5!test!unk!sequential.0!0!17!24!0.6441837!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+bipolars_late_2012.h5!3!test!bipolar!sequential.0!0!15!24!0.6432557!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+unks_17-10-18.h5!4!test!unk!sequential.0!0!11!22!0.6406883!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+unks_17-10-18.h5!13!test!unk!sequential.0!0!14!26!0.6399423!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!19!test!amacrine!sequential.0!0!16!23!0.6321674!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!5!test!amacrine!sequential.0!0!16!26!0.6251842!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!9!test!amacrine!sequential.0!0!15!27!0.6233401!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+unks_17-10-18.h5!10!test!unk!sequential.0!0!15!24!0.61726934!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!12!test!amacrine!sequential.0!0!17!25!0.61659676!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_early_2012.h5!2!test!amacrine!sequential.0!0!16!29!0.6131017!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+unks_17-10-18.h5!2!test!unk!sequential.0!0!15!23!0.6118492!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+unks_17-10-18.h5!3!test!unk!sequential.0!0!13!24!0.5969435!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!7!test!amacrine!sequential.0!0!16!23!0.59577763!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_early_2012.h5!4!test!amacrine!sequential.0!0!15!29!0.56910664!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!10!test!amacrine!sequential.0!0!14!25!0.56331736!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+unks_17-10-18.h5!9!test!unk!sequential.0!0!13!25!0.56237894!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!1!test!amacrine!sequential.0!0!18!25!0.556318!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!13!test!amacrine!sequential.0!0!15!23!0.550423!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+bipolars_late_2012.h5!2!test!bipolar!sequential.0!0!16!27!0.54647726!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!15!test!amacrine!sequential.0!0!14!23!0.53073454!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+unks_17-10-18.h5!11!test!unk!sequential.0!3!12!24!0.527151!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_early_2012.h5!1!test!amacrine!sequential.0!0!16!30!0.5170473!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_early_2012.h5!0!test!amacrine!sequential.0!0!14!29!0.51660866!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+unks_17-10-18.h5!6!test!unk!sequential.4!4!9!21!0.4993668!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!18!test!amacrine!sequential.0!0!14!24!0.49740502!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!16!test!amacrine!sequential.0!0!15!26!0.49187988!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!17!test!amacrine!sequential.0!0!17!24!0.49122742!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_early_2012.h5!3!test!amacrine!sequential.0!0!15!27!0.48313752!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+bipolars_late_2012.h5!1!test!bipolar!sequential.0!0!14!26!0.4821079!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!11!test!amacrine!sequential.0!0!14!26!0.4821079!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+unks_17-10-18.h5!0!test!unk!sequential.4!4!7!20!0.47227702!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!0!test!amacrine!sequential.4!3!9!25!0.44824323!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+unks_17-10-18.h5!12!test!unk!sequential.0!7!12!24!0.41986844!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+bipolars_early_2012.h5!2!test!bipolar!sequential.4!0!8!24!0.41737086!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!20!test!amacrine!sequential.0!0!14!23!0.3986266!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!21!test!amacrine!sequential.0!0!20!21!0.39854467!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+bipolars_early_2012.h5!0!test!bipolar!sequential.4!0!7!25!0.35723424!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+unks_17-10-18.h5!1!test!unk!sequential.0!0!10!23!0.31179914!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+unks_17-10-18.h5!7!test!unk!sequential.0!0!15!23!0.30432943!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+bipolars_early_2012.h5!1!test!bipolar!sequential.0!0!14!28!0.26725596!0!0!convgc_54_dataset15-11-21a_stim_typenaturalscene
+amacrines_late_2012.h5!3!test!amacrine!sequential.0!6!16!27!0.89531386!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!8!test!amacrine!sequential.0!6!15!25!0.81183654!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!12!test!amacrine!sequential.4!0!11!21!0.8083651!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!10!test!amacrine!sequential.4!0!8!22!0.8035485!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!14!test!amacrine!sequential.4!0!9!18!0.8005145!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+bipolars_late_2012.h5!3!test!bipolar!sequential.4!0!9!20!0.7984663!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!19!test!amacrine!sequential.4!0!10!20!0.7968138!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!16!test!amacrine!sequential.4!0!9!22!0.79583824!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!4!test!amacrine!sequential.0!6!19!30!0.79255784!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_early_2012.h5!0!test!amacrine!sequential.0!6!15!28!0.7877707!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!7!test!amacrine!sequential.4!0!10!20!0.7877366!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!2!test!amacrine!sequential.0!6!17!25!0.78062314!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!5!test!amacrine!sequential.4!0!10!22!0.7803448!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+bipolars_late_2012.h5!0!test!bipolar!sequential.0!6!17!26!0.7790535!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!6!test!amacrine!sequential.0!6!16!22!0.77229714!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_early_2012.h5!1!test!amacrine!sequential.0!3!16!29!0.76500463!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!17!test!amacrine!sequential.4!0!11!20!0.76336!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!18!test!amacrine!sequential.4!0!8!20!0.763212!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+bipolars_late_2012.h5!1!test!bipolar!sequential.4!0!8!22!0.7541823!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!11!test!amacrine!sequential.4!0!8!22!0.75418216!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_early_2012.h5!2!test!amacrine!sequential.0!6!16!29!0.7514886!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!13!test!amacrine!sequential.0!6!16!22!0.7446687!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+bipolars_late_2012.h5!2!test!bipolar!sequential.4!0!10!23!0.72955656!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_early_2012.h5!4!test!amacrine!sequential.0!3!15!28!0.71724355!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!15!test!amacrine!sequential.4!0!8!19!0.7152905!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+unks_17-10-18.h5!10!test!unk!sequential.0!5!15!24!0.7106635!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!9!test!amacrine!sequential.4!0!9!24!0.709081!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!1!test!amacrine!sequential.0!6!19!24!0.68689466!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+unks_17-10-18.h5!13!test!unk!sequential.0!6!15!25!0.6792017!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+unks_17-10-18.h5!8!test!unk!sequential.0!6!11!24!0.67006284!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!0!test!amacrine!sequential.0!6!17!25!0.66021013!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+unks_17-10-18.h5!9!test!unk!sequential.4!1!5!24!0.6501395!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+bipolars_early_2012.h5!2!test!bipolar!sequential.0!3!15!27!0.6482325!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!20!test!amacrine!sequential.4!0!8!20!0.64418393!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!21!test!amacrine!sequential.4!0!14!17!0.639815!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+unks_17-10-18.h5!5!test!unk!sequential.0!5!17!24!0.63953733!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+bipolars_early_2012.h5!0!test!bipolar!sequential.0!3!14!28!0.62594557!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+unks_17-10-18.h5!4!test!unk!sequential.0!5!11!22!0.61890227!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+unks_17-10-18.h5!11!test!unk!sequential.0!7!12!23!0.61417645!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+bipolars_early_2012.h5!1!test!bipolar!sequential.0!1!14!28!0.6107355!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_early_2012.h5!3!test!amacrine!sequential.4!0!9!24!0.6030379!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+unks_17-10-18.h5!3!test!unk!sequential.0!6!14!23!0.57824135!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+unks_17-10-18.h5!2!test!unk!sequential.0!5!15!23!0.5667922!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+unks_17-10-18.h5!6!test!unk!sequential.4!6!9!24!0.50759786!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+unks_17-10-18.h5!12!test!unk!sequential.0!2!12!24!0.47160164!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+unks_17-10-18.h5!0!test!unk!sequential.4!5!7!22!0.46156713!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+unks_17-10-18.h5!7!test!unk!sequential.0!7!16!22!0.3595384!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+unks_17-10-18.h5!1!test!unk!sequential.0!6!11!22!0.31369397!0!0!convgc_57_dataset15-11-21a_stim_typewhitenoise
+amacrines_late_2012.h5!3!test!amacrine!sequential.0!1!18!27!0.8085647!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_early_2012.h5!1!test!amacrine!sequential.0!0!18!29!0.80129904!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_early_2012.h5!0!test!amacrine!sequential.0!5!17!27!0.73469526!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+unks_17-10-18.h5!13!test!unk!sequential.0!1!17!25!0.7020732!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+unks_17-10-18.h5!4!test!unk!sequential.0!7!14!22!0.7002311!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!2!test!amacrine!sequential.0!1!19!25!0.69338644!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!8!test!amacrine!sequential.4!0!13!23!0.6911471!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!12!test!amacrine!sequential.4!0!15!22!0.6856766!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+unks_17-10-18.h5!10!test!unk!sequential.0!4!18!24!0.67989916!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!7!test!amacrine!sequential.4!0!14!20!0.6783984!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!4!test!amacrine!sequential.0!1!21!30!0.67767054!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!13!test!amacrine!sequential.4!0!13!20!0.6774163!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_early_2012.h5!4!test!amacrine!sequential.0!4!17!28!0.672477!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!6!test!amacrine!sequential.0!1!18!22!0.6708888!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+unks_17-10-18.h5!5!test!unk!sequential.0!4!19!24!0.6694001!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+unks_17-10-18.h5!8!test!unk!sequential.0!1!13!24!0.65899515!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_early_2012.h5!2!test!amacrine!sequential.0!1!19!29!0.658384!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!19!test!amacrine!sequential.4!0!14!20!0.6561744!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+bipolars_late_2012.h5!3!test!bipolar!sequential.4!0!13!21!0.65279675!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!14!test!amacrine!sequential.4!0!13!19!0.652455!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+bipolars_early_2012.h5!2!test!bipolar!sequential.0!5!17!26!0.65185666!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+unks_17-10-18.h5!2!test!unk!sequential.0!4!17!23!0.6459221!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!10!test!amacrine!sequential.4!0!13!22!0.64488643!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+bipolars_late_2012.h5!0!test!bipolar!sequential.0!1!19!26!0.64366674!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!1!test!amacrine!sequential.0!1!21!24!0.64064133!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!16!test!amacrine!sequential.4!0!13!23!0.6364861!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+unks_17-10-18.h5!11!test!unk!sequential.0!7!14!24!0.6145233!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+unks_17-10-18.h5!3!test!unk!sequential.0!4!15!23!0.6106351!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!0!test!amacrine!sequential.0!1!20!25!0.60348445!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!17!test!amacrine!sequential.4!0!15!20!0.5979767!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!18!test!amacrine!sequential.4!0!12!21!0.59592336!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+bipolars_late_2012.h5!2!test!bipolar!sequential.0!1!19!26!0.5877065!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!5!test!amacrine!sequential.0!1!19!25!0.5811127!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!11!test!amacrine!sequential.4!0!13!23!0.57754207!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+bipolars_late_2012.h5!1!test!bipolar!sequential.4!0!13!23!0.5775419!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!9!test!amacrine!sequential.0!1!18!27!0.57398796!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_early_2012.h5!3!test!amacrine!sequential.4!0!13!24!0.5653615!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!15!test!amacrine!sequential.0!1!17!22!0.56188893!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+bipolars_early_2012.h5!1!test!bipolar!sequential.0!4!16!27!0.54832566!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+unks_17-10-18.h5!9!test!unk!sequential.0!1!16!25!0.5367606!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+bipolars_early_2012.h5!0!test!bipolar!sequential.0!5!17!27!0.5366489!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!20!test!amacrine!sequential.4!0!13!21!0.5353985!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+amacrines_late_2012.h5!21!test!amacrine!sequential.4!0!18!17!0.46967193!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+unks_17-10-18.h5!0!test!unk!sequential.4!3!12!22!0.4640797!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+unks_17-10-18.h5!12!test!unk!sequential.4!3!9!22!0.4447013!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+unks_17-10-18.h5!6!test!unk!sequential.4!3!13!23!0.37381992!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+unks_17-10-18.h5!1!test!unk!sequential.0!1!13!22!0.3240394!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
+unks_17-10-18.h5!7!test!unk!sequential.0!1!17!22!0.2720665!0!0!convgc_64_dataset15-11-21b_stim_typewhitenoise
