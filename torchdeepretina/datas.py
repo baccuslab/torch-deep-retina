@@ -427,14 +427,16 @@ def load_test_data(hyps,verbose=False):
                                   train_or_test="test",
                                   history=hyps['img_shape'][0],
                                   H=hyps['img_shape'][1],
-                                  norm_stats=hyps['norm_stats'])
+                                  norm_stats=hyps['norm_stats'],
+                                  data_path=hyps["datapath"])
     else:
         data = loadexpt(expt=hyps['dataset'],
                               cells=hyps['cells'],
                               filename=hyps['stim_type'],
                               train_or_test="test",
                               history=hyps['img_shape'][0],
-                              norm_stats=hyps['norm_stats'])
+                              norm_stats=hyps['norm_stats'],
+                              data_path=hyps["datapath"])
     return data
 
 def load_interneuron_data(root_path="~/interneuron_data/",
@@ -618,7 +620,7 @@ def cv_split(Xs, cv_idx, n_folds):
     startx = int(cv_idx*fold_size)
     endx = int(startx+fold_size)
     for X in Xs:
-        s_ = np.zeros(len(X)).astype(np.bool)
+        s_ = np.zeros(len(X)).astype(bool)
         s_[startx:endx] = True
         not_fold = X[~s_]
         fold = X[s_]
