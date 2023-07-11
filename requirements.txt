@@ -15,4 +15,3 @@ pyret
 moviepy
 psutil
 opencv-python
--e git+git://github.com/nirum/jetpack.git@master#egg=jetpack
