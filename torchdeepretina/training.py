@@ -859,14 +859,15 @@ def get_data(hyps):
 
     try:
         test_data = DataContainer(loadexpt(hyps['dataset'],
-                                            hyps['cells'],
-                                            hyps['stim_type'],
-                                            'test',img_depth,0,
-                                            norm_stats=norm_stats,
-                                            cutout_width=cutout_size))
+                                        hyps['cells'],
+                                        hyps['stim_type'],
+                                        'test',img_depth,0,
+                                        norm_stats=norm_stats,
+                                        cutout_width=cutout_size,
+                                        data_path=data_path))
     except:
+        print("Error loading test data...")
         test_data = None
-
     hyps['img_shape'] = train_data.X.shape[1:]
     return train_data, test_data
 
