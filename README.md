@@ -6,17 +6,27 @@ This project is structured as a pip package. You will first need to install all 
 
 If you are using `conda`, make sure you first install pip.
 
-```
+```sh
 $ conda install pip
 ```
 
-```
+Assuming your current working directory is the same as this readme, then run the following.
+
+```sh
 $ pip install -r requirements.txt
 ```
 
-Then you will need to install this project.
+If you have your own version of cuda installed, pytorch might install a conflicting version of cuda through the pip install. To solve this, you can either remove `torch` from the requirements and install it yourself according to pytorch's website. Or you can potentially run the following command (no guarantees..):
 
+```sh
+$ pip uninstall nvidia_cublas_cu11
 ```
+
+Hopefully pytorch has fixed this issue by the time you are running this code.
+
+Lastly, you will need to install this project.
+
+```sh
 $ pip install -e .
 ```
 
@@ -26,25 +36,26 @@ To train a model you will need to have data and a configuration json file, and o
 #### Data
 You can find the data used in the paper at this link: [https://doi.org/10.25740/rk663dm5577](https://doi.org/10.25740/rk663dm5577)
 
-If you are using Linux, the following command will probably work for you:
+If you are using linux or mac, the following command will probably work for you:
 
-```
+```sh
 $ wget https://stacks.stanford.edu/file/druid:rk663dm5577/neural_code_data.zip
+$ unzip neural_code_data.zip
 ```
 
 It will be easiest to then move the contents out of the folder named `ganglion_cell_data` into the top directory of the downloaded folder. We recommend that you move the ganglion cell data so that the interneuron data is located at the sam location as the ganglion cell data. To do this, do the following:
 
-```
+```sh
 $ cd neural_code_data
 $ mv ganglion_cell_data/* ./
 ```
 
 This will allow you to argue the path to the downloaded directory as the entry for `datapath` in the configuration json:
 
-```
+```sh
 {
     ...
-    "datapath": "~/Downloads/neural_code_data/",
+    "datapath": "path_to_directory_that_you_ran_wget_from/neural_code_data/",
     ...
 }
 ```
@@ -52,21 +63,21 @@ This will allow you to argue the path to the downloaded directory as the entry f
 #### Running a Training
 To run a training, navigate to the `training_scripts` folder:
 
-```
+```sh
 $ cd training_scripts
 ```
 
-Here you will want to create a new config.json file or use the existing. If you use the example config json you will likely run into issues with the dataset. Follow the section above to get data, and then be sure to update the config.json entry "datapath" with the path to the directory in which you downloaded and unzipped the data and moved the ganglion cell data to. So, for example, if you downloaded the data to your downloads folder `~/Downloads/`, unzipped it, and then moved the contents of `ganglion_cell_data` to the top downloaded directory, you would set `"datapath": "~/Downloads/neural_code_data/"`. If you did not move the ganglion cell data, you would instead do, `"datapath": "~/Downloads/neural_code_data/ganglion_cell_data/"`. We recommend that you move the ganglion cell data so that the interneuron data is located at the sam location as the ganglion cell data.
+Here you will want to create a new config.json file or use the existing. If you use the example config json you will likely run into issues with the dataset. Follow the section above to get data, and then be sure to update the config.json entry "datapath" with the path to the directory in which you downloaded and unzipped the data and moved the ganglion cell data to. If you followed the instructions in the `Data` section in this README, then the config.json file should be ready to run. If, for example, you downloaded the data to your downloads folder `~/Downloads/`, unzipped it, and then moved the contents of `ganglion_cell_data` to the top downloaded directory, you would set `"datapath": "~/Downloads/neural_code_data/"`. If you did not move the ganglion cell data, you would instead do, `"datapath": "~/Downloads/neural_code_data/ganglion_cell_data/"`. We recommend that you move the ganglion cell data so that the interneuron data is located at the sam location as the ganglion cell data.
 
 See the `readme.md` file in the `training_scripts` folder for details on all config options.
 
 Then select the cuda device index you will want to use (in this case 0) and type the following command:
 
-```
+```sh
 $ CUDA_VISIBLE_DEVICES=0 python3 main.py path_to_config.json
 ```
 or
-```
+```sh
 $ CUDA_VISIBLE_DEVICES=0 python3 main.py path_to_config.json path_to_config-ranges.json
 ```
 
@@ -74,7 +85,7 @@ $ CUDA_VISIBLE_DEVICES=0 python3 main.py path_to_config.json path_to_config-rang
 ##### Full Model Analyses
 It is perhaps best for each user to do their own analyses. This will reduce the risk of misinterpretations of results. There is, however, an automated analysis pipeline that can be used if your model falls in the categories below. To use this automated analysis tool, simply argue the name of the main experiment folder to the `analysis_pipeline.py` script within the `training_scripts/` folder:
 
-```
+```sh
 $ python3 analysis_pipeline.py path_to_experiment_folder
 ```
 
