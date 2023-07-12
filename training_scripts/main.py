@@ -64,9 +64,13 @@ if __name__ == "__main__":
         print(s.format("!"*5))
 
     sleep_time = 8
-    exp_dir = os.path.abspath(
-        os.path.join(hyps.get("save_root", "./"), hyps["exp_name"])
-    )
+    hyps["save_root"] = os.path.abspath(os.path.expanduser(
+        hyps.get("save_root", "./")
+    ))
+    hyps["datapath"] = os.path.abspath(os.path.expanduser(
+        hyps.get("datapath", "./")
+    ))
+    exp_dir = os.path.join(hyps["save_root"], hyps["exp_name"])
     if os.path.exists(exp_dir):
         dirs = get_model_folders(exp_dir)
         if len(dirs) > 0:
@@ -89,4 +93,3 @@ if __name__ == "__main__":
     start_time = time.time()
     hyper_search(hyps, hyp_ranges, device)
     print("Total Execution Time:", time.time() - start_time)
-    print(exp_dir, "Training Complete")
