@@ -91,7 +91,7 @@ def get_checkpoints(folder, checkpt_exts={'p', 'pt', 'pth'}):
     folder: str
         path to the folder of interest
     """
-    folder = os.path.expanduser(folder)
+    folder = os.path.abspath(os.path.expanduser(folder))
     assert os.path.isdir(folder)
     checkpts = []
     for f in os.listdir(folder):
@@ -132,7 +132,7 @@ def get_model_folders(main_folder, incl_ext=False):
         list of folders without full extension
     """
     folders = []
-    main_folder = os.path.expanduser(main_folder)
+    main_folder = os.path.abspath(os.path.expanduser(main_folder))
     for d, sub_ds, files in os.walk(main_folder):
         for sub_d in sub_ds:
             contents = os.listdir(os.path.join(d,sub_d))
@@ -153,7 +153,7 @@ def load_checkpoint(path):
     path: str
         path to checkpoint file
     """
-    path = os.path.expanduser(path)
+    path = os.path.abspath(os.path.expanduser(path))
     if os.path.isdir(path):
         checkpts = get_checkpoints(path)
         path = checkpts[-1]
@@ -172,7 +172,7 @@ def load_model(path,verbose=True, ret_hyps=False):
     ret_hyps: bool
         if true, also returns hyperparameters dict
     """
-    path = os.path.expanduser(path)
+    path = os.path.abspath(os.path.expanduser(path))
     hyps = None
     if os.path.isdir(path):
         checkpts = get_checkpoints(path)
@@ -251,7 +251,7 @@ def get_hyps(folder):
     folder: str
         path to the folder that contains checkpts and a hyps json file
     """
-    folder = os.path.expanduser(folder)
+    folder = os.path.abspath(os.path.expanduser(folder))
     try:
         hyps_json = os.path.join(folder, "hyperparams.json")
         hyps = utils.load_json(hyps_json)
@@ -315,7 +315,7 @@ def make_save_folder(hyps):
                                     hyps['exp_name'],
                                     hyps['exp_num'])
     save_folder += hyps.get('search_keys', "")
-    return os.path.abspath(
+    return os.path.abspath(os.path.expanduser(
         os.path.join(hyps.get("save_root","./"), save_folder)
-    )
+    ))
 

@@ -660,9 +660,9 @@ def hyper_search(hyps, hyp_ranges, early_stopping=10,
         early stopping epoch count
     """
     starttime = time.time()
-    exp_dir = os.path.abspath(
+    exp_dir = os.path.abspath(os.path.expanduser(
         os.path.join(hyps.get("save_root", "./"), hyps['exp_name'])
-    )
+    ))
     # Make results file
     if not os.path.exists(exp_dir):
         os.mkdir(exp_dir)
