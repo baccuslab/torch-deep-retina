@@ -14,7 +14,7 @@ Rough Outline:
     The test data can be found by arguing the appropriate parameters
         to the loadexpt() function
 """
-path_to_data = "/home/TRAIN_DATA/"
+path_to_data = "../neural_code_data/"
 # Name of the saved checkpoint or model folder
 file_name = "../models/15-11-21a_naturalscene.pt"
 
