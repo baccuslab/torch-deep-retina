@@ -187,7 +187,8 @@ class TDRModel(nn.Module):
     def get_shape(self, img_shape, layer_name):
         """
         Returns the shape (height,width) of the activation matrix at
-        the argued layer_name.
+        the output of the argued layer_name. Assumes a convolutional
+        neural network with no padding and a stride of 1.
 
         Inputs:
             img_shape: tuple of ints (..., H, W)
@@ -202,15 +203,14 @@ class TDRModel(nn.Module):
         conv_names = set(get_conv_layer_names(self))
         n_convs = 0
         for name,modu in self.named_modules():
+            if name in conv_names:
+                n_convs+=1
             if name == layer_name:
                 break
-            elif name in conv_names:
-                n_convs+=1
         if name != layer_name:
             return None
 
         shape = img_shape[-2:]
-        if n_convs == 0: n_convs = 1
         for i in range(n_convs):
             ksize = self.ksizes[i]
             shape = update_shape(shape,ksize)
