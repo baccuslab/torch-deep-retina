@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.fftpack import fftfreq, fft
 from tqdm import tqdm
-from jetpack import errorplot
+from jetplot import errorplot
 import torchdeepretina as tdr
 import os
 import torch

@@ -18,7 +18,7 @@ from scipy.fftpack import fft, fftshift, fftfreq
 from scipy.interpolate import interp1d
 from tqdm import tqdm
 try:
-    from jetpack import errorplot
+    from jetplot import errorplot
 except:
     print("f2_response is unavailable until you run:\n$ pip install -e git+git://github.com/nirum/jetpack.git@master#egg=jetpack")
             
